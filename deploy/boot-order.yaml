@@ -1,0 +1,85 @@
+# Boot Order Manifest for mikrotik-vk
+# Defines which containers start at boot and in what order.
+#
+# This is the "systemd" equivalent — containers are started in priority
+# order (lowest first), respecting dependency chains.
+#
+# Annotations:
+#   mikrotik.io/depends-on: comma-separated container names
+#   mikrotik.io/boot-priority: integer (lower = starts first)
+#   mikrotik.io/health-check: http://:port/path or tcp://:port
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: dns-server
+  namespace: default
+  annotations:
+    mikrotik.io/boot-priority: "10"
+spec:
+  restartPolicy: Always
+  containers:
+    - name: pihole
+      image: localhost:5000/pihole:latest
+      ports:
+        - containerPort: 53
+        - containerPort: 80
+      env:
+        - name: TZ
+          value: "America/Chicago"
+        - name: WEBPASSWORD
+          value: "changeme"
+      volumeMounts:
+        - name: pihole-data
+          mountPath: /etc/pihole
+      livenessProbe:
+        httpGet:
+          path: /admin/
+          port: 80
+        periodSeconds: 30
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: monitoring
+  namespace: default
+  annotations:
+    mikrotik.io/boot-priority: "20"
+    mikrotik.io/depends-on: "dns-server-pihole"
+spec:
+  restartPolicy: Always
+  containers:
+    - name: prometheus-node-exporter
+      image: localhost:5000/node-exporter:latest
+      ports:
+        - containerPort: 9100
+      livenessProbe:
+        httpGet:
+          path: /metrics
+          port: 9100
+        periodSeconds: 60
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: wireguard
+  namespace: default
+  annotations:
+    mikrotik.io/boot-priority: "5"  # Start before DNS
+spec:
+  restartPolicy: Always
+  containers:
+    - name: wg
+      image: localhost:5000/wireguard:latest
+      env:
+        - name: WG_CONFIG
+          value: "/config/wg0.conf"
+      volumeMounts:
+        - name: wg-config
+          mountPath: /config
+      livenessProbe:
+        tcpSocket:
+          port: 51820
+        periodSeconds: 30

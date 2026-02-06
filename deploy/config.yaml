@@ -1,0 +1,42 @@
+# mikrotik-vk configuration
+# This file is loaded from /etc/mikrotik-vk/config.yaml
+
+nodeName: mikrotik-node
+standalone: true  # Set to false when connected to a K8s API server
+
+routeros:
+  address: "192.168.88.1:8728"
+  restUrl: "https://192.168.88.1/rest"
+  user: admin
+  password: ""  # Set via MIKROTIK_VK_PASSWORD env var
+  useTLS: false
+  insecureVerify: true  # Set false in production
+
+network:
+  podCIDR: "172.20.0.0/16"
+  bridgeName: containers
+  dnsServers:
+    - "8.8.8.8"
+    - "1.1.1.1"
+
+storage:
+  basePath: /container-data
+  tarballCache: /container-cache
+  gcIntervalMinutes: 30
+  gcKeepLastN: 5
+  gcDryRun: false
+
+systemd:
+  bootManifestPath: /etc/mikrotik-vk/boot-order.yaml
+  watchdogIntervalSeconds: 15
+  maxRestarts: 5
+  restartCooldown: 10
+
+registry:
+  enabled: true
+  listenAddr: ":5000"
+  storePath: /data/registry
+  pullThrough: true
+  upstreamRegistries:
+    - "docker.io"
+    - "ghcr.io"

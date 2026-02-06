@@ -1,0 +1,276 @@
+package routeros
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+
+	"github.com/glenneth/mikrotik-vk/pkg/config"
+)
+
+// Client wraps both the RouterOS REST API and the RouterOS protocol API.
+// The REST API (available since RouterOS 7.1) is preferred for container
+// management. The protocol API (port 8728) is used for operations not
+// yet exposed via REST.
+type Client struct {
+	cfg        config.RouterOSConfig
+	httpClient *http.Client
+}
+
+// Container represents a RouterOS container as returned by /rest/container/print.
+type Container struct {
+	ID         string            `json:".id"`
+	Name       string            `json:"name"`
+	Image      string            `json:"file"` // tarball path on RouterOS
+	Interface  string            `json:"interface"`
+	RootDir    string            `json:"root-dir"`
+	Mounts     []string          `json:"mounts,omitempty"`
+	Envs       map[string]string `json:"envs,omitempty"`
+	Cmd        string            `json:"cmd,omitempty"`
+	Status     string            `json:"status"`
+	Logging    bool              `json:"logging"`
+	WorkDir    string            `json:"workdir,omitempty"`
+	Hostname   string            `json:"hostname,omitempty"`
+	DNS        string            `json:"dns,omitempty"`
+	StartOnBoot bool            `json:"start-on-boot"`
+}
+
+// ContainerSpec is used to create/update a container.
+type ContainerSpec struct {
+	Name        string            `json:"name"`
+	File        string            `json:"file"`        // tarball path
+	Interface   string            `json:"interface"`
+	RootDir     string            `json:"root-dir"`
+	Mounts      []string          `json:"mounts,omitempty"`
+	Envs        map[string]string `json:"envs,omitempty"`
+	Cmd         string            `json:"cmd,omitempty"`
+	WorkDir     string            `json:"workdir,omitempty"`
+	Hostname    string            `json:"hostname,omitempty"`
+	DNS         string            `json:"dns,omitempty"`
+	Logging     bool              `json:"logging"`
+	StartOnBoot bool              `json:"start-on-boot"`
+}
+
+// NetworkInterface represents a veth interface for containers.
+type NetworkInterface struct {
+	ID      string `json:".id"`
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	Gateway string `json:"gateway"`
+	Bridge  string `json:"bridge"`
+}
+
+// NewClient creates a new RouterOS API client.
+func NewClient(cfg config.RouterOSConfig) (*Client, error) {
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: cfg.InsecureVerify,
+		},
+		MaxIdleConns:    10,
+		IdleConnTimeout: 30 * time.Second,
+	}
+
+	return &Client{
+		cfg: cfg,
+		httpClient: &http.Client{
+			Transport: transport,
+			Timeout:   30 * time.Second,
+		},
+	}, nil
+}
+
+// Close releases resources held by the client.
+func (c *Client) Close() error {
+	c.httpClient.CloseIdleConnections()
+	return nil
+}
+
+// ─── Container Operations ───────────────────────────────────────────────────
+
+// ListContainers returns all containers on the RouterOS device.
+func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
+	var containers []Container
+	err := c.restGET(ctx, "/container/print", &containers)
+	return containers, err
+}
+
+// GetContainer returns a single container by name.
+func (c *Client) GetContainer(ctx context.Context, name string) (*Container, error) {
+	containers, err := c.ListContainers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, ct := range containers {
+		if ct.Name == name {
+			return &ct, nil
+		}
+	}
+	return nil, fmt.Errorf("container %q not found", name)
+}
+
+// CreateContainer creates a new container from a spec.
+func (c *Client) CreateContainer(ctx context.Context, spec ContainerSpec) error {
+	return c.restPOST(ctx, "/container/add", spec, nil)
+}
+
+// RemoveContainer removes a container by its RouterOS .id.
+func (c *Client) RemoveContainer(ctx context.Context, id string) error {
+	return c.restPOST(ctx, "/container/remove", map[string]string{".id": id}, nil)
+}
+
+// StartContainer starts a container by its RouterOS .id.
+func (c *Client) StartContainer(ctx context.Context, id string) error {
+	return c.restPOST(ctx, "/container/start", map[string]string{".id": id}, nil)
+}
+
+// StopContainer stops a container by its RouterOS .id.
+func (c *Client) StopContainer(ctx context.Context, id string) error {
+	return c.restPOST(ctx, "/container/stop", map[string]string{".id": id}, nil)
+}
+
+// ─── Network Operations ─────────────────────────────────────────────────────
+
+// CreateVeth creates a virtual ethernet interface for a container.
+func (c *Client) CreateVeth(ctx context.Context, name, address, gateway string) error {
+	return c.restPOST(ctx, "/interface/veth/add", map[string]string{
+		"name":    name,
+		"address": address,
+		"gateway": gateway,
+	}, nil)
+}
+
+// RemoveVeth removes a virtual ethernet interface.
+func (c *Client) RemoveVeth(ctx context.Context, name string) error {
+	return c.restPOST(ctx, "/interface/veth/remove", map[string]string{
+		"name": name,
+	}, nil)
+}
+
+// AddBridgePort adds a veth to a bridge.
+func (c *Client) AddBridgePort(ctx context.Context, bridge, iface string) error {
+	return c.restPOST(ctx, "/interface/bridge/port/add", map[string]string{
+		"bridge":    bridge,
+		"interface": iface,
+	}, nil)
+}
+
+// ListVeths returns all veth interfaces.
+func (c *Client) ListVeths(ctx context.Context) ([]NetworkInterface, error) {
+	var veths []NetworkInterface
+	err := c.restGET(ctx, "/interface/veth/print", &veths)
+	return veths, err
+}
+
+// ─── File Operations ────────────────────────────────────────────────────────
+
+// UploadFile uploads a tarball or file to the RouterOS filesystem.
+func (c *Client) UploadFile(ctx context.Context, remotePath string, data io.Reader) error {
+	// RouterOS file upload via REST API uses /rest/file
+	// For large tarballs, we use the FTP/SFTP approach or the REST upload endpoint.
+	// This is a simplified version using REST.
+	body, err := io.ReadAll(data)
+	if err != nil {
+		return fmt.Errorf("reading file data: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "PUT",
+		fmt.Sprintf("%s/file/%s", c.cfg.RESTURL, remotePath),
+		bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(c.cfg.User, c.cfg.Password)
+	req.Header.Set("Content-Type", "application/octet-stream")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("upload failed (%d): %s", resp.StatusCode, string(b))
+	}
+	return nil
+}
+
+// ListFiles lists files at a given path on RouterOS.
+func (c *Client) ListFiles(ctx context.Context, path string) ([]map[string]interface{}, error) {
+	var files []map[string]interface{}
+	err := c.restPOST(ctx, "/file/print", map[string]string{
+		"?name": path,
+	}, &files)
+	return files, err
+}
+
+// RemoveFile deletes a file from the RouterOS filesystem.
+func (c *Client) RemoveFile(ctx context.Context, path string) error {
+	return c.restPOST(ctx, "/file/remove", map[string]string{
+		"name": path,
+	}, nil)
+}
+
+// ─── REST Helpers ───────────────────────────────────────────────────────────
+
+func (c *Client) restGET(ctx context.Context, path string, result interface{}) error {
+	req, err := http.NewRequestWithContext(ctx, "GET", c.cfg.RESTURL+path, nil)
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(c.cfg.User, c.cfg.Password)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("REST GET %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("REST GET %s returned %d: %s", path, resp.StatusCode, string(b))
+	}
+
+	return json.NewDecoder(resp.Body).Decode(result)
+}
+
+func (c *Client) restPOST(ctx context.Context, path string, body interface{}, result interface{}) error {
+	var bodyReader io.Reader
+	if body != nil {
+		data, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		bodyReader = bytes.NewReader(data)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", c.cfg.RESTURL+path, bodyReader)
+	if err != nil {
+		return err
+	}
+	req.SetBasicAuth(c.cfg.User, c.cfg.Password)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("REST POST %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("REST POST %s returned %d: %s", path, resp.StatusCode, string(b))
+	}
+
+	if result != nil {
+		return json.NewDecoder(resp.Body).Decode(result)
+	}
+	return nil
+}
