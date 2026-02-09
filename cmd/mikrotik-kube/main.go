@@ -1,11 +1,11 @@
-// mikrotik-vk: A single-binary Virtual Kubelet provider for MikroTik RouterOS
+// mikrotik-kube: A single-binary Virtual Kubelet provider for MikroTik RouterOS
 // with integrated network management, storage management, systemd boot services,
 // and an optional embedded OCI registry (Zot).
 //
 // Architecture:
 //
 //	┌──────────────────────────────────────────────────────────────────┐
-//	│  mikrotik-vk (single Go binary)                                 │
+//	│  mikrotik-kube (single Go binary)                                 │
 //	│                                                                  │
 //	│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
 //	│  │ Virtual       │  │ Network      │  │ Storage Manager        │ │
@@ -48,13 +48,13 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
-	"github.com/glenneth/mikrotik-vk/pkg/config"
-	"github.com/glenneth/mikrotik-vk/pkg/network"
-	"github.com/glenneth/mikrotik-vk/pkg/provider"
-	"github.com/glenneth/mikrotik-vk/pkg/registry"
-	"github.com/glenneth/mikrotik-vk/pkg/routeros"
-	"github.com/glenneth/mikrotik-vk/pkg/storage"
-	"github.com/glenneth/mikrotik-vk/pkg/systemd"
+	"github.com/glenneth/mikrotik-kube/pkg/config"
+	"github.com/glenneth/mikrotik-kube/pkg/network"
+	"github.com/glenneth/mikrotik-kube/pkg/provider"
+	"github.com/glenneth/mikrotik-kube/pkg/registry"
+	"github.com/glenneth/mikrotik-kube/pkg/routeros"
+	"github.com/glenneth/mikrotik-kube/pkg/storage"
+	"github.com/glenneth/mikrotik-kube/pkg/systemd"
 )
 
 var (
@@ -64,7 +64,7 @@ var (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:     "mikrotik-vk",
+		Use:     "mikrotik-kube",
 		Short:   "Virtual Kubelet provider for MikroTik RouterOS containers",
 		Version: fmt.Sprintf("%s (%s)", version, commit),
 		RunE:    run,
@@ -72,7 +72,7 @@ func main() {
 
 	// Global flags
 	f := rootCmd.Flags()
-	f.String("config", "/etc/mikrotik-vk/config.yaml", "Path to configuration file")
+	f.String("config", "/etc/mikrotik-kube/config.yaml", "Path to configuration file")
 	f.String("kubeconfig", "", "Path to kubeconfig (optional, for standalone mode)")
 	f.String("node-name", "mikrotik-node", "Kubernetes node name for this device")
 	f.Bool("standalone", false, "Run without a Kubernetes API server (local reconciler only)")
@@ -104,7 +104,7 @@ func run(cmd *cobra.Command, args []string) error {
 	defer logger.Sync()
 	log := logger.Sugar()
 
-	log.Infow("starting mikrotik-vk", "version", version)
+	log.Infow("starting mikrotik-kube", "version", version)
 
 	// ── Configuration ───────────────────────────────────────────────
 	cfg, err := config.Load(cmd.Flags())

@@ -1,4 +1,4 @@
-# Boot Order Manifest for mikrotik-vk
+# Boot Order Manifest for mikrotik-kube
 # Defines which containers start at boot and in what order.
 #
 # This is the "systemd" equivalent — containers are started in priority

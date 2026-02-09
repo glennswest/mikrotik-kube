@@ -1,4 +1,4 @@
-# Multi-stage build for mikrotik-vk
+# Multi-stage build for mikrotik-kube
 # Produces a minimal static binary suitable for RouterOS containers.
 #
 # RouterOS container constraints:
@@ -25,8 +25,8 @@ ARG COMMIT=none
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
-    -o /mikrotik-vk \
-    ./cmd/mikrotik-vk/
+    -o /mikrotik-kube \
+    ./cmd/mikrotik-kube/
 
 # ── Stage 2: Runtime ────────────────────────────────────────────────────────
 FROM alpine:3.19
@@ -37,19 +37,19 @@ RUN apk add --no-cache \
     tini
 
 # Create non-root user
-RUN addgroup -S mikrotik-vk && adduser -S -G mikrotik-vk mikrotik-vk
+RUN addgroup -S mikrotik-kube && adduser -S -G mikrotik-kube mikrotik-kube
 
 # Create data directories
-RUN mkdir -p /etc/mikrotik-vk /data/registry /data/cache /data/volumes \
-    && chown -R mikrotik-vk:mikrotik-vk /data
+RUN mkdir -p /etc/mikrotik-kube /data/registry /data/cache /data/volumes \
+    && chown -R mikrotik-kube:mikrotik-kube /data
 
-COPY --from=builder /mikrotik-vk /usr/local/bin/mikrotik-vk
+COPY --from=builder /mikrotik-kube /usr/local/bin/mikrotik-kube
 
 # Default config
-COPY deploy/config.yaml /etc/mikrotik-vk/config.yaml
+COPY deploy/config.yaml /etc/mikrotik-kube/config.yaml
 
 EXPOSE 5000 8080
 
 # Use tini as PID 1 (proper signal handling in containers)
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["mikrotik-vk", "--config", "/etc/mikrotik-vk/config.yaml"]
+CMD ["mikrotik-kube", "--config", "/etc/mikrotik-kube/config.yaml"]

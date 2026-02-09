@@ -1,8 +1,13 @@
 package provider
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -10,12 +15,16 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/client-go/kubernetes"
+	restclient "k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/glenneth/mikrotik-vk/pkg/config"
-	"github.com/glenneth/mikrotik-vk/pkg/network"
-	"github.com/glenneth/mikrotik-vk/pkg/routeros"
-	"github.com/glenneth/mikrotik-vk/pkg/storage"
-	"github.com/glenneth/mikrotik-vk/pkg/systemd"
+	"github.com/glenneth/mikrotik-kube/pkg/config"
+	"github.com/glenneth/mikrotik-kube/pkg/network"
+	"github.com/glenneth/mikrotik-kube/pkg/routeros"
+	"github.com/glenneth/mikrotik-kube/pkg/storage"
+	"github.com/glenneth/mikrotik-kube/pkg/systemd"
 )
 
 // Deps holds injected dependencies for the provider.
@@ -33,10 +42,11 @@ type Deps struct {
 // container operations, managing the full lifecycle including networking,
 // storage, and boot ordering.
 type MikroTikProvider struct {
-	deps       Deps
-	nodeName   string
-	startTime  time.Time
-	pods       map[string]*corev1.Pod // namespace/name -> pod
+	deps            Deps
+	nodeName        string
+	startTime       time.Time
+	pods            map[string]*corev1.Pod // namespace/name -> pod
+	notifyPodStatus func(*corev1.Pod)      // callback for pod status updates
 }
 
 // NewMikroTikProvider creates a new provider instance.
@@ -316,7 +326,7 @@ func (p *MikroTikProvider) ConfigureNode(ctx context.Context, node *corev1.Node)
 	node.Status.NodeInfo = corev1.NodeSystemInfo{
 		Architecture:    "arm64",
 		OperatingSystem: "linux",
-		KubeletVersion:  "v1.29.0-mikrotik-vk",
+		KubeletVersion:  "v1.29.0-mikrotik-kube",
 	}
 	node.Status.Conditions = []corev1.NodeCondition{
 		{
@@ -368,34 +378,298 @@ func (p *MikroTikProvider) RunStandaloneReconciler(ctx context.Context) error {
 }
 
 func (p *MikroTikProvider) reconcile(ctx context.Context) error {
-	// TODO: Load desired state from /etc/mikrotik-vk/pods.yaml
-	// Compare with actual state from RouterOS
-	// Create/delete/restart as needed
-	//
-	// This is the "kubelet-lite" reconciliation loop:
-	//   1. Read desired pods from local manifest directory
-	//   2. List actual containers via RouterOS API
-	//   3. Diff: desired vs actual
-	//   4. Create missing containers
-	//   5. Remove orphaned containers
-	//   6. Restart unhealthy containers (via systemd manager)
+	log := p.deps.Logger
+
+	// 1. Load desired pods from boot manifest
+	desiredPods, err := loadPodManifests(p.deps.Config.Systemd.BootManifestPath)
+	if err != nil {
+		return fmt.Errorf("loading pod manifests: %w", err)
+	}
+
+	// 2. List actual containers on RouterOS
+	actual, err := p.deps.ROS.ListContainers(ctx)
+	if err != nil {
+		return fmt.Errorf("listing containers: %w", err)
+	}
+	actualByName := make(map[string]routeros.Container, len(actual))
+	for _, c := range actual {
+		actualByName[c.Name] = c
+	}
+
+	// 3. Build set of desired container names
+	desiredNames := make(map[string]bool)
+	for _, pod := range desiredPods {
+		for _, c := range pod.Spec.Containers {
+			desiredNames[sanitizeName(pod, c.Name)] = true
+		}
+	}
+
+	// 4. Create missing containers
+	for _, pod := range desiredPods {
+		key := podKey(pod)
+		if _, tracked := p.pods[key]; tracked {
+			continue
+		}
+
+		// Check if all containers for this pod exist on RouterOS
+		allExist := true
+		for _, c := range pod.Spec.Containers {
+			name := sanitizeName(pod, c.Name)
+			if _, exists := actualByName[name]; !exists {
+				allExist = false
+				break
+			}
+		}
+
+		if !allExist {
+			log.Infow("creating missing pod", "pod", key)
+			if err := p.CreatePod(ctx, pod); err != nil {
+				log.Errorw("failed to create pod", "pod", key, "error", err)
+			}
+		} else {
+			// Track already-existing pods
+			p.pods[key] = pod.DeepCopy()
+		}
+	}
+
+	// 5. Remove orphaned containers (on RouterOS but not in desired manifests)
+	for name, ct := range actualByName {
+		if !desiredNames[name] {
+			log.Infow("removing orphaned container", "name", name, "id", ct.ID)
+			if ct.Status == "running" {
+				_ = p.deps.ROS.StopContainer(ctx, ct.ID)
+			}
+			if err := p.deps.ROS.RemoveContainer(ctx, ct.ID); err != nil {
+				log.Warnw("failed to remove orphan", "name", name, "error", err)
+			}
+		}
+	}
+
 	return nil
 }
 
+// loadPodManifests reads a multi-document YAML file containing Pod specs.
+func loadPodManifests(path string) ([]*corev1.Pod, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading manifest %s: %w", path, err)
+	}
+
+	var pods []*corev1.Pod
+	reader := yaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(data)))
+	for {
+		doc, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading YAML document: %w", err)
+		}
+
+		doc = bytes.TrimSpace(doc)
+		if len(doc) == 0 {
+			continue
+		}
+
+		var pod corev1.Pod
+		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(doc), 4096).Decode(&pod); err != nil {
+			return nil, fmt.Errorf("decoding pod: %w", err)
+		}
+
+		if pod.Kind != "" && pod.Kind != "Pod" {
+			continue
+		}
+		if pod.Name == "" {
+			continue
+		}
+		if pod.Namespace == "" {
+			pod.Namespace = "default"
+		}
+		pods = append(pods, &pod)
+	}
+
+	return pods, nil
+}
+
+// NotifyPods is called by the Virtual Kubelet framework to set up a callback
+// for pod status updates. The provider calls this function whenever a pod's
+// status changes so the framework can update the API server.
+func (p *MikroTikProvider) NotifyPods(ctx context.Context, cb func(*corev1.Pod)) {
+	p.notifyPodStatus = cb
+	// Start a background goroutine that periodically pushes status updates
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				for _, pod := range p.pods {
+					if cb != nil {
+						status, err := p.GetPodStatus(ctx, pod.Namespace, pod.Name)
+						if err == nil {
+							updated := pod.DeepCopy()
+							updated.Status = *status
+							cb(updated)
+						}
+					}
+				}
+			}
+		}
+	}()
+}
+
 // RunVirtualKubelet starts the full Virtual Kubelet node, registering
-// with a Kubernetes API server.
+// with a Kubernetes API server. It loads kubeconfig, creates a Kubernetes
+// clientset, and runs a node controller that watches for pods scheduled
+// to this virtual node.
 func (p *MikroTikProvider) RunVirtualKubelet(ctx context.Context) error {
-	// TODO: Wire up virtual-kubelet/node.NewNodeController
-	// using this provider as the PodLifecycleHandler.
-	//
-	// Requires:
-	//   - kubeconfig or in-cluster config
-	//   - NodeController from virtual-kubelet library
-	//   - Informer setup for pod watching
-	//
-	// See: github.com/virtual-kubelet/virtual-kubelet/node
-	p.deps.Logger.Info("Virtual Kubelet mode not yet implemented — use --standalone for now")
-	return p.RunStandaloneReconciler(ctx)
+	log := p.deps.Logger
+	cfg := p.deps.Config
+
+	log.Infow("starting Virtual Kubelet node",
+		"node", cfg.NodeName,
+		"kubeconfig", cfg.KubeConfig,
+	)
+
+	// Build Kubernetes client config
+	var restConfig *restclient.Config
+	var err error
+
+	if cfg.KubeConfig != "" {
+		restConfig, err = clientcmd.BuildConfigFromFlags("", cfg.KubeConfig)
+	} else {
+		restConfig, err = restclient.InClusterConfig()
+	}
+	if err != nil {
+		return fmt.Errorf("building kubernetes config: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return fmt.Errorf("creating kubernetes clientset: %w", err)
+	}
+
+	// Create the virtual node object
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: cfg.NodeName,
+		},
+	}
+	p.ConfigureNode(ctx, node)
+
+	// Register or update the node in the API server
+	existingNode, err := clientset.CoreV1().Nodes().Get(ctx, cfg.NodeName, metav1.GetOptions{})
+	if err != nil {
+		log.Infow("registering new node", "name", cfg.NodeName)
+		if _, err := clientset.CoreV1().Nodes().Create(ctx, node, metav1.CreateOptions{}); err != nil {
+			return fmt.Errorf("registering node: %w", err)
+		}
+	} else {
+		existingNode.Status = node.Status
+		existingNode.Labels = node.Labels
+		existingNode.Spec.Taints = node.Spec.Taints
+		if _, err := clientset.CoreV1().Nodes().UpdateStatus(ctx, existingNode, metav1.UpdateOptions{}); err != nil {
+			log.Warnw("failed to update node status", "error", err)
+		}
+	}
+
+	log.Infow("node registered", "name", cfg.NodeName)
+
+	// Start node lease / heartbeat updater
+	go p.runNodeHeartbeat(ctx, clientset, cfg.NodeName)
+
+	// Watch for pods assigned to this node
+	return p.watchPods(ctx, clientset, cfg.NodeName)
+}
+
+// runNodeHeartbeat periodically updates the node status so the API server
+// knows the node is still alive.
+func (p *MikroTikProvider) runNodeHeartbeat(ctx context.Context, clientset kubernetes.Interface, nodeName string) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			node, err := clientset.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
+			if err != nil {
+				p.deps.Logger.Warnw("heartbeat: failed to get node", "error", err)
+				continue
+			}
+			// Update the Ready condition timestamp
+			for i, cond := range node.Status.Conditions {
+				if cond.Type == corev1.NodeReady {
+					node.Status.Conditions[i].LastHeartbeatTime = metav1.Now()
+				}
+			}
+			if _, err := clientset.CoreV1().Nodes().UpdateStatus(ctx, node, metav1.UpdateOptions{}); err != nil {
+				p.deps.Logger.Warnw("heartbeat: failed to update", "error", err)
+			}
+		}
+	}
+}
+
+// watchPods uses the Kubernetes API to watch for pod events targeting this node
+// and dispatches create/update/delete operations.
+func (p *MikroTikProvider) watchPods(ctx context.Context, clientset kubernetes.Interface, nodeName string) error {
+	log := p.deps.Logger
+
+	for {
+		podList, err := clientset.CoreV1().Pods("").List(ctx, metav1.ListOptions{
+			FieldSelector: "spec.nodeName=" + nodeName,
+		})
+		if err != nil {
+			return fmt.Errorf("listing pods: %w", err)
+		}
+
+		// Reconcile listed pods
+		desiredKeys := make(map[string]bool)
+		for i := range podList.Items {
+			pod := &podList.Items[i]
+			key := podKey(pod)
+			desiredKeys[key] = true
+
+			if _, tracked := p.pods[key]; !tracked {
+				log.Infow("new pod scheduled", "pod", key)
+				if err := p.CreatePod(ctx, pod); err != nil {
+					log.Errorw("failed to create pod", "pod", key, "error", err)
+				}
+			}
+		}
+
+		// Remove pods no longer scheduled here
+		for key, pod := range p.pods {
+			if !desiredKeys[key] {
+				log.Infow("pod removed from node", "pod", key)
+				if err := p.DeletePod(ctx, pod); err != nil {
+					log.Errorw("failed to delete pod", "pod", key, "error", err)
+				}
+			}
+		}
+
+		// Push status updates for tracked pods
+		for _, pod := range p.pods {
+			if p.notifyPodStatus != nil {
+				status, err := p.GetPodStatus(ctx, pod.Namespace, pod.Name)
+				if err == nil {
+					updated := pod.DeepCopy()
+					updated.Status = *status
+					p.notifyPodStatus(updated)
+				}
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			log.Info("pod watcher shutting down")
+			return nil
+		case <-time.After(10 * time.Second):
+		}
+	}
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -460,7 +734,10 @@ func extractDependencies(pod *corev1.Pod) []string {
 }
 
 func extractPriority(pod *corev1.Pod, index int) int {
-	// Default: containers within a pod start in order
-	// Override with annotation: mikrotik.io/boot-priority
+	if v, ok := pod.Annotations["mikrotik.io/boot-priority"]; ok {
+		if priority, err := strconv.Atoi(v); err == nil {
+			return priority
+		}
+	}
 	return index * 10
 }

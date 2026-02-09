@@ -1,5 +1,5 @@
-# mikrotik-vk configuration
-# This file is loaded from /etc/mikrotik-vk/config.yaml
+# mikrotik-kube configuration
+# This file is loaded from /etc/mikrotik-kube/config.yaml
 
 nodeName: mikrotik-node
 standalone: true  # Set to false when connected to a K8s API server
@@ -27,7 +27,7 @@ storage:
   gcDryRun: false
 
 systemd:
-  bootManifestPath: /etc/mikrotik-vk/boot-order.yaml
+  bootManifestPath: /etc/mikrotik-kube/boot-order.yaml
   watchdogIntervalSeconds: 15
   maxRestarts: 5
   restartCooldown: 10

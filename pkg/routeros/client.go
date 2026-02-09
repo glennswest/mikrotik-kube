@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/glenneth/mikrotik-vk/pkg/config"
+	"github.com/glenneth/mikrotik-kube/pkg/config"
 )
 
 // Client wraps both the RouterOS REST API and the RouterOS protocol API.

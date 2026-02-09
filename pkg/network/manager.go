@@ -9,8 +9,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/glenneth/mikrotik-vk/pkg/config"
-	"github.com/glenneth/mikrotik-vk/pkg/routeros"
+	"github.com/glenneth/mikrotik-kube/pkg/config"
+	"github.com/glenneth/mikrotik-kube/pkg/routeros"
 )
 
 // Manager handles IP address allocation (IPAM), veth interface creation,

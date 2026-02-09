@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the top-level configuration for mikrotik-vk.
+// Config is the top-level configuration for mikrotik-kube.
 type Config struct {
 	NodeName   string         `yaml:"nodeName"`
 	Standalone bool           `yaml:"standalone"`
@@ -107,7 +107,7 @@ func Load(flags *pflag.FlagSet) (*Config, error) {
 			GCKeepLastN:        5,
 		},
 		Systemd: SystemdConfig{
-			BootManifestPath:   "/etc/mikrotik-vk/boot-order.yaml",
+			BootManifestPath:   "/etc/mikrotik-kube/boot-order.yaml",
 			WatchdogInterval:   15,
 			MaxRestarts:        5,
 			RestartCooldown:    10,

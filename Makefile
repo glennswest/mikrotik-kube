@@ -1,4 +1,4 @@
-BINARY    := mikrotik-vk
+BINARY    := mikrotik-kube
 VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT    ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 ARCH      ?= arm64
@@ -8,11 +8,11 @@ GOFLAGS   := -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 
 ## Build the Go binary for the target architecture
 build:
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build $(GOFLAGS) -o dist/$(BINARY)-$(ARCH) ./cmd/mikrotik-vk/
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build $(GOFLAGS) -o dist/$(BINARY)-$(ARCH) ./cmd/mikrotik-kube/
 
 ## Build for the host platform (development)
 build-local:
-	go build $(GOFLAGS) -o dist/$(BINARY) ./cmd/mikrotik-vk/
+	go build $(GOFLAGS) -o dist/$(BINARY) ./cmd/mikrotik-kube/
 
 ## Build the container image
 image:

@@ -1,15 +1,24 @@
 package storage
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/crane"
+	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"go.uber.org/zap"
 
-	"github.com/glenneth/mikrotik-vk/pkg/config"
-	"github.com/glenneth/mikrotik-vk/pkg/routeros"
+	"github.com/glenneth/mikrotik-kube/pkg/config"
+	"github.com/glenneth/mikrotik-kube/pkg/routeros"
 )
 
 // Manager handles OCI image → tarball conversion, volume provisioning,
@@ -99,32 +108,78 @@ func (m *Manager) EnsureImage(ctx context.Context, imageRef string) (string, err
 }
 
 // pullAndUpload pulls an OCI image from a registry, converts it to a
-// RouterOS-compatible tar, and uploads it.
+// RouterOS-compatible flat rootfs tar, and uploads it.
 func (m *Manager) pullAndUpload(ctx context.Context, imageRef, tarballPath string) error {
-	// TODO: Implementation using google/go-containerregistry:
-	//
-	// import (
-	//     "github.com/google/go-containerregistry/pkg/crane"
-	//     "github.com/google/go-containerregistry/pkg/v1/tarball"
-	// )
-	//
-	// img, err := crane.Pull(imageRef)
-	// if err != nil { return err }
-	//
-	// // Write to a temp file as a flat tarball
-	// tmpFile, _ := os.CreateTemp("", "mikrotik-vk-*.tar")
-	// if err := tarball.Write(nil, img, tmpFile); err != nil { return err }
-	//
-	// // RouterOS expects a specific tarball format:
-	// // The root of the tar should contain the filesystem (not OCI layers)
-	// // We need to flatten/extract the layers into a single rootfs tar
-	// flatTar := flattenOCIToRootfs(tmpFile)
-	//
-	// // Upload to RouterOS
-	// return m.ros.UploadFile(ctx, tarballPath, flatTar)
+	// Determine crane options — allow insecure for localhost registry
+	opts := []crane.Option{crane.WithContext(ctx)}
+	if isLocalRegistry(imageRef) {
+		opts = append(opts, crane.Insecure)
+	} else {
+		opts = append(opts, crane.WithAuthFromKeychain(authn.DefaultKeychain))
+	}
 
-	m.log.Warnw("pullAndUpload: stub implementation", "ref", imageRef)
+	m.log.Infow("pulling OCI image", "ref", imageRef)
+	img, err := crane.Pull(imageRef, opts...)
+	if err != nil {
+		return fmt.Errorf("pulling image %s: %w", imageRef, err)
+	}
+
+	// Flatten OCI layers into a single rootfs tarball.
+	// mutate.Extract merges all layers (applying whiteouts) into one reader.
+	m.log.Infow("flattening OCI layers to rootfs", "ref", imageRef)
+	rootfsReader := mutate.Extract(img)
+	defer rootfsReader.Close()
+
+	// Read the flattened rootfs into a buffer for upload
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, rootfsReader); err != nil {
+		return fmt.Errorf("extracting rootfs for %s: %w", imageRef, err)
+	}
+
+	m.log.Infow("uploading tarball to RouterOS", "ref", imageRef, "path", tarballPath, "size", buf.Len())
+	if err := m.ros.UploadFile(ctx, tarballPath, bytes.NewReader(buf.Bytes())); err != nil {
+		return fmt.Errorf("uploading %s to RouterOS: %w", tarballPath, err)
+	}
+
 	return nil
+}
+
+// imageSize returns the total size of an OCI image across all layers.
+func imageSize(img v1.Image) int64 {
+	layers, err := img.Layers()
+	if err != nil {
+		return 0
+	}
+	var total int64
+	for _, l := range layers {
+		sz, _ := l.Size()
+		total += sz
+	}
+	return total
+}
+
+// isLocalRegistry returns true if the image ref points to the embedded registry.
+func isLocalRegistry(imageRef string) bool {
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return strings.HasPrefix(imageRef, "localhost:")
+	}
+	registry := ref.Context().RegistryStr()
+	return registry == "localhost:5000" || strings.HasPrefix(registry, "localhost:")
+}
+
+// tarballSize reads through a tar archive and sums the file sizes.
+func tarballSize(data []byte) int64 {
+	tr := tar.NewReader(bytes.NewReader(data))
+	var total int64
+	for {
+		hdr, err := tr.Next()
+		if err != nil {
+			break
+		}
+		total += hdr.Size
+	}
+	return total
 }
 
 // ReleaseImage decrements the use count of an image.

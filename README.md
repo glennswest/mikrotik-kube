@@ -6,7 +6,7 @@ A single-binary [Virtual Kubelet](https://github.com/virtual-kubelet/virtual-kub
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  mikrotik-vk (single Go binary, runs as RouterOS container)      │
+│  mikrotik-kube (single Go binary, runs as RouterOS container)      │
 │                                                                   │
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐  │
 │  │ Virtual       │  │ Network      │  │ Storage Manager        │  │
@@ -92,7 +92,7 @@ make push DEVICE=192.168.88.1 ARCH=arm64
 
 Or manually:
 ```bash
-scp dist/mikrotik-vk-dev-arm64.tar admin@192.168.88.1:/mikrotik-vk.tar
+scp dist/mikrotik-kube-dev-arm64.tar admin@192.168.88.1:/mikrotik-kube.tar
 ```
 
 ### 3. Configure RouterOS
@@ -112,22 +112,22 @@ scp dist/mikrotik-vk-dev-arm64.tar admin@192.168.88.1:/mikrotik-vk.tar
 # NAT for container internet access
 /ip/firewall/nat add chain=srcnat src-address=172.20.0.0/16 action=masquerade
 
-# Create and start mikrotik-vk
+# Create and start mikrotik-kube
 /container add \
-    file=mikrotik-vk.tar \
+    file=mikrotik-kube.tar \
     interface=veth-mgmt \
-    root-dir=/container-data/mikrotik-vk \
+    root-dir=/container-data/mikrotik-kube \
     logging=yes \
     start-on-boot=yes \
-    hostname=mikrotik-vk \
+    hostname=mikrotik-kube \
     dns=8.8.8.8
 
-/container start [find name~"mikrotik-vk"]
+/container start [find name~"mikrotik-kube"]
 ```
 
 ### 4. Define Your Containers
 
-Create pod manifests in `/etc/mikrotik-vk/boot-order.yaml` (see `deploy/boot-order.yaml` for examples).
+Create pod manifests in `/etc/mikrotik-kube/boot-order.yaml` (see `deploy/boot-order.yaml` for examples).
 
 ## Configuration
 
@@ -155,14 +155,14 @@ See `deploy/config.yaml` for all options. Key settings:
 Reads pod manifests from a local YAML file and reconciles against RouterOS. No Kubernetes cluster required.
 
 ```bash
-mikrotik-vk --standalone --config /etc/mikrotik-vk/config.yaml
+mikrotik-kube --standalone --config /etc/mikrotik-kube/config.yaml
 ```
 
 ### Virtual Kubelet Mode
 Registers as a node in an existing Kubernetes cluster. Pods scheduled to this node are created on RouterOS.
 
 ```bash
-mikrotik-vk --kubeconfig /path/to/kubeconfig --node-name my-mikrotik
+mikrotik-kube --kubeconfig /path/to/kubeconfig --node-name my-mikrotik
 ```
 
 Then from kubectl:
@@ -173,7 +173,7 @@ kubectl apply -f pod.yaml  # with toleration for virtual-kubelet.io/provider=mik
 ## Project Structure
 
 ```
-cmd/mikrotik-vk/       Entry point, CLI flags, manager initialization
+cmd/mikrotik-kube/       Entry point, CLI flags, manager initialization
 pkg/
   config/              YAML configuration with CLI overrides
   routeros/            RouterOS REST API client (containers, veth, files)
