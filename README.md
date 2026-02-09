@@ -84,7 +84,6 @@ This single command will:
 2. Package it as a RouterOS-compatible rootfs tarball
 3. SSH to `admin@rose1.gw.lo` and:
    - Create the `containers` bridge (`192.168.200.1/24`)
-   - Add NAT masquerade for `192.168.200.0/24`
    - Create the management veth (`192.168.200.2`)
    - Upload the tarball to `/raid1/tarballs/`
    - Create and start the `mikrotik-kube` container
@@ -121,12 +120,10 @@ mikrotik-kube creates a dedicated bridge for managed containers:
                     │  ├── veth-pod1   (192.168.200.3) │  ← managed container
                     │  ├── veth-pod2   (192.168.200.4) │  ← managed container
                     │  └── ...                         │
-                    │                                  │
-                    │  NAT masquerade: 192.168.200.0/24│
                     └─────────────────────────────────┘
 ```
 
-Managed containers get IPs sequentially from the pool (`.3` onward; `.1` is the gateway, `.2` is mikrotik-kube).
+Managed containers get IPs sequentially from the pool (`.3` onward; `.1` is the gateway, `.2` is mikrotik-kube). The subnet is directly routable — no NAT. Any device with a route to rose1 can reach containers at their `192.168.200.x` addresses.
 
 ## Configuration
 
@@ -208,8 +205,8 @@ If you prefer to set up the router manually instead of using `make deploy`:
 /interface/veth add name=veth-mkube address=192.168.200.2/24 gateway=192.168.200.1
 /interface/bridge/port add bridge=containers interface=veth-mkube
 
-# NAT for container internet access
-/ip/firewall/nat add chain=srcnat src-address=192.168.200.0/24 action=masquerade
+# No NAT — the subnet is directly routable via rose1.
+# Any device that can reach rose1 can reach containers at 192.168.200.x.
 
 # Create and start mikrotik-kube
 /container add \

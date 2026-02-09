@@ -19,7 +19,6 @@ SSH="ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new ${SSH_USER}@${
 # ── Configuration ────────────────────────────────────────────────────────────
 BRIDGE_NAME="containers"
 BRIDGE_ADDR="192.168.200.1/24"
-SUBNET="192.168.200.0/24"
 MGMT_VETH="veth-mkube"
 MGMT_IP="192.168.200.2/24"
 MGMT_GW="192.168.200.1"
@@ -65,7 +64,7 @@ echo "▸ Configuring network bridge '${BRIDGE_NAME}'..."
 BRIDGE_EXISTS=$(${SSH} "/interface/bridge/print count-only where name=${BRIDGE_NAME}" 2>/dev/null)
 if [ "${BRIDGE_EXISTS}" = "0" ]; then
     echo "  Creating bridge ${BRIDGE_NAME}..."
-    ${SSH} "/interface/bridge/add name=${BRIDGE_NAME} comment=\"Managed by mikrotik-kube (${SUBNET})\""
+    ${SSH} "/interface/bridge/add name=${BRIDGE_NAME} comment=\"Managed by mikrotik-kube\""
     echo "  ✓ Bridge created"
 else
     echo "  ✓ Bridge already exists"
@@ -81,20 +80,7 @@ else
     echo "  ✓ Address already configured"
 fi
 
-# ── Step 4: NAT masquerade for container subnet ─────────────────────────────
-echo ""
-echo "▸ Configuring NAT..."
-
-NAT_EXISTS=$(${SSH} "/ip/firewall/nat/print count-only where chain=srcnat src-address=${SUBNET} action=masquerade" 2>/dev/null)
-if [ "${NAT_EXISTS}" = "0" ]; then
-    echo "  Adding masquerade rule for ${SUBNET}..."
-    ${SSH} "/ip/firewall/nat/add chain=srcnat src-address=${SUBNET} action=masquerade comment=\"mikrotik-kube containers\""
-    echo "  ✓ NAT rule added"
-else
-    echo "  ✓ NAT rule already exists"
-fi
-
-# ── Step 5: Create management veth ───────────────────────────────────────────
+# ── Step 4: Create management veth ───────────────────────────────────────────
 echo ""
 echo "▸ Configuring management veth '${MGMT_VETH}'..."
 
