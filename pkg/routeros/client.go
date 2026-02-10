@@ -216,6 +216,97 @@ func (c *Client) RemoveFile(ctx context.Context, path string) error {
 	}, nil)
 }
 
+// ─── Bridge Operations ──────────────────────────────────────────────────────
+
+// BridgePort represents a bridge port assignment.
+type BridgePort struct {
+	ID        string `json:".id"`
+	Bridge    string `json:"bridge"`
+	Interface string `json:"interface"`
+}
+
+// ListBridgePorts returns all bridge port assignments.
+func (c *Client) ListBridgePorts(ctx context.Context) ([]BridgePort, error) {
+	var ports []BridgePort
+	err := c.restGET(ctx, "/interface/bridge/port/print", &ports)
+	return ports, err
+}
+
+// Bridge represents a bridge interface.
+type Bridge struct {
+	ID   string `json:".id"`
+	Name string `json:"name"`
+}
+
+// ListBridges(ctx) returns all bridge interfaces.
+func (c *Client) ListBridges(ctx context.Context) ([]Bridge, error) {
+	var bridges []Bridge
+	err := c.restGET(ctx, "/interface/bridge/print", &bridges)
+	return bridges, err
+}
+
+// ─── IP Address Operations ──────────────────────────────────────────────────
+
+// IPAddress represents an IP address assignment on an interface.
+type IPAddress struct {
+	ID        string `json:".id"`
+	Address   string `json:"address"`
+	Interface string `json:"interface"`
+	Network   string `json:"network"`
+}
+
+// ListIPAddresses returns all IP address assignments.
+func (c *Client) ListIPAddresses(ctx context.Context) ([]IPAddress, error) {
+	var addrs []IPAddress
+	err := c.restGET(ctx, "/ip/address/print", &addrs)
+	return addrs, err
+}
+
+// ─── System Operations ──────────────────────────────────────────────────────
+
+// SystemResource represents system resource information.
+type SystemResource struct {
+	Uptime       string `json:"uptime"`
+	CPUCount     string `json:"cpu-count"`
+	CPULoad      string `json:"cpu-load"`
+	FreeMemory   string `json:"free-memory"`
+	TotalMemory  string `json:"total-memory"`
+	Architecture string `json:"architecture-name"`
+	BoardName    string `json:"board-name"`
+	Version      string `json:"version"`
+	Platform     string `json:"platform"`
+}
+
+// GetSystemResource returns system resource information.
+func (c *Client) GetSystemResource(ctx context.Context) (*SystemResource, error) {
+	var resources []SystemResource
+	err := c.restGET(ctx, "/system/resource/print", &resources)
+	if err != nil {
+		return nil, err
+	}
+	if len(resources) == 0 {
+		return nil, fmt.Errorf("no system resource data")
+	}
+	return &resources[0], nil
+}
+
+// ─── Log Operations ─────────────────────────────────────────────────────────
+
+// LogEntry represents a RouterOS log entry.
+type LogEntry struct {
+	ID      string `json:".id"`
+	Time    string `json:"time"`
+	Topics  string `json:"topics"`
+	Message string `json:"message"`
+}
+
+// GetLogs returns log entries. Use topic filter like "container" to narrow results.
+func (c *Client) GetLogs(ctx context.Context) ([]LogEntry, error) {
+	var logs []LogEntry
+	err := c.restGET(ctx, "/log/print", &logs)
+	return logs, err
+}
+
 // ─── REST Helpers ───────────────────────────────────────────────────────────
 
 func (c *Client) restGET(ctx context.Context, path string, result interface{}) error {

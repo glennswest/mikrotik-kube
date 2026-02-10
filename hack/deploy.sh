@@ -120,7 +120,15 @@ if [ ! -f "${CONFIG_FILE}" ]; then
 fi
 
 scp ${SSH_OPTS} "${CONFIG_FILE}" "${SSH_USER}@${DEVICE}:${VOLUME_DIR}/${CONTAINER_NAME}/config/config.yaml"
-echo "  ✓ Config uploaded"
+
+# Upload boot-order manifest if it exists
+BOOT_ORDER="deploy/boot-order.yaml"
+if [ -f "${BOOT_ORDER}" ]; then
+    scp ${SSH_OPTS} "${BOOT_ORDER}" "${SSH_USER}@${DEVICE}:${VOLUME_DIR}/${CONTAINER_NAME}/config/boot-order.yaml"
+    echo "  ✓ Config + boot-order uploaded"
+else
+    echo "  ✓ Config uploaded (no boot-order.yaml)"
+fi
 
 # ── Step 7: Create mount points ──────────────────────────────────────────────
 echo ""

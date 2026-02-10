@@ -30,6 +30,8 @@ import (
 const (
 	// annotationNetwork selects which network a pod's containers are placed on.
 	annotationNetwork = "mikrotik.io/network"
+	// annotationFile specifies a local tarball path on RouterOS, bypassing OCI pull.
+	annotationFile = "mikrotik.io/file"
 )
 
 // Deps holds injected dependencies for the provider.
@@ -84,9 +86,16 @@ func (p *MikroTikProvider) CreatePod(ctx context.Context, pod *corev1.Pod) error
 		name := sanitizeName(pod, container.Name)
 
 		// 1. Resolve image → tarball path
-		tarballPath, err := p.deps.StorageMgr.EnsureImage(ctx, container.Image)
-		if err != nil {
-			return fmt.Errorf("ensuring image %s: %w", container.Image, err)
+		var tarballPath string
+		if filePath := pod.Annotations[annotationFile]; filePath != "" {
+			// Use local tarball directly (skip OCI pull)
+			tarballPath = filePath
+		} else {
+			var err error
+			tarballPath, err = p.deps.StorageMgr.EnsureImage(ctx, container.Image)
+			if err != nil {
+				return fmt.Errorf("ensuring image %s: %w", container.Image, err)
+			}
 		}
 
 		// 2. Allocate network (with DNS registration)

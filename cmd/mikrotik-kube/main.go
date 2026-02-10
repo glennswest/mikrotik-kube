@@ -49,6 +49,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/glenneth/mikrotik-kube/pkg/config"
+	"github.com/glenneth/mikrotik-kube/pkg/discovery"
 	"github.com/glenneth/mikrotik-kube/pkg/dns"
 	"github.com/glenneth/mikrotik-kube/pkg/network"
 	"github.com/glenneth/mikrotik-kube/pkg/provider"
@@ -128,6 +129,21 @@ func run(cmd *cobra.Command, args []string) error {
 	// ── DNS Client ──────────────────────────────────────────────────
 	dnsClient := dns.NewClient(log)
 	defer dnsClient.Close()
+
+	// ── Device Discovery ────────────────────────────────────────────
+	// Scan RouterOS for existing containers, networks, and MicroDNS
+	// instances. Enrich the network config with discovered DNS servers
+	// and auto-create network definitions for discovered subnets.
+	inv, err := discovery.Discover(ctx, rosClient, log)
+	if err != nil {
+		log.Warnw("device discovery failed, continuing with static config", "error", err)
+	} else {
+		cfg.Networks = discovery.EnrichNetworks(cfg.Networks, inv, "kube.gt.lo", log)
+		log.Infow("discovery enriched config",
+			"networks", len(cfg.Networks),
+			"containers_found", len(inv.Containers),
+		)
+	}
 
 	// ── Network Manager (IPAM + bridge/veth + DNS) ──────────────────
 	netMgr, err := network.NewManager(cfg.Networks, rosClient, dnsClient, log)

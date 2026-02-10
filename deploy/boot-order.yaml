@@ -1,89 +1,210 @@
-# Boot Order Manifest for mikrotik-kube
-# Defines which containers start at boot and in what order.
+# Boot order manifest for mikrotik-kube standalone reconciler on rose1.gw.lo
 #
-# This is the "systemd" equivalent — containers are started in priority
-# order (lowest first), respecting dependency chains.
+# Defines all containers managed by mikrotik-kube. The standalone reconciler
+# reads this file and ensures each pod exists on the RouterOS device.
 #
 # Annotations:
-#   mikrotik.io/depends-on: comma-separated container names
-#   mikrotik.io/boot-priority: integer (lower = starts first)
-#   mikrotik.io/health-check: http://:port/path or tcp://:port
+#   mikrotik.io/network       — target network name (default: first in config)
+#   mikrotik.io/boot-priority — lower = starts earlier (default: container index * 10)
+#   mikrotik.io/depends-on    — comma-separated container names to wait for
+#   mikrotik.io/file          — RouterOS tarball path (skips OCI image pull)
 #
-# Network: all containers get IPs from 192.168.200.0/24 on the
-# "containers" bridge. Images are pulled through the embedded
-# registry at localhost:5000.
+# Networks on rose1 (auto-discovered + static config):
+#   gt   — bridge-gt    192.168.200.0/24  dns: gt.lo   (192.168.200.199)
+#   g10  — bridge       192.168.10.0/24   dns: g10.lo  (192.168.10.199)
+#   g11  — bridge-boot  192.168.11.0/24   dns: g11.lo  (192.168.11.199)
+#   gw   — bridge-lan   192.168.1.0/24    dns: gw.lo   (192.168.1.199)
 
+# ── MicroDNS instances (priority 10 — start first) ─────────────────────────
+# DNS servers for each subnet. All other services depend on these.
+
+---
 apiVersion: v1
 kind: Pod
 metadata:
-  name: dns-server
-  namespace: default
+  name: mdns-gw
+  namespace: dns
   annotations:
+    mikrotik.io/network: gw
     mikrotik.io/boot-priority: "10"
+    mikrotik.io/file: "raid1/tarballs/microdns-arm64.tar"
 spec:
   restartPolicy: Always
   containers:
-    - name: pihole
-      image: localhost:5000/pihole:latest
-      ports:
-        - containerPort: 53
-        - containerPort: 80
-      env:
-        - name: TZ
-          value: "America/Chicago"
-        - name: WEBPASSWORD
-          value: "changeme"
+    - name: microdns
+      image: docker.io/library/microdns:arm64
       volumeMounts:
-        - name: pihole-data
-          mountPath: /etc/pihole
-      livenessProbe:
-        httpGet:
-          path: /admin/
-          port: 80
-        periodSeconds: 30
+        - name: config
+          mountPath: /etc/microdns
+        - name: data
+          mountPath: /data
 
 ---
 apiVersion: v1
 kind: Pod
 metadata:
-  name: monitoring
-  namespace: default
+  name: mdns-g10
+  namespace: dns
   annotations:
+    mikrotik.io/network: g10
+    mikrotik.io/boot-priority: "11"
+    mikrotik.io/file: "raid1/tarballs/microdns-arm64.tar"
+spec:
+  restartPolicy: Always
+  containers:
+    - name: microdns
+      image: docker.io/library/microdns:arm64
+      volumeMounts:
+        - name: config
+          mountPath: /etc/microdns
+        - name: data
+          mountPath: /data
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mdns-g11
+  namespace: dns
+  annotations:
+    mikrotik.io/network: g11
+    mikrotik.io/boot-priority: "12"
+    mikrotik.io/file: "raid1/tarballs/microdns-arm64.tar"
+spec:
+  restartPolicy: Always
+  containers:
+    - name: microdns
+      image: docker.io/library/microdns:arm64
+      volumeMounts:
+        - name: config
+          mountPath: /etc/microdns
+        - name: data
+          mountPath: /data
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mdns-gt
+  namespace: dns
+  annotations:
+    mikrotik.io/network: gt
+    mikrotik.io/boot-priority: "13"
+    mikrotik.io/file: "raid1/tarballs/microdns-arm64.tar"
+spec:
+  restartPolicy: Always
+  containers:
+    - name: microdns
+      image: docker.io/library/microdns:arm64
+      volumeMounts:
+        - name: config
+          mountPath: /etc/microdns
+        - name: data
+          mountPath: /data
+
+# ── Network manager (priority 20 — after DNS) ──────────────────────────────
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: network-gw
+  namespace: infra
+  annotations:
+    mikrotik.io/network: g10
     mikrotik.io/boot-priority: "20"
-    mikrotik.io/depends-on: "dns-server-pihole"
+    mikrotik.io/depends-on: "mdns-gw-microdns,mdns-g10-microdns"
+    mikrotik.io/file: "raid1/tarballs/netman.tar"
 spec:
   restartPolicy: Always
   containers:
-    - name: prometheus-node-exporter
-      image: localhost:5000/node-exporter:latest
-      ports:
-        - containerPort: 9100
-      livenessProbe:
-        httpGet:
-          path: /metrics
-          port: 9100
-        periodSeconds: 60
+    - name: netman
+      image: localhost/netman:latest
+      volumeMounts:
+        - name: data
+          mountPath: /data
+
+# ── PXE server (priority 30 — after network) ───────────────────────────────
 
 ---
 apiVersion: v1
 kind: Pod
 metadata:
-  name: wireguard
-  namespace: default
+  name: pxe-g10
+  namespace: infra
   annotations:
-    mikrotik.io/boot-priority: "5"  # Start before DNS
+    mikrotik.io/network: g10
+    mikrotik.io/boot-priority: "30"
+    mikrotik.io/depends-on: "network-gw-netman"
 spec:
   restartPolicy: Always
   containers:
-    - name: wg
-      image: localhost:5000/wireguard:latest
-      env:
-        - name: WG_CONFIG
-          value: "/config/wg0.conf"
+    - name: pxe
+      image: localhost/alpine-ssh:latest
       volumeMounts:
-        - name: wg-config
-          mountPath: /config
-      livenessProbe:
-        tcpSocket:
-          port: 51820
-        periodSeconds: 30
+        - name: root
+          mountPath: /
+        - name: tftpboot
+          mountPath: /tftpboot
+
+# ── Fast registry (priority 40) ────────────────────────────────────────────
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fastregistry-g10
+  namespace: infra
+  annotations:
+    mikrotik.io/network: g10
+    mikrotik.io/boot-priority: "40"
+spec:
+  restartPolicy: Always
+  containers:
+    - name: registry
+      image: localhost/fastregistry:latest
+      volumeMounts:
+        - name: config
+          mountPath: /etc/fastregistry
+        - name: data
+          mountPath: /data
+
+# ── Agent monitor (priority 50) ────────────────────────────────────────────
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: agentmonitor-g10
+  namespace: monitoring
+  annotations:
+    mikrotik.io/network: g10
+    mikrotik.io/boot-priority: "50"
+spec:
+  restartPolicy: Always
+  containers:
+    - name: monitor
+      image: localhost/agent-monitor:latest
+      command: ["/agent-monitor"]
+
+# ── Console server (priority 60) ───────────────────────────────────────────
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: console-g11
+  namespace: infra
+  annotations:
+    mikrotik.io/network: g11
+    mikrotik.io/boot-priority: "60"
+spec:
+  restartPolicy: Always
+  containers:
+    - name: console
+      image: localhost/console-server:latest
+      volumeMounts:
+        - name: config
+          mountPath: /etc/console
+        - name: data
+          mountPath: /data
