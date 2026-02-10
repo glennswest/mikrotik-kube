@@ -231,3 +231,96 @@ func TestBlobStoreOperations(t *testing.T) {
 		t.Error("expected blob to not exist")
 	}
 }
+
+func TestChunkedBlobUpload(t *testing.T) {
+	r := newTestRegistry(t)
+
+	// 1. POST to initiate upload
+	postReq := httptest.NewRequest(http.MethodPost, "/v2/myrepo/blobs/uploads/", nil)
+	postW := httptest.NewRecorder()
+	r.handleV2(postW, postReq)
+
+	if postW.Code != http.StatusAccepted {
+		t.Fatalf("POST expected 202, got %d: %s", postW.Code, postW.Body.String())
+	}
+
+	uploadUUID := postW.Header().Get("Docker-Upload-UUID")
+	if uploadUUID == "" {
+		t.Fatal("expected Docker-Upload-UUID header")
+	}
+	location := postW.Header().Get("Location")
+	if location == "" {
+		t.Fatal("expected Location header")
+	}
+
+	// 2. PATCH to send chunk data
+	chunkData := []byte("hello world chunk data")
+	patchReq := httptest.NewRequest(http.MethodPatch, location, bytes.NewReader(chunkData))
+	patchW := httptest.NewRecorder()
+	r.handleV2(patchW, patchReq)
+
+	if patchW.Code != http.StatusAccepted {
+		t.Fatalf("PATCH expected 202, got %d: %s", patchW.Code, patchW.Body.String())
+	}
+
+	// 3. PUT to finalize with digest
+	digest := computeTestDigest(chunkData)
+	putURL := location + "?digest=" + digest
+	putReq := httptest.NewRequest(http.MethodPut, putURL, nil)
+	putReq.ContentLength = 0
+	putW := httptest.NewRecorder()
+	r.handleV2(putW, putReq)
+
+	if putW.Code != http.StatusCreated {
+		t.Fatalf("PUT expected 201, got %d: %s", putW.Code, putW.Body.String())
+	}
+
+	// 4. GET the blob by digest
+	getReq := httptest.NewRequest(http.MethodGet, "/v2/myrepo/blobs/"+digest, nil)
+	getW := httptest.NewRecorder()
+	r.handleV2(getW, getReq)
+
+	if getW.Code != http.StatusOK {
+		t.Fatalf("GET expected 200, got %d", getW.Code)
+	}
+	body, _ := io.ReadAll(getW.Body)
+	if string(body) != string(chunkData) {
+		t.Errorf("blob data mismatch: got %q", string(body))
+	}
+}
+
+func TestMonolithicBlobUpload(t *testing.T) {
+	r := newTestRegistry(t)
+
+	// POST to initiate
+	postReq := httptest.NewRequest(http.MethodPost, "/v2/test/blobs/uploads/", nil)
+	postW := httptest.NewRecorder()
+	r.handleV2(postW, postReq)
+
+	location := postW.Header().Get("Location")
+
+	// PUT with body + digest (monolithic upload)
+	data := []byte("monolithic blob data")
+	digest := computeTestDigest(data)
+	putReq := httptest.NewRequest(http.MethodPut, location+"?digest="+digest, bytes.NewReader(data))
+	putReq.ContentLength = int64(len(data))
+	putW := httptest.NewRecorder()
+	r.handleV2(putW, putReq)
+
+	if putW.Code != http.StatusCreated {
+		t.Fatalf("PUT expected 201, got %d: %s", putW.Code, putW.Body.String())
+	}
+
+	// Verify blob exists
+	exists, size := r.store.HasBlob(digest)
+	if !exists {
+		t.Fatal("expected blob to exist after monolithic upload")
+	}
+	if size != int64(len(data)) {
+		t.Errorf("expected size %d, got %d", len(data), size)
+	}
+}
+
+func computeTestDigest(data []byte) string {
+	return computeDigest(data)
+}

@@ -25,9 +25,10 @@ import (
 // tarball caching on RouterOS, and garbage collection of unused images
 // and orphaned volumes.
 type Manager struct {
-	cfg config.StorageConfig
-	ros *routeros.Client
-	log *zap.SugaredLogger
+	cfg            config.StorageConfig
+	registryCfg    config.RegistryConfig
+	ros            *routeros.Client
+	log            *zap.SugaredLogger
 
 	mu       sync.Mutex
 	images   map[string]*CachedImage   // image ref -> cache entry
@@ -53,13 +54,14 @@ type ProvisionedVolume struct {
 }
 
 // NewManager initializes the storage manager.
-func NewManager(cfg config.StorageConfig, ros *routeros.Client, log *zap.SugaredLogger) (*Manager, error) {
+func NewManager(cfg config.StorageConfig, registryCfg config.RegistryConfig, ros *routeros.Client, log *zap.SugaredLogger) (*Manager, error) {
 	return &Manager{
-		cfg:     cfg,
-		ros:     ros,
-		log:     log,
-		images:  make(map[string]*CachedImage),
-		volumes: make(map[string]*ProvisionedVolume),
+		cfg:         cfg,
+		registryCfg: registryCfg,
+		ros:         ros,
+		log:         log,
+		images:      make(map[string]*CachedImage),
+		volumes:     make(map[string]*ProvisionedVolume),
 	}, nil
 }
 
@@ -112,7 +114,7 @@ func (m *Manager) EnsureImage(ctx context.Context, imageRef string) (string, err
 func (m *Manager) pullAndUpload(ctx context.Context, imageRef, tarballPath string) error {
 	// Determine crane options — allow insecure for localhost registry
 	opts := []crane.Option{crane.WithContext(ctx)}
-	if isLocalRegistry(imageRef) {
+	if m.isLocalRegistry(imageRef) {
 		opts = append(opts, crane.Insecure)
 	} else {
 		opts = append(opts, crane.WithAuthFromKeychain(authn.DefaultKeychain))
@@ -158,14 +160,23 @@ func imageSize(img v1.Image) int64 {
 	return total
 }
 
-// isLocalRegistry returns true if the image ref points to the embedded registry.
-func isLocalRegistry(imageRef string) bool {
+// isLocalRegistry returns true if the image ref points to the embedded registry
+// (localhost or any configured local address).
+func (m *Manager) isLocalRegistry(imageRef string) bool {
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
 		return strings.HasPrefix(imageRef, "localhost:")
 	}
 	registry := ref.Context().RegistryStr()
-	return registry == "localhost:5000" || strings.HasPrefix(registry, "localhost:")
+	if registry == "localhost:5000" || strings.HasPrefix(registry, "localhost:") {
+		return true
+	}
+	for _, addr := range m.registryCfg.LocalAddresses {
+		if registry == addr {
+			return true
+		}
+	}
+	return false
 }
 
 // tarballSize reads through a tar archive and sums the file sizes.

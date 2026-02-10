@@ -18,7 +18,7 @@ SSH_OPTS="-o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
 SSH="ssh ${SSH_OPTS} ${SSH_USER}@${DEVICE}"
 
 # ── Configuration ────────────────────────────────────────────────────────────
-BRIDGE_NAME="containers"
+BRIDGE_NAME="bridge-gt"
 BRIDGE_ADDR="192.168.200.1/24"
 MGMT_VETH="veth-mkube"
 MGMT_IP="192.168.200.2/24"
@@ -80,14 +80,17 @@ if [ "${CONTAINER_MODE}" != "yes" ]; then
 fi
 echo "  ✓ Container mode enabled"
 
-# ── Step 3: Create bridge if needed ──────────────────────────────────────────
+# ── Step 3: Verify bridge exists ─────────────────────────────────────────────
 echo ""
-echo "▸ Configuring network bridge '${BRIDGE_NAME}'..."
+echo "▸ Verifying network bridge '${BRIDGE_NAME}'..."
 
-ros "/interface/bridge/add name=${BRIDGE_NAME} comment=\"Managed by mikrotik-kube\"" >/dev/null 2>&1 && echo "  ✓ Bridge created" || echo "  ✓ Bridge already exists"
-
-# Add IP to bridge if not present
-ros "/ip/address/add address=${BRIDGE_ADDR} interface=${BRIDGE_NAME} comment=\"mikrotik-kube gateway\"" >/dev/null 2>&1 && echo "  ✓ Address added" || echo "  ✓ Address already configured"
+# bridge-gt and its .1 address are managed by RouterOS — do not create or modify.
+BRIDGE_EXISTS=$(ros "/interface/bridge/print count-only where name=${BRIDGE_NAME}")
+if [ "${BRIDGE_EXISTS}" = "0" ]; then
+    echo "  ✗ Bridge '${BRIDGE_NAME}' does not exist. Create it in RouterOS first."
+    exit 1
+fi
+echo "  ✓ Bridge '${BRIDGE_NAME}' exists"
 
 # ── Step 4: Create management veth ───────────────────────────────────────────
 echo ""

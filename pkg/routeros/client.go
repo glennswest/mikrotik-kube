@@ -22,38 +22,50 @@ type Client struct {
 	httpClient *http.Client
 }
 
-// Container represents a RouterOS container as returned by /rest/container/print.
+// Container represents a RouterOS container as returned by /rest/container.
 type Container struct {
-	ID         string            `json:".id"`
-	Name       string            `json:"name"`
-	Image      string            `json:"file"` // tarball path on RouterOS
-	Interface  string            `json:"interface"`
-	RootDir    string            `json:"root-dir"`
-	Mounts     []string          `json:"mounts,omitempty"`
-	Envs       map[string]string `json:"envs,omitempty"`
-	Cmd        string            `json:"cmd,omitempty"`
-	Status     string            `json:"status"`
-	Logging    bool              `json:"logging"`
-	WorkDir    string            `json:"workdir,omitempty"`
-	Hostname   string            `json:"hostname,omitempty"`
-	DNS        string            `json:"dns,omitempty"`
-	StartOnBoot bool            `json:"start-on-boot"`
+	ID          string `json:".id"`
+	Name        string `json:"name"`
+	Tag         string `json:"tag"`          // image tag, e.g. "docker.io/library/microdns:arm64"
+	Image       string `json:"file"`         // tarball path on RouterOS
+	Interface   string `json:"interface"`
+	RootDir     string `json:"root-dir"`
+	MountLists  string `json:"mountlists"`
+	Cmd         string `json:"cmd,omitempty"`
+	Entrypoint  string `json:"entrypoint,omitempty"`
+	Running     string `json:"running,omitempty"`  // "true" if running
+	Stopped     string `json:"stopped,omitempty"`  // "true" if stopped
+	Logging     string `json:"logging"`
+	WorkDir     string `json:"workdir,omitempty"`
+	Hostname    string `json:"hostname,omitempty"`
+	DNS         string `json:"dns,omitempty"`
+	StartOnBoot string `json:"start-on-boot"`
+}
+
+// IsRunning returns true if the container is currently running.
+func (c Container) IsRunning() bool {
+	return c.Running == "true"
+}
+
+// IsStopped returns true if the container is stopped.
+func (c Container) IsStopped() bool {
+	return c.Stopped == "true"
 }
 
 // ContainerSpec is used to create/update a container.
 type ContainerSpec struct {
-	Name        string            `json:"name"`
-	File        string            `json:"file"`        // tarball path
-	Interface   string            `json:"interface"`
-	RootDir     string            `json:"root-dir"`
-	Mounts      []string          `json:"mounts,omitempty"`
-	Envs        map[string]string `json:"envs,omitempty"`
-	Cmd         string            `json:"cmd,omitempty"`
-	WorkDir     string            `json:"workdir,omitempty"`
-	Hostname    string            `json:"hostname,omitempty"`
-	DNS         string            `json:"dns,omitempty"`
-	Logging     bool              `json:"logging"`
-	StartOnBoot bool              `json:"start-on-boot"`
+	Name        string `json:"name"`
+	File        string `json:"file"`        // tarball path
+	Interface   string `json:"interface"`
+	RootDir     string `json:"root-dir"`
+	MountLists  string `json:"mountlists,omitempty"`
+	Cmd         string `json:"cmd,omitempty"`
+	Entrypoint  string `json:"entrypoint,omitempty"`
+	WorkDir     string `json:"workdir,omitempty"`
+	Hostname    string `json:"hostname,omitempty"`
+	DNS         string `json:"dns,omitempty"`
+	Logging     string `json:"logging"`
+	StartOnBoot string `json:"start-on-boot"`
 }
 
 // NetworkInterface represents a veth interface for containers.
@@ -95,7 +107,7 @@ func (c *Client) Close() error {
 // ListContainers returns all containers on the RouterOS device.
 func (c *Client) ListContainers(ctx context.Context) ([]Container, error) {
 	var containers []Container
-	err := c.restGET(ctx, "/container/print", &containers)
+	err := c.restGET(ctx, "/container", &containers)
 	return containers, err
 }
 
@@ -162,7 +174,7 @@ func (c *Client) AddBridgePort(ctx context.Context, bridge, iface string) error 
 // ListVeths returns all veth interfaces.
 func (c *Client) ListVeths(ctx context.Context) ([]NetworkInterface, error) {
 	var veths []NetworkInterface
-	err := c.restGET(ctx, "/interface/veth/print", &veths)
+	err := c.restGET(ctx, "/interface/veth", &veths)
 	return veths, err
 }
 
@@ -204,7 +216,7 @@ func (c *Client) UploadFile(ctx context.Context, remotePath string, data io.Read
 func (c *Client) ListFiles(ctx context.Context, path string) ([]map[string]interface{}, error) {
 	var files []map[string]interface{}
 	err := c.restPOST(ctx, "/file/print", map[string]string{
-		"?name": path,
+		".query": fmt.Sprintf("name=%s", path),
 	}, &files)
 	return files, err
 }
@@ -228,7 +240,7 @@ type BridgePort struct {
 // ListBridgePorts returns all bridge port assignments.
 func (c *Client) ListBridgePorts(ctx context.Context) ([]BridgePort, error) {
 	var ports []BridgePort
-	err := c.restGET(ctx, "/interface/bridge/port/print", &ports)
+	err := c.restGET(ctx, "/interface/bridge/port", &ports)
 	return ports, err
 }
 
@@ -238,10 +250,10 @@ type Bridge struct {
 	Name string `json:"name"`
 }
 
-// ListBridges(ctx) returns all bridge interfaces.
+// ListBridges returns all bridge interfaces.
 func (c *Client) ListBridges(ctx context.Context) ([]Bridge, error) {
 	var bridges []Bridge
-	err := c.restGET(ctx, "/interface/bridge/print", &bridges)
+	err := c.restGET(ctx, "/interface/bridge", &bridges)
 	return bridges, err
 }
 
@@ -258,7 +270,7 @@ type IPAddress struct {
 // ListIPAddresses returns all IP address assignments.
 func (c *Client) ListIPAddresses(ctx context.Context) ([]IPAddress, error) {
 	var addrs []IPAddress
-	err := c.restGET(ctx, "/ip/address/print", &addrs)
+	err := c.restGET(ctx, "/ip/address", &addrs)
 	return addrs, err
 }
 
@@ -279,15 +291,12 @@ type SystemResource struct {
 
 // GetSystemResource returns system resource information.
 func (c *Client) GetSystemResource(ctx context.Context) (*SystemResource, error) {
-	var resources []SystemResource
-	err := c.restGET(ctx, "/system/resource/print", &resources)
+	var resource SystemResource
+	err := c.restGET(ctx, "/system/resource", &resource)
 	if err != nil {
 		return nil, err
 	}
-	if len(resources) == 0 {
-		return nil, fmt.Errorf("no system resource data")
-	}
-	return &resources[0], nil
+	return &resource, nil
 }
 
 // ─── Log Operations ─────────────────────────────────────────────────────────
@@ -303,7 +312,7 @@ type LogEntry struct {
 // GetLogs returns log entries. Use topic filter like "container" to narrow results.
 func (c *Client) GetLogs(ctx context.Context) ([]LogEntry, error) {
 	var logs []LogEntry
-	err := c.restGET(ctx, "/log/print", &logs)
+	err := c.restGET(ctx, "/log", &logs)
 	return logs, err
 }
 

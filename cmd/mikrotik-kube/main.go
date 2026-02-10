@@ -44,6 +44,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -56,7 +57,7 @@ import (
 	"github.com/glenneth/mikrotik-kube/pkg/registry"
 	"github.com/glenneth/mikrotik-kube/pkg/routeros"
 	"github.com/glenneth/mikrotik-kube/pkg/storage"
-	"github.com/glenneth/mikrotik-kube/pkg/systemd"
+	"github.com/glenneth/mikrotik-kube/pkg/lifecycle"
 )
 
 var (
@@ -134,9 +135,20 @@ func run(cmd *cobra.Command, args []string) error {
 	// Scan RouterOS for existing containers, networks, and MicroDNS
 	// instances. Enrich the network config with discovered DNS servers
 	// and auto-create network definitions for discovered subnets.
-	inv, err := discovery.Discover(ctx, rosClient, log)
+	// Retry a few times since the veth network may not be ready immediately.
+	var inv *discovery.Inventory
+	for attempt := 1; attempt <= 3; attempt++ {
+		inv, err = discovery.Discover(ctx, rosClient, log)
+		if err == nil {
+			break
+		}
+		log.Warnw("discovery attempt failed", "attempt", attempt, "error", err)
+		if attempt < 3 {
+			time.Sleep(5 * time.Second)
+		}
+	}
 	if err != nil {
-		log.Warnw("device discovery failed, continuing with static config", "error", err)
+		log.Warnw("device discovery failed after retries, continuing with static config", "error", err)
 	} else {
 		cfg.Networks = discovery.EnrichNetworks(cfg.Networks, inv, "kube.gt.lo", log)
 		log.Infow("discovery enriched config",
@@ -156,17 +168,46 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	// ── Storage Manager ─────────────────────────────────────────────
-	storageMgr, err := storage.NewManager(cfg.Storage, rosClient, log)
+	storageMgr, err := storage.NewManager(cfg.Storage, cfg.Registry, rosClient, log)
 	if err != nil {
 		return fmt.Errorf("initializing storage manager: %w", err)
 	}
 	go storageMgr.RunGarbageCollector(ctx)
 	log.Info("storage manager ready, GC started")
 
-	// ── Systemd Manager (boot ordering + watchdog) ──────────────────
-	sysdMgr := systemd.NewManager(cfg.Systemd, rosClient, log)
-	go sysdMgr.RunWatchdog(ctx)
-	log.Info("systemd manager ready")
+	// ── Lifecycle Manager (boot ordering + probes + keepalive) ──────
+	lcMgr := lifecycle.NewManager(cfg.Lifecycle, rosClient, log)
+
+	// Register all discovered start-on-boot containers for keepalive + auto-probes
+	if inv != nil {
+		units := discovery.BuildLifecycleUnits(inv)
+		lcMgr.SyncDiscoveredContainers(units)
+		log.Infow("registered discovered containers for keepalive", "count", len(units))
+	}
+
+	go lcMgr.RunWatchdog(ctx)
+
+	// Periodic re-discovery to pick up new containers
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				newInv, err := discovery.Discover(ctx, rosClient, log)
+				if err != nil {
+					log.Warnw("periodic re-discovery failed", "error", err)
+					continue
+				}
+				units := discovery.BuildLifecycleUnits(newInv)
+				lcMgr.SyncDiscoveredContainers(units)
+			}
+		}
+	}()
+
+	log.Info("lifecycle manager ready")
 
 	// ── Embedded Registry (optional) ────────────────────────────────
 	if cfg.Registry.Enabled {
@@ -180,12 +221,12 @@ func run(cmd *cobra.Command, args []string) error {
 
 	// ── Provider + Virtual Kubelet ──────────────────────────────────
 	p, err := provider.NewMikroTikProvider(provider.Deps{
-		Config:     cfg,
-		ROS:        rosClient,
-		NetworkMgr: netMgr,
-		StorageMgr: storageMgr,
-		SystemdMgr: sysdMgr,
-		Logger:     log,
+		Config:       cfg,
+		ROS:          rosClient,
+		NetworkMgr:   netMgr,
+		StorageMgr:   storageMgr,
+		LifecycleMgr: lcMgr,
+		Logger:       log,
 	})
 	if err != nil {
 		return fmt.Errorf("creating provider: %w", err)

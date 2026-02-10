@@ -24,7 +24,7 @@ import (
 	"github.com/glenneth/mikrotik-kube/pkg/network"
 	"github.com/glenneth/mikrotik-kube/pkg/routeros"
 	"github.com/glenneth/mikrotik-kube/pkg/storage"
-	"github.com/glenneth/mikrotik-kube/pkg/systemd"
+	"github.com/glenneth/mikrotik-kube/pkg/lifecycle"
 )
 
 const (
@@ -40,7 +40,7 @@ type Deps struct {
 	ROS        *routeros.Client
 	NetworkMgr *network.Manager
 	StorageMgr *storage.Manager
-	SystemdMgr *systemd.Manager
+	LifecycleMgr *lifecycle.Manager
 	Logger     *zap.SugaredLogger
 }
 
@@ -106,24 +106,18 @@ func (p *MikroTikProvider) CreatePod(ctx context.Context, pod *corev1.Pod) error
 		}
 		log.Infow("allocated network", "veth", vethName, "ip", ip, "gateway", gw, "dns", dnsServer)
 
-		// 3. Create volume mounts
-		var mounts []string
+		// 3. Provision volumes (mount lists are managed via RouterOS mounts API)
 		for _, vm := range container.VolumeMounts {
-			hostPath, err := p.deps.StorageMgr.ProvisionVolume(ctx, name, vm.Name, vm.MountPath)
-			if err != nil {
+			if _, err := p.deps.StorageMgr.ProvisionVolume(ctx, name, vm.Name, vm.MountPath); err != nil {
 				return fmt.Errorf("provisioning volume %s: %w", vm.Name, err)
 			}
-			mounts = append(mounts, fmt.Sprintf("%s:%s", hostPath, vm.MountPath))
 		}
 
-		// 4. Build environment variables
-		envs := make(map[string]string)
-		for _, env := range container.Env {
-			envs[env.Name] = env.Value
+		// 4. Determine boot behavior
+		startOnBoot := "false"
+		if pod.Spec.RestartPolicy == corev1.RestartPolicyAlways {
+			startOnBoot = "true"
 		}
-
-		// 5. Determine boot behavior
-		startOnBoot := pod.Spec.RestartPolicy == corev1.RestartPolicyAlways
 
 		// 6. Create the RouterOS container
 		spec := routeros.ContainerSpec{
@@ -131,12 +125,10 @@ func (p *MikroTikProvider) CreatePod(ctx context.Context, pod *corev1.Pod) error
 			File:        tarballPath,
 			Interface:   vethName,
 			RootDir:     fmt.Sprintf("%s/%s", p.deps.Config.Storage.BasePath, name),
-			Mounts:      mounts,
-			Envs:        envs,
 			Cmd:         strings.Join(container.Command, " "),
 			Hostname:    pod.Name,
 			DNS:         dnsServer,
-			Logging:     true,
+			Logging:     "true",
 			StartOnBoot: startOnBoot,
 		}
 
@@ -153,15 +145,19 @@ func (p *MikroTikProvider) CreatePod(ctx context.Context, pod *corev1.Pod) error
 			return fmt.Errorf("starting container %s: %w", name, err)
 		}
 
-		// 8. Register with systemd manager for boot ordering / health checks
-		if startOnBoot {
-			p.deps.SystemdMgr.Register(name, systemd.ContainerUnit{
-				Name:         name,
-				ContainerID:  ct.ID,
+		// 8. Register with lifecycle manager for boot ordering / health probes
+		if startOnBoot == "true" {
+			p.deps.LifecycleMgr.Register(name, lifecycle.ContainerUnit{
+				Name:          name,
+				ContainerID:   ct.ID,
+				ContainerIP:   ip,
 				RestartPolicy: string(pod.Spec.RestartPolicy),
-				HealthCheck:  extractHealthCheck(container),
-				DependsOn:    extractDependencies(pod),
-				Priority:     extractPriority(pod, i),
+				StartOnBoot:   true,
+				Managed:       true,
+				Probes:        extractProbes(container),
+				HealthCheck:   extractHealthCheck(container),
+				DependsOn:     extractDependencies(pod),
+				Priority:      extractPriority(pod, i),
 			})
 		}
 
@@ -203,7 +199,7 @@ func (p *MikroTikProvider) DeletePod(ctx context.Context, pod *corev1.Pod) error
 			continue
 		}
 
-		if ct.Status == "running" {
+		if ct.IsRunning() {
 			if err := p.deps.ROS.StopContainer(ctx, ct.ID); err != nil {
 				log.Warnw("error stopping container", "name", name, "error", err)
 			}
@@ -220,7 +216,7 @@ func (p *MikroTikProvider) DeletePod(ctx context.Context, pod *corev1.Pod) error
 		}
 
 		// Unregister from systemd manager
-		p.deps.SystemdMgr.Unregister(name)
+		p.deps.LifecycleMgr.Unregister(name)
 
 		// Note: storage cleanup is deferred to GC
 		log.Infow("container removed", "name", name)
@@ -269,25 +265,25 @@ func (p *MikroTikProvider) GetPodStatus(ctx context.Context, namespace, name str
 			}
 			allRunning = false
 		} else {
-			switch ct.Status {
-			case "running":
-				cs.Ready = true
+			switch {
+			case ct.IsRunning():
+				cs.Ready = p.deps.LifecycleMgr.GetUnitReady(rosName)
 				cs.State = corev1.ContainerState{
 					Running: &corev1.ContainerStateRunning{
 						StartedAt: metav1.Now(),
 					},
 				}
-			case "stopped", "error":
+			case ct.IsStopped():
 				cs.State = corev1.ContainerState{
 					Terminated: &corev1.ContainerStateTerminated{
-						Reason: ct.Status,
+						Reason: "Stopped",
 					},
 				}
 				allRunning = false
 			default:
 				cs.State = corev1.ContainerState{
 					Waiting: &corev1.ContainerStateWaiting{
-						Reason: ct.Status,
+						Reason: "Unknown",
 					},
 				}
 				allRunning = false
@@ -398,7 +394,7 @@ func (p *MikroTikProvider) reconcile(ctx context.Context) error {
 	log := p.deps.Logger
 
 	// 1. Load desired pods from boot manifest
-	desiredPods, err := loadPodManifests(p.deps.Config.Systemd.BootManifestPath)
+	desiredPods, err := loadPodManifests(p.deps.Config.Lifecycle.BootManifestPath)
 	if err != nil {
 		return fmt.Errorf("loading pod manifests: %w", err)
 	}
@@ -413,15 +409,7 @@ func (p *MikroTikProvider) reconcile(ctx context.Context) error {
 		actualByName[c.Name] = c
 	}
 
-	// 3. Build set of desired container names
-	desiredNames := make(map[string]bool)
-	for _, pod := range desiredPods {
-		for _, c := range pod.Spec.Containers {
-			desiredNames[sanitizeName(pod, c.Name)] = true
-		}
-	}
-
-	// 4. Create missing containers
+	// 3. Create missing containers
 	for _, pod := range desiredPods {
 		key := podKey(pod)
 		if _, tracked := p.pods[key]; tracked {
@@ -446,19 +434,6 @@ func (p *MikroTikProvider) reconcile(ctx context.Context) error {
 		} else {
 			// Track already-existing pods
 			p.pods[key] = pod.DeepCopy()
-		}
-	}
-
-	// 5. Remove orphaned containers (on RouterOS but not in desired manifests)
-	for name, ct := range actualByName {
-		if !desiredNames[name] {
-			log.Infow("removing orphaned container", "name", name, "id", ct.ID)
-			if ct.Status == "running" {
-				_ = p.deps.ROS.StopContainer(ctx, ct.ID)
-			}
-			if err := p.deps.ROS.RemoveContainer(ctx, ct.ID); err != nil {
-				log.Warnw("failed to remove orphan", "name", name, "error", err)
-			}
 		}
 	}
 
@@ -725,9 +700,9 @@ func boolToConditionStatus(b bool) corev1.ConditionStatus {
 	return corev1.ConditionFalse
 }
 
-func extractHealthCheck(c corev1.Container) *systemd.HealthCheck {
+func extractHealthCheck(c corev1.Container) *lifecycle.HealthCheck {
 	if c.LivenessProbe != nil && c.LivenessProbe.HTTPGet != nil {
-		return &systemd.HealthCheck{
+		return &lifecycle.HealthCheck{
 			Type:     "http",
 			Path:     c.LivenessProbe.HTTPGet.Path,
 			Port:     int(c.LivenessProbe.HTTPGet.Port.IntVal),
@@ -735,12 +710,57 @@ func extractHealthCheck(c corev1.Container) *systemd.HealthCheck {
 		}
 	}
 	if c.LivenessProbe != nil && c.LivenessProbe.TCPSocket != nil {
-		return &systemd.HealthCheck{
+		return &lifecycle.HealthCheck{
 			Type: "tcp",
 			Port: int(c.LivenessProbe.TCPSocket.Port.IntVal),
 		}
 	}
 	return nil
+}
+
+// extractProbes converts K8s probe specs into lifecycle ProbeSet.
+func extractProbes(c corev1.Container) *lifecycle.ProbeSet {
+	ps := &lifecycle.ProbeSet{
+		Startup:   probeToConfig(c.StartupProbe),
+		Liveness:  probeToConfig(c.LivenessProbe),
+		Readiness: probeToConfig(c.ReadinessProbe),
+	}
+	if ps.Startup == nil && ps.Liveness == nil && ps.Readiness == nil {
+		return nil
+	}
+	return ps
+}
+
+// probeToConfig converts a single K8s probe to our ProbeConfig.
+func probeToConfig(probe *corev1.Probe) *lifecycle.ProbeConfig {
+	if probe == nil {
+		return nil
+	}
+
+	pc := &lifecycle.ProbeConfig{
+		InitialDelaySeconds: int(probe.InitialDelaySeconds),
+		PeriodSeconds:       int(probe.PeriodSeconds),
+		TimeoutSeconds:      int(probe.TimeoutSeconds),
+		FailureThreshold:    int(probe.FailureThreshold),
+		SuccessThreshold:    int(probe.SuccessThreshold),
+	}
+
+	switch {
+	case probe.HTTPGet != nil:
+		pc.Type = "http"
+		pc.Path = probe.HTTPGet.Path
+		pc.Port = int(probe.HTTPGet.Port.IntVal)
+	case probe.TCPSocket != nil:
+		pc.Type = "tcp"
+		pc.Port = int(probe.TCPSocket.Port.IntVal)
+	case probe.Exec != nil:
+		pc.Type = "exec"
+		pc.Command = probe.Exec.Command
+	default:
+		return nil
+	}
+
+	return pc
 }
 
 func extractDependencies(pod *corev1.Pod) []string {

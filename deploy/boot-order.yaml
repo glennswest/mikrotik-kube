@@ -33,6 +33,23 @@ spec:
   containers:
     - name: microdns
       image: docker.io/library/microdns:arm64
+      startupProbe:
+        httpGet:
+          path: /api/v1/zones
+          port: 8080
+        initialDelaySeconds: 5
+        periodSeconds: 3
+        failureThreshold: 10
+      livenessProbe:
+        httpGet:
+          path: /api/v1/zones
+          port: 8080
+        periodSeconds: 30
+        failureThreshold: 3
+      readinessProbe:
+        tcpSocket:
+          port: 53
+        periodSeconds: 10
       volumeMounts:
         - name: config
           mountPath: /etc/microdns

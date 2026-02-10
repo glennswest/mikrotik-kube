@@ -25,12 +25,12 @@ func newTestClient(t *testing.T, handler http.Handler) (*Client, *httptest.Serve
 
 func TestListContainers(t *testing.T) {
 	containers := []Container{
-		{ID: "*1", Name: "test-container", Status: "running"},
-		{ID: "*2", Name: "another", Status: "stopped"},
+		{ID: "*1", Name: "test-container", Running: "true"},
+		{ID: "*2", Name: "another", Stopped: "true"},
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/container/print" {
+		if r.URL.Path != "/container" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		if r.Method != http.MethodGet {
@@ -57,8 +57,8 @@ func TestListContainers(t *testing.T) {
 
 func TestGetContainer(t *testing.T) {
 	containers := []Container{
-		{ID: "*1", Name: "target", Status: "running"},
-		{ID: "*2", Name: "other", Status: "stopped"},
+		{ID: "*1", Name: "target", Running: "true"},
+		{ID: "*2", Name: "other", Stopped: "true"},
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

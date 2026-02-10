@@ -1,6 +1,8 @@
 package registry
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -8,6 +10,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 // BlobStore provides on-disk storage for OCI blobs and manifests.
@@ -21,9 +26,19 @@ import (
 //	    <repo>/
 //	      <tag or digest>.json  — manifest data
 //	      <tag or digest>.type  — content-type metadata
+// uploadSession tracks an in-progress chunked blob upload.
+type uploadSession struct {
+	UUID      string
+	Repo      string
+	TempFile  *os.File
+	Size      int64
+	CreatedAt time.Time
+}
+
 type BlobStore struct {
-	root string
-	mu   sync.RWMutex
+	root    string
+	mu      sync.RWMutex
+	uploads map[string]*uploadSession // uuid -> session
 }
 
 // NewBlobStore creates a new on-disk blob store at the given root directory.
@@ -31,12 +46,16 @@ func NewBlobStore(root string) (*BlobStore, error) {
 	for _, dir := range []string{
 		filepath.Join(root, "blobs", "sha256"),
 		filepath.Join(root, "manifests"),
+		filepath.Join(root, "uploads"),
 	} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return nil, fmt.Errorf("creating store directory %s: %w", dir, err)
 		}
 	}
-	return &BlobStore{root: root}, nil
+	return &BlobStore{
+		root:    root,
+		uploads: make(map[string]*uploadSession),
+	}, nil
 }
 
 // GetBlob returns the raw data for a blob by its digest (e.g. "sha256:abc123").
@@ -155,6 +174,136 @@ func (s *BlobStore) ListRepositories() []string {
 	sort.Strings(repos)
 	return repos
 }
+
+// ─── Chunked Upload ─────────────────────────────────────────────────────────
+
+// InitiateUpload starts a new chunked blob upload session and returns its UUID.
+func (s *BlobStore) InitiateUpload(repo string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id := uuid.New().String()
+	tmpPath := filepath.Join(s.root, "uploads", id)
+	f, err := os.Create(tmpPath)
+	if err != nil {
+		return "", fmt.Errorf("creating upload temp file: %w", err)
+	}
+
+	s.uploads[id] = &uploadSession{
+		UUID:      id,
+		Repo:      repo,
+		TempFile:  f,
+		CreatedAt: time.Now(),
+	}
+	return id, nil
+}
+
+// AppendUpload appends data to an in-progress upload session.
+// Returns the current total size (for Content-Range responses).
+func (s *BlobStore) AppendUpload(id string, r io.Reader) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	session, ok := s.uploads[id]
+	if !ok {
+		return 0, fmt.Errorf("upload %s not found", id)
+	}
+
+	n, err := io.Copy(session.TempFile, r)
+	if err != nil {
+		return session.Size, fmt.Errorf("appending to upload: %w", err)
+	}
+	session.Size += n
+	return session.Size, nil
+}
+
+// FinalizeUpload completes an upload, verifies the digest, and moves the blob
+// into permanent storage. The temp file is cleaned up.
+func (s *BlobStore) FinalizeUpload(id, digest string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	session, ok := s.uploads[id]
+	if !ok {
+		return fmt.Errorf("upload %s not found", id)
+	}
+
+	// Close the temp file so we can read it
+	session.TempFile.Close()
+	tmpPath := filepath.Join(s.root, "uploads", id)
+
+	// Verify digest
+	data, err := os.ReadFile(tmpPath)
+	if err != nil {
+		os.Remove(tmpPath)
+		delete(s.uploads, id)
+		return fmt.Errorf("reading upload data: %w", err)
+	}
+
+	if digest != "" {
+		computed := computeDigest(data)
+		if computed != digest {
+			os.Remove(tmpPath)
+			delete(s.uploads, id)
+			return fmt.Errorf("digest mismatch: expected %s, got %s", digest, computed)
+		}
+	}
+
+	// Move to blob storage
+	blobPath := s.blobPath(digest)
+	if err := os.MkdirAll(filepath.Dir(blobPath), 0755); err != nil {
+		os.Remove(tmpPath)
+		delete(s.uploads, id)
+		return err
+	}
+
+	if err := os.Rename(tmpPath, blobPath); err != nil {
+		// Cross-device fallback: copy + remove
+		if err := os.WriteFile(blobPath, data, 0644); err != nil {
+			os.Remove(tmpPath)
+			delete(s.uploads, id)
+			return err
+		}
+		os.Remove(tmpPath)
+	}
+
+	delete(s.uploads, id)
+	return nil
+}
+
+// GetUploadSize returns the current size of an in-progress upload.
+func (s *BlobStore) GetUploadSize(id string) (int64, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	session, ok := s.uploads[id]
+	if !ok {
+		return 0, false
+	}
+	return session.Size, true
+}
+
+// CleanupStalUploads removes upload sessions older than maxAge.
+func (s *BlobStore) CleanupStaleUploads(maxAge time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	for id, session := range s.uploads {
+		if now.Sub(session.CreatedAt) > maxAge {
+			session.TempFile.Close()
+			os.Remove(filepath.Join(s.root, "uploads", id))
+			delete(s.uploads, id)
+		}
+	}
+}
+
+func computeDigest(data []byte) string {
+	h := sha256.Sum256(data)
+	return "sha256:" + hex.EncodeToString(h[:])
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 func (s *BlobStore) blobPath(digest string) string {
 	// digest format: "sha256:hexhexhex..."

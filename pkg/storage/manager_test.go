@@ -140,7 +140,7 @@ func TestNewManager(t *testing.T) {
 	mgr, err := NewManager(config.StorageConfig{
 		BasePath:     "/data",
 		TarballCache: "/cache",
-	}, nil, nil)
+	}, config.RegistryConfig{}, nil, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

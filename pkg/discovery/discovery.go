@@ -13,6 +13,7 @@ import (
 
 	"github.com/glenneth/mikrotik-kube/pkg/config"
 	"github.com/glenneth/mikrotik-kube/pkg/dns"
+	"github.com/glenneth/mikrotik-kube/pkg/lifecycle"
 	"github.com/glenneth/mikrotik-kube/pkg/routeros"
 )
 
@@ -124,15 +125,19 @@ func Discover(ctx context.Context, ros *routeros.Client, log *zap.SugaredLogger)
 	// Build discovered containers
 	var discovered []Container
 	for _, ct := range containers {
+		status := "stopped"
+		if ct.IsRunning() {
+			status = "running"
+		}
 		dc := Container{
 			Name:      ct.Name,
-			Status:    ct.Status,
+			Status:    status,
 			Interface: ct.Interface,
 			RootDir:   ct.RootDir,
 			Image:     ct.Image,
 			Hostname:  ct.Hostname,
 			DNS:       ct.DNS,
-			StartBoot: ct.StartOnBoot,
+			StartBoot: ct.StartOnBoot == "true",
 		}
 
 		// Map container → veth → IP/bridge
@@ -334,6 +339,56 @@ func EnrichNetworks(networks []config.NetworkDef, inv *Inventory, selfName strin
 	}
 
 	return result
+}
+
+// InferProbes generates default probes from a discovered container's service info.
+// MicroDNS instances get an HTTP liveness probe; other containers get no auto-probes.
+func InferProbes(ct Container) *lifecycle.ProbeSet {
+	if ct.IsDNS && ct.IP != "" {
+		return &lifecycle.ProbeSet{
+			Liveness: &lifecycle.ProbeConfig{
+				Type:             "http",
+				Path:             "/api/v1/zones",
+				Port:             8080,
+				PeriodSeconds:    30,
+				TimeoutSeconds:   3,
+				FailureThreshold: 3,
+				SuccessThreshold: 1,
+			},
+			Startup: &lifecycle.ProbeConfig{
+				Type:                "http",
+				Path:                "/api/v1/zones",
+				Port:                8080,
+				InitialDelaySeconds: 5,
+				PeriodSeconds:       3,
+				TimeoutSeconds:      3,
+				FailureThreshold:    10,
+				SuccessThreshold:    1,
+			},
+		}
+	}
+	return nil
+}
+
+// BuildLifecycleUnits converts discovered containers into lifecycle.ContainerUnit
+// entries for keepalive and auto-probe registration.
+func BuildLifecycleUnits(inv *Inventory) []lifecycle.ContainerUnit {
+	var units []lifecycle.ContainerUnit
+	for _, ct := range inv.Containers {
+		if !ct.StartBoot {
+			continue
+		}
+		unit := lifecycle.ContainerUnit{
+			Name:          ct.Name,
+			ContainerIP:   ct.IP,
+			RestartPolicy: "Always",
+			StartOnBoot:   true,
+			Managed:       false,
+			Probes:        InferProbes(ct),
+		}
+		units = append(units, unit)
+	}
+	return units
 }
 
 // deriveName picks a network name from zone or bridge info.

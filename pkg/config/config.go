@@ -16,7 +16,7 @@ type Config struct {
 	RouterOS   RouterOSConfig `yaml:"routeros"`
 	Networks   []NetworkDef   `yaml:"networks"`
 	Storage    StorageConfig  `yaml:"storage"`
-	Systemd    SystemdConfig  `yaml:"systemd"`
+	Lifecycle  LifecycleConfig `yaml:"lifecycle"`
 	Registry   RegistryConfig `yaml:"registry"`
 
 	// Deprecated: single-network config for backward compatibility.
@@ -77,14 +77,10 @@ type StorageConfig struct {
 	GCDryRun          bool `yaml:"gcDryRun"`           // log only, don't delete
 }
 
-type SystemdConfig struct {
+type LifecycleConfig struct {
 	// Boot ordering
 	BootManifestPath string `yaml:"bootManifestPath"` // path to boot-order YAML
 	WatchdogInterval int    `yaml:"watchdogIntervalSeconds"`
-
-	// Health checks
-	DefaultHealthCheckPath string `yaml:"defaultHealthCheckPath"` // e.g. "/healthz"
-	DefaultHealthCheckPort int    `yaml:"defaultHealthCheckPort"`
 
 	// Restart policy
 	MaxRestarts     int `yaml:"maxRestarts"`     // per container before giving up
@@ -98,6 +94,8 @@ type RegistryConfig struct {
 	// Pull-through cache config
 	PullThrough        bool     `yaml:"pullThrough"`
 	UpstreamRegistries []string `yaml:"upstreamRegistries"` // e.g. ["docker.io", "ghcr.io"]
+	// Local addresses that resolve to this registry (used by storage manager)
+	LocalAddresses []string `yaml:"localAddresses"` // e.g. ["192.168.200.2:5000"]
 }
 
 // DefaultNetwork returns the first configured network (the default).
@@ -140,9 +138,9 @@ func Load(flags *pflag.FlagSet) (*Config, error) {
 			GCIntervalMinutes:  30,
 			GCKeepLastN:        5,
 		},
-		Systemd: SystemdConfig{
+		Lifecycle: LifecycleConfig{
 			BootManifestPath:   "/etc/mikrotik-kube/boot-order.yaml",
-			WatchdogInterval:   15,
+			WatchdogInterval:   5,
 			MaxRestarts:        5,
 			RestartCooldown:    10,
 		},
@@ -200,48 +198,50 @@ func Load(flags *pflag.FlagSet) (*Config, error) {
 }
 
 func applyFlagOverrides(cfg *Config, flags *pflag.FlagSet) {
-	if v, _ := flags.GetString("node-name"); v != "" {
-		cfg.NodeName = v
+	// Only override config-file values with flags explicitly set on the CLI.
+	// Using flags.Changed() avoids flag defaults clobbering YAML values.
+	if flags.Changed("node-name") {
+		cfg.NodeName, _ = flags.GetString("node-name")
 	}
-	if v, _ := flags.GetBool("standalone"); v {
-		cfg.Standalone = true
+	if flags.Changed("standalone") {
+		cfg.Standalone, _ = flags.GetBool("standalone")
 	}
-	if v, _ := flags.GetString("kubeconfig"); v != "" {
-		cfg.KubeConfig = v
+	if flags.Changed("kubeconfig") {
+		cfg.KubeConfig, _ = flags.GetString("kubeconfig")
 	}
-	if v, _ := flags.GetString("routeros-address"); v != "" {
-		cfg.RouterOS.Address = v
+	if flags.Changed("routeros-address") {
+		cfg.RouterOS.Address, _ = flags.GetString("routeros-address")
 	}
-	if v, _ := flags.GetString("routeros-rest-url"); v != "" {
-		cfg.RouterOS.RESTURL = v
+	if flags.Changed("routeros-rest-url") {
+		cfg.RouterOS.RESTURL, _ = flags.GetString("routeros-rest-url")
 	}
-	if v, _ := flags.GetString("routeros-user"); v != "" {
-		cfg.RouterOS.User = v
+	if flags.Changed("routeros-user") {
+		cfg.RouterOS.User, _ = flags.GetString("routeros-user")
 	}
-	if v, _ := flags.GetString("routeros-password"); v != "" {
-		cfg.RouterOS.Password = v
+	if flags.Changed("routeros-password") {
+		cfg.RouterOS.Password, _ = flags.GetString("routeros-password")
 	}
 	// pod-cidr and bridge-name override the first network
-	if v, _ := flags.GetString("pod-cidr"); v != "" {
+	if flags.Changed("pod-cidr") {
 		if len(cfg.Networks) > 0 {
-			cfg.Networks[0].CIDR = v
+			cfg.Networks[0].CIDR, _ = flags.GetString("pod-cidr")
 		}
 	}
-	if v, _ := flags.GetString("bridge-name"); v != "" {
+	if flags.Changed("bridge-name") {
 		if len(cfg.Networks) > 0 {
-			cfg.Networks[0].Bridge = v
+			cfg.Networks[0].Bridge, _ = flags.GetString("bridge-name")
 		}
 	}
-	if v, _ := flags.GetString("storage-path"); v != "" {
-		cfg.Storage.BasePath = v
+	if flags.Changed("storage-path") {
+		cfg.Storage.BasePath, _ = flags.GetString("storage-path")
 	}
-	if v, _ := flags.GetString("tarball-cache"); v != "" {
-		cfg.Storage.TarballCache = v
+	if flags.Changed("tarball-cache") {
+		cfg.Storage.TarballCache, _ = flags.GetString("tarball-cache")
 	}
-	if v, _ := flags.GetInt("gc-interval-minutes"); v > 0 {
-		cfg.Storage.GCIntervalMinutes = v
+	if flags.Changed("gc-interval-minutes") {
+		cfg.Storage.GCIntervalMinutes, _ = flags.GetInt("gc-interval-minutes")
 	}
-	if v, _ := flags.GetBool("enable-registry"); !v {
-		cfg.Registry.Enabled = false
+	if flags.Changed("enable-registry") {
+		cfg.Registry.Enabled, _ = flags.GetBool("enable-registry")
 	}
 }

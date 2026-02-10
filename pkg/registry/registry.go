@@ -8,20 +8,30 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/glenneth/mikrotik-kube/pkg/config"
 )
 
+// PushEvent is emitted when a manifest is pushed to the registry.
+type PushEvent struct {
+	Repo      string
+	Reference string
+	Digest    string
+	Time      time.Time
+}
+
 // Registry provides an OCI Distribution Spec v2 compatible registry with
-// on-disk blob/manifest storage and optional pull-through caching from
-// upstream registries.
+// on-disk blob/manifest storage, Docker push (chunked upload) support,
+// and optional pull-through caching from upstream registries.
 type Registry struct {
-	cfg    config.RegistryConfig
-	log    *zap.SugaredLogger
-	server *http.Server
-	store  *BlobStore
+	cfg        config.RegistryConfig
+	log        *zap.SugaredLogger
+	server     *http.Server
+	store      *BlobStore
+	PushEvents chan PushEvent
 }
 
 // Start launches the embedded registry server.
@@ -32,9 +42,10 @@ func Start(ctx context.Context, cfg config.RegistryConfig, log *zap.SugaredLogge
 	}
 
 	r := &Registry{
-		cfg:   cfg,
-		log:   log,
-		store: store,
+		cfg:        cfg,
+		log:        log,
+		store:      store,
+		PushEvents: make(chan PushEvent, 64),
 	}
 
 	mux := http.NewServeMux()
@@ -52,6 +63,20 @@ func Start(ctx context.Context, cfg config.RegistryConfig, log *zap.SugaredLogge
 		log.Infow("registry listening", "addr", cfg.ListenAddr)
 		if err := r.server.ListenAndServe(); err != http.ErrServerClosed {
 			log.Errorw("registry server error", "error", err)
+		}
+	}()
+
+	// Periodic cleanup of stale upload sessions
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				r.store.CleanupStaleUploads(1 * time.Hour)
+			}
 		}
 	}()
 
@@ -75,36 +100,27 @@ func (r *Registry) handleV2(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Parse the path: /v2/<name>/manifests/<reference> or /v2/<name>/blobs/<digest>
-	parts := strings.SplitN(strings.TrimPrefix(path, "/v2/"), "/", 3)
-	if len(parts) < 3 {
-		http.NotFound(w, req)
+	trimmed := strings.TrimPrefix(path, "/v2/")
+
+	// Handle chunked blob uploads: /v2/<name>/blobs/uploads/ or /v2/<name>/blobs/uploads/<uuid>
+	if idx := strings.Index(trimmed, "/blobs/uploads"); idx >= 0 {
+		repoName := trimmed[:idx]
+		rest := trimmed[idx+len("/blobs/uploads"):]
+		rest = strings.TrimPrefix(rest, "/")
+		r.handleBlobUpload(w, req, repoName, rest)
 		return
 	}
 
-	// Reconstruct repo name (may contain slashes) and resource type
+	// Parse: /v2/<name>/manifests/<reference> or /v2/<name>/blobs/<digest>
 	var repoName, resourceType, reference string
-	for i := len(parts) - 2; i >= 0; i-- {
-		if parts[i] == "manifests" || parts[i] == "blobs" {
-			repoName = strings.Join(parts[:i], "/")
-			resourceType = parts[i]
-			reference = parts[i+1]
-			break
-		}
-	}
-
-	// Fallback: try parsing from the end of the full path
-	if repoName == "" {
-		trimmed := strings.TrimPrefix(path, "/v2/")
-		if idx := strings.LastIndex(trimmed, "/manifests/"); idx >= 0 {
-			repoName = trimmed[:idx]
-			resourceType = "manifests"
-			reference = trimmed[idx+len("/manifests/"):]
-		} else if idx := strings.LastIndex(trimmed, "/blobs/"); idx >= 0 {
-			repoName = trimmed[:idx]
-			resourceType = "blobs"
-			reference = trimmed[idx+len("/blobs/"):]
-		}
+	if idx := strings.LastIndex(trimmed, "/manifests/"); idx >= 0 {
+		repoName = trimmed[:idx]
+		resourceType = "manifests"
+		reference = trimmed[idx+len("/manifests/"):]
+	} else if idx := strings.LastIndex(trimmed, "/blobs/"); idx >= 0 {
+		repoName = trimmed[:idx]
+		resourceType = "blobs"
+		reference = trimmed[idx+len("/blobs/"):]
 	}
 
 	if repoName == "" || reference == "" {
@@ -160,6 +176,18 @@ func (r *Registry) handleManifest(w http.ResponseWriter, req *http.Request, repo
 		w.Header().Set("Docker-Content-Digest", ref)
 		w.WriteHeader(http.StatusCreated)
 
+		// Emit push event for CI/CD
+		select {
+		case r.PushEvents <- PushEvent{
+			Repo:      repo,
+			Reference: ref,
+			Digest:    req.Header.Get("Docker-Content-Digest"),
+			Time:      time.Now(),
+		}:
+		default:
+			r.log.Warnw("push event channel full, dropping event", "repo", repo, "ref", ref)
+		}
+
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -193,6 +221,91 @@ func (r *Registry) handleBlob(w http.ResponseWriter, req *http.Request, repo, di
 			return
 		}
 		http.NotFound(w, req)
+
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+// handleBlobUpload implements the Docker chunked blob upload protocol:
+//   - POST   /v2/<name>/blobs/uploads/       → initiate upload, return UUID
+//   - PATCH  /v2/<name>/blobs/uploads/<uuid>  → append chunk data
+//   - PUT    /v2/<name>/blobs/uploads/<uuid>?digest=... → finalize upload
+//   - GET    /v2/<name>/blobs/uploads/<uuid>  → check upload status
+func (r *Registry) handleBlobUpload(w http.ResponseWriter, req *http.Request, repo, uploadUUID string) {
+	switch req.Method {
+	case http.MethodPost:
+		// Initiate a new upload
+		id, err := r.store.InitiateUpload(repo)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Location", fmt.Sprintf("/v2/%s/blobs/uploads/%s", repo, id))
+		w.Header().Set("Docker-Upload-UUID", id)
+		w.Header().Set("Range", "0-0")
+		w.WriteHeader(http.StatusAccepted)
+		r.log.Debugw("blob upload initiated", "repo", repo, "uuid", id)
+
+	case http.MethodPatch:
+		// Append chunk
+		if uploadUUID == "" {
+			http.Error(w, "missing upload UUID", http.StatusBadRequest)
+			return
+		}
+		size, err := r.store.AppendUpload(uploadUUID, req.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Location", fmt.Sprintf("/v2/%s/blobs/uploads/%s", repo, uploadUUID))
+		w.Header().Set("Docker-Upload-UUID", uploadUUID)
+		w.Header().Set("Range", fmt.Sprintf("0-%d", size-1))
+		w.WriteHeader(http.StatusAccepted)
+
+	case http.MethodPut:
+		// Finalize upload
+		if uploadUUID == "" {
+			http.Error(w, "missing upload UUID", http.StatusBadRequest)
+			return
+		}
+		digest := req.URL.Query().Get("digest")
+		if digest == "" {
+			http.Error(w, "missing digest parameter", http.StatusBadRequest)
+			return
+		}
+
+		// If the PUT includes a body (monolithic upload or final chunk), append it first
+		if req.ContentLength > 0 {
+			if _, err := r.store.AppendUpload(uploadUUID, req.Body); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if err := r.store.FinalizeUpload(uploadUUID, digest); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Docker-Content-Digest", digest)
+		w.Header().Set("Location", fmt.Sprintf("/v2/%s/blobs/%s", repo, digest))
+		w.WriteHeader(http.StatusCreated)
+		r.log.Debugw("blob upload finalized", "repo", repo, "digest", digest)
+
+	case http.MethodGet:
+		// Check upload status
+		if uploadUUID == "" {
+			http.Error(w, "missing upload UUID", http.StatusBadRequest)
+			return
+		}
+		size, ok := r.store.GetUploadSize(uploadUUID)
+		if !ok {
+			http.NotFound(w, req)
+			return
+		}
+		w.Header().Set("Docker-Upload-UUID", uploadUUID)
+		w.Header().Set("Range", fmt.Sprintf("0-%d", size))
+		w.WriteHeader(http.StatusNoContent)
 
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
