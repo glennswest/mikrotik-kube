@@ -258,6 +258,62 @@ func (c *Client) ListBridges(ctx context.Context) ([]Bridge, error) {
 	return bridges, err
 }
 
+// ─── EoIP Tunnel Operations ──────────────────────────────────────────────────
+
+// CreateEoIPTunnel creates an EoIP tunnel interface.
+func (c *Client) CreateEoIPTunnel(ctx context.Context, name, localIP, remoteIP string, tunnelID int) error {
+	return c.restPOST(ctx, "/interface/eoip/add", map[string]interface{}{
+		"name":       name,
+		"local-address":  localIP,
+		"remote-address": remoteIP,
+		"tunnel-id":      fmt.Sprintf("%d", tunnelID),
+	}, nil)
+}
+
+// DeleteEoIPTunnel removes an EoIP tunnel interface by name.
+func (c *Client) DeleteEoIPTunnel(ctx context.Context, name string) error {
+	return c.restPOST(ctx, "/interface/eoip/remove", map[string]string{
+		"name": name,
+	}, nil)
+}
+
+// ─── Bridge VLAN Operations ──────────────────────────────────────────────────
+
+// AddBridgeVLAN adds a VLAN entry on a bridge port.
+func (c *Client) AddBridgeVLAN(ctx context.Context, bridge string, vid int, tagged, pvid, untagged bool) error {
+	body := map[string]interface{}{
+		"bridge":   bridge,
+		"vlan-ids": fmt.Sprintf("%d", vid),
+	}
+	if tagged {
+		body["tagged"] = bridge
+	}
+	if untagged {
+		body["untagged"] = bridge
+	}
+	return c.restPOST(ctx, "/interface/bridge/vlan/add", body, nil)
+}
+
+// RemoveBridgeVLAN removes a VLAN entry from a bridge.
+func (c *Client) RemoveBridgeVLAN(ctx context.Context, bridge string, vid int) error {
+	// Need to find the .id first
+	var entries []struct {
+		ID      string `json:".id"`
+		VLANIDs string `json:"vlan-ids"`
+		Bridge  string `json:"bridge"`
+	}
+	if err := c.restGET(ctx, "/interface/bridge/vlan", &entries); err != nil {
+		return err
+	}
+
+	for _, e := range entries {
+		if e.Bridge == bridge && e.VLANIDs == fmt.Sprintf("%d", vid) {
+			return c.restPOST(ctx, "/interface/bridge/vlan/remove", map[string]string{".id": e.ID}, nil)
+		}
+	}
+	return fmt.Errorf("VLAN %d not found on bridge %s", vid, bridge)
+}
+
 // ─── IP Address Operations ──────────────────────────────────────────────────
 
 // IPAddress represents an IP address assignment on an interface.

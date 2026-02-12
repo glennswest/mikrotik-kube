@@ -2,7 +2,6 @@ package network
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"net"
 	"strings"
@@ -12,17 +11,15 @@ import (
 
 	"github.com/glenneth/microkube/pkg/config"
 	"github.com/glenneth/microkube/pkg/dns"
-	"github.com/glenneth/microkube/pkg/routeros"
+	"github.com/glenneth/microkube/pkg/network/ipam"
 )
 
-// networkState holds per-network IPAM state and cached zone ID.
+// networkState holds per-network config and cached zone ID.
 type networkState struct {
-	def       config.NetworkDef
-	subnet    *net.IPNet
-	gateway   net.IP
-	allocated map[string]net.IP // veth name -> allocated IP
-	nextIP    uint32
-	zoneID    string // cached MicroDNS zone UUID
+	def     config.NetworkDef
+	subnet  *net.IPNet
+	gateway net.IP
+	zoneID  string // cached MicroDNS zone UUID
 }
 
 // allocation tracks which network a veth belongs to.
@@ -37,20 +34,37 @@ type allocation struct {
 type Manager struct {
 	networks map[string]*networkState // keyed by network name
 	netOrder []string                 // ordered network names (first = default)
-	ros      *routeros.Client
+	driver   NetworkDriver
 	dns      *dns.Client
+	ipam     *ipam.Allocator
+	state    *stateStore
 	log      *zap.SugaredLogger
 
 	mu     sync.Mutex
 	allocs map[string]*allocation // veth name -> allocation info
 }
 
+// ManagerOpts are optional settings for NewManager.
+type ManagerOpts struct {
+	StatePath string // path for state persistence (empty = no persistence)
+}
+
 // NewManager initializes the network manager with multiple networks.
-func NewManager(networks []config.NetworkDef, ros *routeros.Client, dnsClient *dns.Client, log *zap.SugaredLogger) (*Manager, error) {
+func NewManager(networks []config.NetworkDef, driver NetworkDriver, dnsClient *dns.Client, log *zap.SugaredLogger, opts ...ManagerOpts) (*Manager, error) {
+	var o ManagerOpts
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+
+	alloc := ipam.NewAllocator()
+	ss := newStateStore(o.StatePath)
+
 	mgr := &Manager{
 		networks: make(map[string]*networkState, len(networks)),
-		ros:      ros,
+		driver:   driver,
 		dns:      dnsClient,
+		ipam:     alloc,
+		state:    ss,
 		log:      log,
 		allocs:   make(map[string]*allocation),
 	}
@@ -73,18 +87,32 @@ func NewManager(networks []config.NetworkDef, ros *routeros.Client, dnsClient *d
 		}
 
 		ns := &networkState{
-			def:       netDef,
-			subnet:    subnet,
-			gateway:   gateway,
-			allocated: make(map[string]net.IP),
-			nextIP:    2,
+			def:     netDef,
+			subnet:  subnet,
+			gateway: gateway,
 		}
 
 		mgr.networks[netDef.Name] = ns
 		mgr.netOrder = append(mgr.netOrder, netDef.Name)
+
+		// Register IPAM pool
+		alloc.AddPool(netDef.Name, subnet, gateway)
+
+		// Register logical switch in state
+		ss.setSwitch(&LogicalSwitch{
+			Name:    netDef.Name,
+			Bridge:  netDef.Bridge,
+			CIDR:    netDef.CIDR,
+			Gateway: gateway.String(),
+		})
 	}
 
-	// Sync existing allocations from RouterOS
+	// Try loading persisted state
+	if err := ss.load(); err != nil {
+		log.Debugw("no persisted network state, starting fresh", "error", err)
+	}
+
+	// Sync existing allocations from the network driver
 	if err := mgr.syncExistingAllocations(context.Background()); err != nil {
 		log.Warnw("failed to sync existing allocations", "error", err)
 	}
@@ -125,8 +153,8 @@ func (m *Manager) AllocateInterface(ctx context.Context, vethName, hostname, net
 		return "", "", "", err
 	}
 
-	// Allocate an IP
-	allocatedIP, err := m.allocateIP(ns)
+	// Allocate an IP via IPAM
+	allocatedIP, err := m.ipam.Allocate(ns.def.Name, vethName)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -135,22 +163,36 @@ func (m *Manager) AllocateInterface(ctx context.Context, vethName, hostname, net
 	ipCIDR := fmt.Sprintf("%s/%d", allocatedIP.String(), ones)
 	gw := ns.gateway.String()
 
-	// Create veth on RouterOS
-	if err := m.ros.CreateVeth(ctx, vethName, ipCIDR, gw); err != nil {
+	// Create port via network driver
+	if err := m.driver.CreatePort(ctx, vethName, ipCIDR, gw); err != nil {
+		m.ipam.Release(ns.def.Name, vethName)
 		return "", "", "", fmt.Errorf("creating veth %s: %w", vethName, err)
 	}
 
-	// Add to bridge
-	if err := m.ros.AddBridgePort(ctx, ns.def.Bridge, vethName); err != nil {
-		_ = m.ros.RemoveVeth(ctx, vethName)
+	// Attach to bridge
+	if err := m.driver.AttachPort(ctx, ns.def.Bridge, vethName); err != nil {
+		_ = m.driver.DeletePort(ctx, vethName)
+		m.ipam.Release(ns.def.Name, vethName)
 		return "", "", "", fmt.Errorf("adding %s to bridge %s: %w", vethName, ns.def.Bridge, err)
 	}
 
-	ns.allocated[vethName] = allocatedIP
 	m.allocs[vethName] = &allocation{
 		networkName: ns.def.Name,
 		ip:          allocatedIP,
 		hostname:    hostname,
+	}
+
+	// Record in state
+	m.state.setPort(&LogicalPort{
+		Name:     vethName,
+		Switch:   ns.def.Name,
+		Address:  ipCIDR,
+		Gateway:  gw,
+		Hostname: hostname,
+		NodeName: m.driver.NodeName(),
+	})
+	if err := m.state.save(); err != nil {
+		m.log.Warnw("failed to persist network state", "error", err)
 	}
 
 	// Register DNS A record
@@ -182,16 +224,20 @@ func (m *Manager) ReleaseInterface(ctx context.Context, vethName string) error {
 		}
 	}
 
-	if err := m.ros.RemoveVeth(ctx, vethName); err != nil {
+	if err := m.driver.DeletePort(ctx, vethName); err != nil {
 		m.log.Warnw("error removing veth", "name", vethName, "error", err)
 	}
 
-	// Clean up allocation from the correct network
+	// Clean up allocation
 	if alloc, ok := m.allocs[vethName]; ok {
-		if ns, exists := m.networks[alloc.networkName]; exists {
-			delete(ns.allocated, vethName)
-		}
+		m.ipam.Release(alloc.networkName, vethName)
 		delete(m.allocs, vethName)
+	}
+
+	// Remove from state
+	m.state.removePort(vethName)
+	if err := m.state.save(); err != nil {
+		m.log.Warnw("failed to persist network state", "error", err)
 	}
 
 	m.log.Infow("interface released", "veth", vethName)
@@ -205,16 +251,21 @@ func (m *Manager) DNSClient() *dns.Client {
 
 // GetAllocations returns a snapshot of current IP allocations across all networks.
 func (m *Manager) GetAllocations() map[string]string {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	return m.ipam.AllAllocations()
+}
 
-	result := make(map[string]string)
-	for _, ns := range m.networks {
-		for name, ip := range ns.allocated {
-			result[name] = ip.String()
-		}
+// Networks returns the ordered list of network names.
+func (m *Manager) Networks() []string {
+	return m.netOrder
+}
+
+// NetworkDef returns the config.NetworkDef for the named network.
+func (m *Manager) NetworkDef(name string) (config.NetworkDef, bool) {
+	ns, ok := m.networks[name]
+	if !ok {
+		return config.NetworkDef{}, false
 	}
-	return result
+	return ns.def, true
 }
 
 // resolveNetwork returns the networkState for the given name, or the default.
@@ -229,76 +280,42 @@ func (m *Manager) resolveNetwork(name string) (*networkState, error) {
 	return nil, fmt.Errorf("network %q not found", name)
 }
 
-// ─── IPAM ───────────────────────────────────────────────────────────────────
-
-func (m *Manager) allocateIP(ns *networkState) (net.IP, error) {
-	ones, bits := ns.subnet.Mask.Size()
-	maxHosts := uint32(1<<(bits-ones)) - 2
-
-	baseIP := ipToUint32(ns.subnet.IP)
-
-	for attempts := uint32(0); attempts < maxHosts; attempts++ {
-		candidate := baseIP + ns.nextIP
-		candidateIP := uint32ToIP(candidate)
-
-		taken := false
-		for _, existing := range ns.allocated {
-			if existing.Equal(candidateIP) {
-				taken = true
-				break
-			}
-		}
-
-		ns.nextIP++
-		if ns.nextIP > maxHosts {
-			ns.nextIP = 2
-		}
-
-		if !taken && !candidateIP.Equal(ns.gateway) {
-			return candidateIP, nil
-		}
-	}
-
-	return nil, fmt.Errorf("IPAM: no available IPs in %s (all %d addresses allocated)", ns.subnet.String(), maxHosts)
-}
+// ─── Sync ───────────────────────────────────────────────────────────────────
 
 func (m *Manager) syncExistingAllocations(ctx context.Context) error {
-	veths, err := m.ros.ListVeths(ctx)
+	ports, err := m.driver.ListPorts(ctx)
 	if err != nil {
 		return err
 	}
 
-	for _, v := range veths {
-		if v.Address == "" {
+	for _, p := range ports {
+		if p.Address == "" {
 			continue
 		}
-		ip, _, err := net.ParseCIDR(v.Address)
+		ip, _, err := net.ParseCIDR(p.Address)
 		if err != nil {
-			ip = net.ParseIP(v.Address)
+			ip = net.ParseIP(p.Address)
 		}
 		if ip == nil {
 			continue
 		}
 
 		// Find which network this IP belongs to
-		for _, ns := range m.networks {
-			if ns.subnet.Contains(ip) {
-				ns.allocated[v.Name] = ip
-				m.allocs[v.Name] = &allocation{
-					networkName: ns.def.Name,
-					ip:          ip,
-					hostname:    extractHostname(v.Name),
-				}
-				m.log.Debugw("synced existing allocation", "veth", v.Name, "ip", ip, "network", ns.def.Name)
-				break
-			}
+		poolName := m.ipam.PoolForIP(ip)
+		if poolName == "" {
+			continue
 		}
+
+		m.ipam.Record(poolName, p.Name, ip)
+		m.allocs[p.Name] = &allocation{
+			networkName: poolName,
+			ip:          ip,
+			hostname:    extractHostname(p.Name),
+		}
+		m.log.Debugw("synced existing allocation", "veth", p.Name, "ip", ip, "network", poolName)
 	}
 
-	total := 0
-	for _, ns := range m.networks {
-		total += len(ns.allocated)
-	}
+	total := len(m.ipam.AllAllocations())
 	m.log.Infow("synced existing allocations", "count", total)
 	return nil
 }
@@ -310,17 +327,4 @@ func extractHostname(vethName string) string {
 		return parts[1]
 	}
 	return vethName
-}
-
-// ─── IP Helpers ─────────────────────────────────────────────────────────────
-
-func ipToUint32(ip net.IP) uint32 {
-	ip = ip.To4()
-	return binary.BigEndian.Uint32(ip)
-}
-
-func uint32ToIP(n uint32) net.IP {
-	ip := make(net.IP, 4)
-	binary.BigEndian.PutUint32(ip, n)
-	return ip
 }

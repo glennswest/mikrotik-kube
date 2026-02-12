@@ -57,6 +57,7 @@ import (
 	"github.com/glenneth/microkube/pkg/lifecycle"
 	"github.com/glenneth/microkube/pkg/namespace"
 	"github.com/glenneth/microkube/pkg/network"
+	netdriver "github.com/glenneth/microkube/pkg/network/driver"
 	"github.com/glenneth/microkube/pkg/provider"
 	"github.com/glenneth/microkube/pkg/registry"
 	"github.com/glenneth/microkube/pkg/routeros"
@@ -160,8 +161,11 @@ func run(cmd *cobra.Command, args []string) error {
 		)
 	}
 
+	// ── Network Driver ──────────────────────────────────────────────
+	rosDriver := netdriver.NewRouterOS(rosClient, cfg.NodeName, log)
+
 	// ── Network Manager (IPAM + bridge/veth + DNS) ──────────────────
-	netMgr, err := network.NewManager(cfg.Networks, rosClient, dnsClient, log)
+	netMgr, err := network.NewManager(cfg.Networks, rosDriver, dnsClient, log)
 	if err != nil {
 		return fmt.Errorf("initializing network manager: %w", err)
 	}
@@ -228,7 +232,7 @@ func run(cmd *cobra.Command, args []string) error {
 				nsMgr = nil
 			}
 
-			// Shared HTTP mux for DZO + namespace API
+			// Shared HTTP mux for DZO + namespace + network API
 			listenAddr := cfg.DZO.ListenAddr
 			if listenAddr == "" {
 				listenAddr = ":8082"
@@ -238,6 +242,7 @@ func run(cmd *cobra.Command, args []string) error {
 			if nsMgr != nil {
 				nsMgr.RegisterRoutes(mux)
 			}
+			netMgr.RegisterRoutes(mux)
 			go func() {
 				srv := &http.Server{Addr: listenAddr, Handler: mux}
 				go func() {
