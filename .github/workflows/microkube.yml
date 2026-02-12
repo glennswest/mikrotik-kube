@@ -11,7 +11,13 @@ on:
       - "go.mod"
       - "go.sum"
       - "Dockerfile"
+      - ".github/workflows/microkube.yml"
+      - ".github/workflows/build-image.yml"
   workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   build:
