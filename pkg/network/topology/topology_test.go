@@ -41,9 +41,9 @@ func TestAddAndListNodes(t *testing.T) {
 	}
 
 	err = topo.AddNode(Node{
-		Name:    "linux1",
-		Address: "10.0.0.5",
-		Driver:  &stubDriver{name: "linux1", caps: network.DriverCapabilities{VLANs: true, Tunnels: true}},
+		Name:         "linux1",
+		Address:      "10.0.0.5",
+		Driver:       &stubDriver{name: "linux1", caps: network.DriverCapabilities{VLANs: true, Tunnels: true}},
 		Capabilities: network.DriverCapabilities{VLANs: true, Tunnels: true},
 	})
 	if err != nil {
@@ -63,7 +63,7 @@ func TestAddAndListNodes(t *testing.T) {
 func TestAddDuplicateNode(t *testing.T) {
 	topo := New()
 
-	topo.AddNode(Node{Name: "ros1", Driver: &stubDriver{name: "ros1"}})
+	_ = topo.AddNode(Node{Name: "ros1", Driver: &stubDriver{name: "ros1"}})
 	err := topo.AddNode(Node{Name: "ros1", Driver: &stubDriver{name: "ros1"}})
 	if err == nil {
 		t.Error("expected error for duplicate node")
@@ -72,7 +72,7 @@ func TestAddDuplicateNode(t *testing.T) {
 
 func TestGetNode(t *testing.T) {
 	topo := New()
-	topo.AddNode(Node{Name: "ros1", Address: "192.168.200.1", Driver: &stubDriver{name: "ros1"}})
+	_ = topo.AddNode(Node{Name: "ros1", Address: "192.168.200.1", Driver: &stubDriver{name: "ros1"}})
 
 	n, err := topo.GetNode("ros1")
 	if err != nil {
@@ -90,7 +90,7 @@ func TestGetNode(t *testing.T) {
 
 func TestRemoveNode(t *testing.T) {
 	topo := New()
-	topo.AddNode(Node{Name: "ros1", Driver: &stubDriver{name: "ros1"}})
+	_ = topo.AddNode(Node{Name: "ros1", Driver: &stubDriver{name: "ros1"}})
 
 	topo.RemoveNode("ros1")
 	if topo.NodeCount() != 0 {
@@ -101,7 +101,7 @@ func TestRemoveNode(t *testing.T) {
 func TestDriverFor(t *testing.T) {
 	topo := New()
 	drv := &stubDriver{name: "ros1"}
-	topo.AddNode(Node{Name: "ros1", Driver: drv})
+	_ = topo.AddNode(Node{Name: "ros1", Driver: drv})
 
 	got, err := topo.DriverFor("ros1")
 	if err != nil {
@@ -119,17 +119,17 @@ func TestDriverFor(t *testing.T) {
 
 func TestNodesWithCapability(t *testing.T) {
 	topo := New()
-	topo.AddNode(Node{
+	_ = topo.AddNode(Node{
 		Name:         "ros1",
 		Driver:       &stubDriver{name: "ros1"},
 		Capabilities: network.DriverCapabilities{},
 	})
-	topo.AddNode(Node{
+	_ = topo.AddNode(Node{
 		Name:         "linux1",
 		Driver:       &stubDriver{name: "linux1"},
 		Capabilities: network.DriverCapabilities{VLANs: true, Tunnels: true},
 	})
-	topo.AddNode(Node{
+	_ = topo.AddNode(Node{
 		Name:         "linux2",
 		Driver:       &stubDriver{name: "linux2"},
 		Capabilities: network.DriverCapabilities{VLANs: true},

@@ -30,17 +30,6 @@ func TestIPConversion(t *testing.T) {
 	}
 }
 
-func newTestPool(cidr, gateway string) *Pool {
-	_, subnet, _ := net.ParseCIDR(cidr)
-	gw := net.ParseIP(gateway)
-	return &Pool{
-		Subnet:    subnet,
-		Gateway:   gw,
-		Allocated: make(map[string]net.IP),
-		NextIP:    2,
-	}
-}
-
 func TestAllocateIP(t *testing.T) {
 	a := NewAllocator()
 	_, subnet, _ := net.ParseCIDR("172.20.0.0/24")
@@ -167,8 +156,8 @@ func TestAllAllocations(t *testing.T) {
 	a.AddPool("net1", s1, net.ParseIP("10.0.0.1"))
 	a.AddPool("net2", s2, net.ParseIP("172.16.0.1"))
 
-	a.Allocate("net1", "veth-a")
-	a.Allocate("net2", "veth-b")
+	_, _ = a.Allocate("net1", "veth-a")
+	_, _ = a.Allocate("net2", "veth-b")
 
 	all := a.AllAllocations()
 	if len(all) != 2 {

@@ -31,8 +31,8 @@ type Manager struct {
 
 // ProbeConfig defines a single health probe.
 type ProbeConfig struct {
-	Type                string   // "http", "tcp", "exec"
-	Path                string   // HTTP path (for type=http)
+	Type                string // "http", "tcp", "exec"
+	Path                string // HTTP path (for type=http)
 	Port                int
 	Command             []string // exec probe
 	InitialDelaySeconds int

@@ -10,14 +10,14 @@ import (
 
 // Config is the top-level configuration for microkube.
 type Config struct {
-	NodeName   string         `yaml:"nodeName"`
-	Standalone bool           `yaml:"standalone"`
-	KubeConfig string         `yaml:"kubeconfig"`
-	RouterOS   RouterOSConfig `yaml:"routeros"`
-	Networks   []NetworkDef   `yaml:"networks"`
-	Storage    StorageConfig  `yaml:"storage"`
+	NodeName   string          `yaml:"nodeName"`
+	Standalone bool            `yaml:"standalone"`
+	KubeConfig string          `yaml:"kubeconfig"`
+	RouterOS   RouterOSConfig  `yaml:"routeros"`
+	Networks   []NetworkDef    `yaml:"networks"`
+	Storage    StorageConfig   `yaml:"storage"`
 	Lifecycle  LifecycleConfig `yaml:"lifecycle"`
-	Registry   RegistryConfig `yaml:"registry"`
+	Registry   RegistryConfig  `yaml:"registry"`
 	DZO        DZOConfig       `yaml:"dzo"`
 	Namespace  NamespaceConfig `yaml:"namespace"`
 
@@ -43,12 +43,12 @@ type NamespaceConfig struct {
 
 // NetworkDef defines a network that containers can be placed on.
 type NetworkDef struct {
-	Name       string    `yaml:"name"`
-	Bridge     string    `yaml:"bridge"`
-	CIDR       string    `yaml:"cidr"`
-	Gateway    string    `yaml:"gateway"`
-	VLAN       int       `yaml:"vlan,omitempty"`
-	DNS        DNSConfig `yaml:"dns"`
+	Name    string    `yaml:"name"`
+	Bridge  string    `yaml:"bridge"`
+	CIDR    string    `yaml:"cidr"`
+	Gateway string    `yaml:"gateway"`
+	VLAN    int       `yaml:"vlan,omitempty"`
+	DNS     DNSConfig `yaml:"dns"`
 }
 
 // DNSConfig specifies the MicroDNS instance for a network.
@@ -90,8 +90,8 @@ type StorageConfig struct {
 
 	// Garbage collection
 	GCIntervalMinutes int  `yaml:"gcIntervalMinutes"`
-	GCKeepLastN       int  `yaml:"gcKeepLastN"`       // keep last N unused images
-	GCDryRun          bool `yaml:"gcDryRun"`           // log only, don't delete
+	GCKeepLastN       int  `yaml:"gcKeepLastN"` // keep last N unused images
+	GCDryRun          bool `yaml:"gcDryRun"`    // log only, don't delete
 }
 
 type LifecycleConfig struct {
@@ -114,8 +114,8 @@ type RegistryConfig struct {
 	// Local addresses that resolve to this registry (used by storage manager)
 	LocalAddresses []string `yaml:"localAddresses"` // e.g. ["192.168.200.2:5000"]
 	// Image watcher: poll upstream registries for new digests and auto-pull
-	WatchImages        []WatchImage `yaml:"watchImages"`
-	WatchPollSeconds   int          `yaml:"watchPollSeconds"` // default 120
+	WatchImages      []WatchImage `yaml:"watchImages"`
+	WatchPollSeconds int          `yaml:"watchPollSeconds"` // default 120
 }
 
 // WatchImage defines an upstream image to watch for changes.
@@ -163,16 +163,16 @@ func Load(flags *pflag.FlagSet) (*Config, error) {
 			InsecureVerify: true,
 		},
 		Storage: StorageConfig{
-			BasePath:           "/raid1/images",
-			TarballCache:       "/raid1/cache",
-			GCIntervalMinutes:  30,
-			GCKeepLastN:        5,
+			BasePath:          "/raid1/images",
+			TarballCache:      "/raid1/cache",
+			GCIntervalMinutes: 30,
+			GCKeepLastN:       5,
 		},
 		Lifecycle: LifecycleConfig{
-			BootManifestPath:   "/etc/microkube/boot-order.yaml",
-			WatchdogInterval:   5,
-			MaxRestarts:        5,
-			RestartCooldown:    10,
+			BootManifestPath: "/etc/microkube/boot-order.yaml",
+			WatchdogInterval: 5,
+			MaxRestarts:      5,
+			RestartCooldown:  10,
 		},
 		Registry: RegistryConfig{
 			Enabled:    true,

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -48,7 +49,7 @@ func TestEnsureImageCacheHit(t *testing.T) {
 		volumes: make(map[string]*ProvisionedVolume),
 	}
 
-	path, err := mgr.EnsureImage(nil, "nginx:latest")
+	path, err := mgr.EnsureImage(context.TODO(), "nginx:latest")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -90,7 +91,7 @@ func TestProvisionVolume(t *testing.T) {
 		volumes: make(map[string]*ProvisionedVolume),
 	}
 
-	path, err := mgr.ProvisionVolume(nil, "mycontainer", "data-vol", "/data")
+	path, err := mgr.ProvisionVolume(context.TODO(), "mycontainer", "data-vol", "/data")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

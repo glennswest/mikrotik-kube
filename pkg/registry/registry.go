@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"strings"
 	"time"
 
@@ -151,7 +149,7 @@ func (r *Registry) handleManifest(w http.ResponseWriter, req *http.Request, repo
 		if err == nil {
 			w.Header().Set("Content-Type", contentType)
 			w.Header().Set("Docker-Content-Digest", ref)
-			w.Write(data)
+			_, _ = w.Write(data)
 			return
 		}
 		// Pull-through: fetch from upstream, cache locally
@@ -207,7 +205,7 @@ func (r *Registry) handleBlob(w http.ResponseWriter, req *http.Request, repo, di
 			w.Header().Set("Content-Type", "application/octet-stream")
 			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 			w.Header().Set("Docker-Content-Digest", digest)
-			w.Write(data)
+			_, _ = w.Write(data)
 			return
 		}
 		// Pull-through: fetch from upstream
@@ -321,7 +319,7 @@ func (r *Registry) handleBlobUpload(w http.ResponseWriter, req *http.Request, re
 func (r *Registry) handleCatalog(w http.ResponseWriter, req *http.Request) {
 	repos := r.store.ListRepositories()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string][]string{
+	_ = json.NewEncoder(w).Encode(map[string][]string{
 		"repositories": repos,
 	})
 }
@@ -367,7 +365,7 @@ func (r *Registry) pullThroughManifest(w http.ResponseWriter, req *http.Request,
 		if digest != "" {
 			w.Header().Set("Docker-Content-Digest", digest)
 		}
-		w.Write(data)
+		_, _ = w.Write(data)
 		r.log.Debugw("pull-through manifest cached", "repo", repo, "ref", ref, "upstream", upstream)
 		return
 	}
@@ -411,31 +409,10 @@ func (r *Registry) pullThroughBlob(w http.ResponseWriter, req *http.Request, rep
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 		w.Header().Set("Docker-Content-Digest", digest)
-		w.Write(data)
+		_, _ = w.Write(data)
 		r.log.Debugw("pull-through blob cached", "digest", digest, "upstream", upstream)
 		return
 	}
 
 	http.Error(w, "blob not found on any upstream", http.StatusNotFound)
-}
-
-// proxyToUpstream attempts to proxy the request to configured upstream registries.
-func (r *Registry) proxyToUpstream(w http.ResponseWriter, req *http.Request) {
-	for _, upstream := range r.cfg.UpstreamRegistries {
-		target, err := url.Parse(fmt.Sprintf("https://%s", upstream))
-		if err != nil {
-			continue
-		}
-
-		proxy := httputil.NewSingleHostReverseProxy(target)
-		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-			// Silently try next upstream
-		}
-
-		r.log.Debugw("proxying to upstream", "upstream", upstream, "path", req.URL.Path)
-		proxy.ServeHTTP(w, req)
-		return
-	}
-
-	http.Error(w, "no upstream registry available", http.StatusBadGateway)
 }

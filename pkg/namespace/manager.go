@@ -110,11 +110,11 @@ func (m *Manager) migrateDZOState() bool {
 	// Parse just the namespaces field from DZO state
 	var dzoState struct {
 		Namespaces map[string]*struct {
-			Name       string `yaml:"name"`
-			Domain     string `yaml:"domain"`
-			Zone       string `yaml:"zone"`
-			Network    string `yaml:"network"`
-			Mode       string `yaml:"mode"`
+			Name       string   `yaml:"name"`
+			Domain     string   `yaml:"domain"`
+			Zone       string   `yaml:"zone"`
+			Network    string   `yaml:"network"`
+			Mode       string   `yaml:"mode"`
 			Containers []string `yaml:"containers"`
 		} `yaml:"namespaces"`
 	}

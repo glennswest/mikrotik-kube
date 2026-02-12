@@ -25,7 +25,7 @@ type MicroDNSInstance struct {
 
 // State is the persisted DZO state, serialized to YAML.
 type State struct {
-	Zones     map[string]*Zone            `yaml:"zones"`
+	Zones     map[string]*Zone             `yaml:"zones"`
 	Instances map[string]*MicroDNSInstance `yaml:"instances"`
 }
 

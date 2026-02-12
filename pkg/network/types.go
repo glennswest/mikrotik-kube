@@ -2,8 +2,8 @@ package network
 
 // LogicalSwitch represents a network segment (maps to a physical bridge on a node).
 type LogicalSwitch struct {
-	Name    string            `json:"name" yaml:"name"`       // e.g. "gt", "g10"
-	Bridge  string            `json:"bridge" yaml:"bridge"`   // physical bridge name
+	Name    string            `json:"name" yaml:"name"`     // e.g. "gt", "g10"
+	Bridge  string            `json:"bridge" yaml:"bridge"` // physical bridge name
 	CIDR    string            `json:"cidr" yaml:"cidr"`
 	Gateway string            `json:"gateway" yaml:"gateway"`
 	VLANs   []int             `json:"vlans,omitempty" yaml:"vlans,omitempty"`
@@ -12,9 +12,9 @@ type LogicalSwitch struct {
 
 // LogicalPort represents a port on a logical switch (maps to a veth on a node).
 type LogicalPort struct {
-	Name     string `json:"name" yaml:"name"`         // veth name
-	Switch   string `json:"switch" yaml:"switch"`     // parent LogicalSwitch name
-	Address  string `json:"address" yaml:"address"`   // assigned IP/mask
+	Name     string `json:"name" yaml:"name"`       // veth name
+	Switch   string `json:"switch" yaml:"switch"`   // parent LogicalSwitch name
+	Address  string `json:"address" yaml:"address"` // assigned IP/mask
 	Gateway  string `json:"gateway" yaml:"gateway"`
 	Hostname string `json:"hostname" yaml:"hostname"`
 	VLANTag  int    `json:"vlanTag,omitempty" yaml:"vlanTag,omitempty"`
@@ -36,7 +36,7 @@ type RouterInterface struct {
 // Tunnel represents a cross-node tunnel (VXLAN, WireGuard, GRE).
 type Tunnel struct {
 	Name       string `json:"name" yaml:"name"`
-	Type       string `json:"type" yaml:"type"`             // "vxlan", "wireguard", "gre"
+	Type       string `json:"type" yaml:"type"` // "vxlan", "wireguard", "gre"
 	LocalNode  string `json:"localNode" yaml:"localNode"`
 	RemoteNode string `json:"remoteNode" yaml:"remoteNode"`
 	LocalIP    string `json:"localIP" yaml:"localIP"`

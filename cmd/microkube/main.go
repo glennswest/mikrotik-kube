@@ -108,7 +108,7 @@ func main() {
 func run(cmd *cobra.Command, args []string) error {
 	// ── Logger ──────────────────────────────────────────────────────
 	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 	log := logger.Sugar()
 
 	log.Infow("starting microkube", "version", version)
@@ -249,7 +249,7 @@ func run(cmd *cobra.Command, args []string) error {
 					<-ctx.Done()
 					shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 					defer cancel()
-					srv.Shutdown(shutdownCtx)
+					_ = srv.Shutdown(shutdownCtx)
 				}()
 				log.Infow("DZO+namespace API listening", "addr", listenAddr)
 				if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -266,7 +266,7 @@ func run(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("starting embedded registry: %w", err)
 		}
-		defer reg.Shutdown(ctx)
+		defer func() { _ = reg.Shutdown(ctx) }()
 		log.Infow("embedded registry started", "addr", cfg.Registry.ListenAddr)
 	}
 

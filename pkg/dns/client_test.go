@@ -19,7 +19,7 @@ func TestEnsureZone_ExistingZone(t *testing.T) {
 	zones := []Zone{{ID: "zone-123", Name: "gt.lo"}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/zones" {
-			json.NewEncoder(w).Encode(zones)
+			_ = json.NewEncoder(w).Encode(zones)
 			return
 		}
 		http.NotFound(w, r)
@@ -39,14 +39,14 @@ func TestEnsureZone_ExistingZone(t *testing.T) {
 func TestEnsureZone_CreatesZone(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/zones" {
-			json.NewEncoder(w).Encode([]Zone{})
+			_ = json.NewEncoder(w).Encode([]Zone{})
 			return
 		}
 		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/zones" {
 			var req createZoneRequest
-			json.NewDecoder(r.Body).Decode(&req)
+			_ = json.NewDecoder(r.Body).Decode(&req)
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(Zone{ID: "new-zone-456", Name: req.Name})
+			_ = json.NewEncoder(w).Encode(Zone{ID: "new-zone-456", Name: req.Name})
 			return
 		}
 		http.NotFound(w, r)
@@ -67,9 +67,9 @@ func TestRegisterHost(t *testing.T) {
 	var receivedReq createRecordRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/zones/zone-123/records" {
-			json.NewDecoder(r.Body).Decode(&receivedReq)
+			_ = json.NewDecoder(r.Body).Decode(&receivedReq)
 			w.WriteHeader(http.StatusCreated)
-			json.NewEncoder(w).Encode(Record{ID: "rec-1", Name: receivedReq.Name, Type: "A", Content: receivedReq.Content})
+			_ = json.NewEncoder(w).Encode(Record{ID: "rec-1", Name: receivedReq.Name, Type: "A", Content: receivedReq.Content})
 			return
 		}
 		http.NotFound(w, r)
@@ -105,7 +105,7 @@ func TestDeregisterHost(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/zones/zone-123/records" {
-			json.NewEncoder(w).Encode(records)
+			_ = json.NewEncoder(w).Encode(records)
 			return
 		}
 		if r.Method == http.MethodDelete {
@@ -139,7 +139,7 @@ func TestDeregisterHost(t *testing.T) {
 func TestEnsureZone_ServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("internal error"))
+		_, _ = w.Write([]byte("internal error"))
 	}))
 	defer srv.Close()
 

@@ -26,15 +26,15 @@ type Client struct {
 type Container struct {
 	ID          string `json:".id"`
 	Name        string `json:"name"`
-	Tag         string `json:"tag"`          // image tag, e.g. "docker.io/library/microdns:arm64"
-	Image       string `json:"file"`         // tarball path on RouterOS
+	Tag         string `json:"tag"`  // image tag, e.g. "docker.io/library/microdns:arm64"
+	Image       string `json:"file"` // tarball path on RouterOS
 	Interface   string `json:"interface"`
 	RootDir     string `json:"root-dir"`
 	MountLists  string `json:"mountlists"`
 	Cmd         string `json:"cmd,omitempty"`
 	Entrypoint  string `json:"entrypoint,omitempty"`
-	Running     string `json:"running,omitempty"`  // "true" if running
-	Stopped     string `json:"stopped,omitempty"`  // "true" if stopped
+	Running     string `json:"running,omitempty"` // "true" if running
+	Stopped     string `json:"stopped,omitempty"` // "true" if stopped
 	Logging     string `json:"logging"`
 	WorkDir     string `json:"workdir,omitempty"`
 	Hostname    string `json:"hostname,omitempty"`
@@ -263,7 +263,7 @@ func (c *Client) ListBridges(ctx context.Context) ([]Bridge, error) {
 // CreateEoIPTunnel creates an EoIP tunnel interface.
 func (c *Client) CreateEoIPTunnel(ctx context.Context, name, localIP, remoteIP string, tunnelID int) error {
 	return c.restPOST(ctx, "/interface/eoip/add", map[string]interface{}{
-		"name":       name,
+		"name":           name,
 		"local-address":  localIP,
 		"remote-address": remoteIP,
 		"tunnel-id":      fmt.Sprintf("%d", tunnelID),

@@ -2,7 +2,6 @@ package namespace
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -126,7 +125,7 @@ func toK8sNamespace(ns *Namespace) corev1.Namespace {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              ns.Name,
 			Annotations:       annotations,
-			CreationTimestamp:  metav1.Time{Time: time.Time{}},
+			CreationTimestamp: metav1.Time{Time: time.Time{}},
 		},
 		Status: corev1.NamespaceStatus{
 			Phase: phase,
@@ -161,18 +160,5 @@ func fromK8sNamespace(k8sNS *corev1.Namespace, m *Manager) (name, domain, networ
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
-
-// writeErrorJSON writes a K8s-style error response.
-func writeErrorJSON(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(metav1.Status{
-		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Status"},
-		Status:   "Failure",
-		Message:  message,
-		Reason:   metav1.StatusReason(fmt.Sprintf("%d", status)),
-		Code:     int32(status),
-	})
+	_ = json.NewEncoder(w).Encode(v)
 }

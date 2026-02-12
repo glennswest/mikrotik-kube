@@ -21,13 +21,13 @@ import (
 
 // Operator manages DNS zones and MicroDNS instances.
 type Operator struct {
-	cfg        config.DZOConfig
-	networks   []config.NetworkDef
-	dns        *dns.Client
-	ros        *routeros.Client
-	netMgr     *network.Manager
-	lcMgr      *lifecycle.Manager
-	log        *zap.SugaredLogger
+	cfg      config.DZOConfig
+	networks []config.NetworkDef
+	dns      *dns.Client
+	ros      *routeros.Client
+	netMgr   *network.Manager
+	lcMgr    *lifecycle.Manager
+	log      *zap.SugaredLogger
 
 	mu    sync.RWMutex
 	state *State

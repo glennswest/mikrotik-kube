@@ -109,7 +109,7 @@ registry:
 	}
 
 	cmd := newTestFlags()
-	cmd.Flags().Set("config", cfgPath)
+	_ = cmd.Flags().Set("config", cfgPath)
 
 	cfg, err := Load(cmd.Flags())
 	if err != nil {
@@ -160,7 +160,7 @@ network:
 	}
 
 	cmd := newTestFlags()
-	cmd.Flags().Set("config", cfgPath)
+	_ = cmd.Flags().Set("config", cfgPath)
 
 	cfg, err := Load(cmd.Flags())
 	if err != nil {
@@ -201,10 +201,10 @@ routeros:
 	}
 
 	cmd := newTestFlags()
-	cmd.Flags().Set("config", cfgPath)
-	cmd.Flags().Set("node-name", "flag-node")
-	cmd.Flags().Set("standalone", "true")
-	cmd.Flags().Set("routeros-address", "192.168.1.1:8728")
+	_ = cmd.Flags().Set("config", cfgPath)
+	_ = cmd.Flags().Set("node-name", "flag-node")
+	_ = cmd.Flags().Set("standalone", "true")
+	_ = cmd.Flags().Set("routeros-address", "192.168.1.1:8728")
 
 	cfg, err := Load(cmd.Flags())
 	if err != nil {
@@ -224,8 +224,8 @@ routeros:
 
 func TestFlagOverrides_NetworkFlags(t *testing.T) {
 	cmd := newTestFlags()
-	cmd.Flags().Set("pod-cidr", "10.0.0.0/16")
-	cmd.Flags().Set("bridge-name", "custom-bridge")
+	_ = cmd.Flags().Set("pod-cidr", "10.0.0.0/16")
+	_ = cmd.Flags().Set("bridge-name", "custom-bridge")
 
 	cfg, err := Load(cmd.Flags())
 	if err != nil {

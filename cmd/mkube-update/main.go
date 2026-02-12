@@ -28,21 +28,21 @@ var version = "dev"
 
 // Config is the top-level configuration loaded from YAML.
 type Config struct {
-	RegistryURL     string        `yaml:"registryURL"`
-	RouterOSURL     string        `yaml:"routerosURL"`
-	RouterOSUser    string        `yaml:"routerosUser"`
+	RegistryURL      string       `yaml:"registryURL"`
+	RouterOSURL      string       `yaml:"routerosURL"`
+	RouterOSUser     string       `yaml:"routerosUser"`
 	RouterOSPassword string       `yaml:"routerosPassword"`
-	MkubeAPI        string        `yaml:"mkubeAPI"`
-	PollSeconds     int           `yaml:"pollSeconds"`
-	Watches         []WatchEntry  `yaml:"watches"`
+	MkubeAPI         string       `yaml:"mkubeAPI"`
+	PollSeconds      int          `yaml:"pollSeconds"`
+	Watches          []WatchEntry `yaml:"watches"`
 }
 
 // WatchEntry defines a single image to watch in the local registry.
 type WatchEntry struct {
 	Repo         string        `yaml:"repo"`
 	Tag          string        `yaml:"tag"`
-	Container    string        `yaml:"container,omitempty"`    // single container
-	Containers   []string      `yaml:"containers,omitempty"`   // multiple containers
+	Container    string        `yaml:"container,omitempty"`  // single container
+	Containers   []string      `yaml:"containers,omitempty"` // multiple containers
 	SelfUpdate   bool          `yaml:"selfUpdate,omitempty"`
 	Rolling      bool          `yaml:"rolling,omitempty"`
 	RollingDelay time.Duration `yaml:"rollingDelay,omitempty"`
@@ -59,20 +59,9 @@ func (w WatchEntry) Targets() []string {
 	return nil
 }
 
-// rosContainer is a minimal RouterOS container representation.
-type rosContainer struct {
-	ID      string `json:".id"`
-	Name    string `json:"name"`
-	Running string `json:"running,omitempty"`
-	Stopped string `json:"stopped,omitempty"`
-}
-
-func (c rosContainer) isRunning() bool { return c.Running == "true" }
-func (c rosContainer) isStopped() bool { return c.Stopped == "true" }
-
 func main() {
 	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 	log := logger.Sugar()
 
 	log.Infow("starting mkube-update", "version", version)
@@ -121,7 +110,7 @@ func main() {
 		srv := &http.Server{Addr: ":8081", Handler: mux}
 		go func() {
 			<-ctx.Done()
-			srv.Shutdown(context.Background())
+			_ = srv.Shutdown(context.Background())
 		}()
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Errorw("healthz server error", "error", err)
@@ -291,11 +280,11 @@ func (u *Updater) replaceContainer(ctx context.Context, name, imageRef string) e
 	// Re-read to get all fields (the list endpoint returns everything)
 	// Since we just removed it, we build the spec from what we had
 	spec := map[string]string{
-		"name":         name,
-		"tag":          imageRef,
-		"interface":    ct.iface,
-		"root-dir":     ct.rootDir,
-		"logging":      ct.logging,
+		"name":          name,
+		"tag":           imageRef,
+		"interface":     ct.iface,
+		"root-dir":      ct.rootDir,
+		"logging":       ct.logging,
 		"start-on-boot": ct.startOnBoot,
 	}
 	if ct.mountLists != "" {

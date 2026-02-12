@@ -46,9 +46,9 @@ type DriverCapabilities struct {
 
 // BridgeOpts are options for CreateBridge.
 type BridgeOpts struct {
-	VLAN    int               // default PVID, 0 = none
-	MTU     int               // 0 = driver default
-	Labels  map[string]string // arbitrary metadata
+	VLAN   int               // default PVID, 0 = none
+	MTU    int               // 0 = driver default
+	Labels map[string]string // arbitrary metadata
 }
 
 // BridgeInfo describes a bridge returned by ListBridges.
@@ -70,5 +70,5 @@ type TunnelSpec struct {
 	Type     string // "vxlan", "wireguard", "gre"
 	LocalIP  string
 	RemoteIP string
-	VNI      int    // VXLAN network identifier
+	VNI      int // VXLAN network identifier
 }

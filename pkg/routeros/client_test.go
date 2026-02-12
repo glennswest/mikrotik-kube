@@ -37,7 +37,7 @@ func TestListContainers(t *testing.T) {
 			t.Errorf("expected GET, got %s", r.Method)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(containers)
+		_ = json.NewEncoder(w).Encode(containers)
 	})
 
 	client, server := newTestClient(t, handler)
@@ -63,7 +63,7 @@ func TestGetContainer(t *testing.T) {
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(containers)
+		_ = json.NewEncoder(w).Encode(containers)
 	})
 
 	client, server := newTestClient(t, handler)
@@ -89,7 +89,7 @@ func TestCreateContainer(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("expected POST, got %s", r.Method)
 		}
-		json.NewDecoder(r.Body).Decode(&received)
+		_ = json.NewDecoder(r.Body).Decode(&received)
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -159,7 +159,7 @@ func TestCreateVeth(t *testing.T) {
 		if r.URL.Path != "/interface/veth/add" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -184,7 +184,7 @@ func TestListVeths(t *testing.T) {
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(veths)
+		_ = json.NewEncoder(w).Encode(veths)
 	})
 
 	client, server := newTestClient(t, handler)

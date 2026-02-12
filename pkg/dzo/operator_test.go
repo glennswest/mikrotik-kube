@@ -30,14 +30,14 @@ func mockMicroDNS(t *testing.T) *httptest.Server {
 			zoneList = append(zoneList, z)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(zoneList)
+		_ = json.NewEncoder(w).Encode(zoneList)
 	})
 
 	mux.HandleFunc("POST /api/v1/zones", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Name string `json:"name"`
 		}
-		json.NewDecoder(r.Body).Decode(&req)
+		_ = json.NewDecoder(r.Body).Decode(&req)
 
 		id := jsonID(nextID)
 		nextID++
@@ -47,7 +47,7 @@ func mockMicroDNS(t *testing.T) *httptest.Server {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(z)
+		_ = json.NewEncoder(w).Encode(z)
 	})
 
 	return httptest.NewServer(mux)

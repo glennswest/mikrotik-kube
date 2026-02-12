@@ -91,7 +91,7 @@ func (d *Linux) CreatePort(ctx context.Context, name, address, gateway string) e
 	// Parse and add address
 	addr, err := netlink.ParseAddr(address)
 	if err != nil {
-		netlink.LinkDel(veth)
+		_ = netlink.LinkDel(veth)
 		return fmt.Errorf("parsing address %s: %w", address, err)
 	}
 
@@ -101,12 +101,12 @@ func (d *Linux) CreatePort(ctx context.Context, name, address, gateway string) e
 	}
 
 	if err := netlink.AddrAdd(link, addr); err != nil {
-		netlink.LinkDel(veth)
+		_ = netlink.LinkDel(veth)
 		return fmt.Errorf("netlink addr add %s on %s: %w", address, name, err)
 	}
 
 	if err := netlink.LinkSetUp(link); err != nil {
-		netlink.LinkDel(veth)
+		_ = netlink.LinkDel(veth)
 		return fmt.Errorf("netlink link up %s: %w", name, err)
 	}
 
@@ -191,7 +191,7 @@ func (d *Linux) SetPortVLAN(ctx context.Context, port string, vid int, tagged bo
 	if err != nil {
 		return fmt.Errorf("netlink lookup %s: %w", port, err)
 	}
-	pvid := !tagged   // untagged ports get PVID
+	pvid := !tagged // untagged ports get PVID
 	untagged := !tagged
 	if err := netlink.BridgeVlanAdd(link, uint16(vid), pvid, untagged, false, false); err != nil {
 		return fmt.Errorf("netlink bridge vlan add vid=%d on %s: %w", vid, port, err)

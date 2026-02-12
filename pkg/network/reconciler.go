@@ -3,8 +3,6 @@ package network
 import (
 	"context"
 	"time"
-
-	"go.uber.org/zap"
 )
 
 // ReconcilerOpts configures the reconciliation loop.
@@ -94,9 +92,4 @@ func (m *Manager) reconcile(ctx context.Context) {
 	} else {
 		log.Debugw("reconciliation complete, no drift")
 	}
-}
-
-// reconcileLogger returns a sub-logger for reconciliation.
-func reconcileLogger(log *zap.SugaredLogger) *zap.SugaredLogger {
-	return log.Named("reconciler")
 }

@@ -26,6 +26,7 @@ import (
 //	    <repo>/
 //	      <tag or digest>.json  — manifest data
 //	      <tag or digest>.type  — content-type metadata
+//
 // uploadSession tracks an in-progress chunked blob upload.
 type uploadSession struct {
 	UUID      string
@@ -158,7 +159,7 @@ func (s *BlobStore) ListRepositories() []string {
 	manifestsDir := filepath.Join(s.root, "manifests")
 	var repos []string
 
-	filepath.Walk(manifestsDir, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(manifestsDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}

@@ -28,11 +28,11 @@ type Zone struct {
 
 // Record represents a MicroDNS DNS record.
 type Record struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Type     string `json:"record_type"`
-	Content  string `json:"content"`
-	TTL      int    `json:"ttl"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Type    string `json:"record_type"`
+	Content string `json:"content"`
+	TTL     int    `json:"ttl"`
 }
 
 type createZoneRequest struct {

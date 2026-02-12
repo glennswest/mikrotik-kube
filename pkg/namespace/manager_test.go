@@ -477,7 +477,7 @@ func TestK8sAPICreateNamespaceWithAnnotations(t *testing.T) {
 	}
 
 	var created corev1.Namespace
-	json.NewDecoder(w.Body).Decode(&created)
+	_ = json.NewDecoder(w.Body).Decode(&created)
 
 	if created.Annotations["vkube.io/domain"] != "custom.g10.lo" {
 		t.Errorf("expected domain custom.g10.lo, got %s", created.Annotations["vkube.io/domain"])
@@ -513,7 +513,7 @@ func TestK8sAPIGetNamespace(t *testing.T) {
 	}
 
 	var ns corev1.Namespace
-	json.NewDecoder(w.Body).Decode(&ns)
+	_ = json.NewDecoder(w.Body).Decode(&ns)
 
 	if ns.Name != "gt" {
 		t.Errorf("expected name gt, got %s", ns.Name)
@@ -558,7 +558,7 @@ func TestK8sAPIDeleteNamespace(t *testing.T) {
 	}
 
 	// Create a namespace first
-	mgr.CreateNamespace(ctx, "test", "test.gt.lo", "gt", "", false)
+	_, _ = mgr.CreateNamespace(ctx, "test", "test.gt.lo", "gt", "", false)
 
 	mux := http.NewServeMux()
 	mgr.RegisterRoutes(mux)
@@ -606,7 +606,7 @@ namespaces:
     containers:
       - my-app
 `
-	os.WriteFile(dzoStatePath, []byte(dzoState), 0644)
+	_ = os.WriteFile(dzoStatePath, []byte(dzoState), 0644)
 
 	logger, _ := zap.NewDevelopment()
 	log := logger.Sugar()

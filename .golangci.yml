@@ -12,8 +12,9 @@ linters:
 linters-settings:
   errcheck:
     check-blank: false
-  govet:
-    shadow: false
+  misspell:
+    ignore-words:
+      - routeros
 
 issues:
   exclude-use-default: true

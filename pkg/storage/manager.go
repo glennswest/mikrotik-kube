@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"archive/tar"
 	"bytes"
 	"context"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
-	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"go.uber.org/zap"
 
@@ -25,23 +23,23 @@ import (
 // tarball caching on RouterOS, and garbage collection of unused images
 // and orphaned volumes.
 type Manager struct {
-	cfg            config.StorageConfig
-	registryCfg    config.RegistryConfig
-	ros            *routeros.Client
-	log            *zap.SugaredLogger
+	cfg         config.StorageConfig
+	registryCfg config.RegistryConfig
+	ros         *routeros.Client
+	log         *zap.SugaredLogger
 
-	mu       sync.Mutex
-	images   map[string]*CachedImage   // image ref -> cache entry
-	volumes  map[string]*ProvisionedVolume
+	mu      sync.Mutex
+	images  map[string]*CachedImage // image ref -> cache entry
+	volumes map[string]*ProvisionedVolume
 }
 
 // CachedImage tracks a cached OCI image tarball on the RouterOS filesystem.
 type CachedImage struct {
-	Ref         string    // e.g. "docker.io/library/nginx:latest"
-	TarballPath string    // path on RouterOS, e.g. "/container-cache/nginx-latest.tar"
+	Ref         string // e.g. "docker.io/library/nginx:latest"
+	TarballPath string // path on RouterOS, e.g. "/container-cache/nginx-latest.tar"
 	PulledAt    time.Time
 	Size        int64
-	InUse       int       // reference count
+	InUse       int // reference count
 }
 
 // ProvisionedVolume tracks a volume created for a container.
@@ -146,20 +144,6 @@ func (m *Manager) pullAndUpload(ctx context.Context, imageRef, tarballPath strin
 	return nil
 }
 
-// imageSize returns the total size of an OCI image across all layers.
-func imageSize(img v1.Image) int64 {
-	layers, err := img.Layers()
-	if err != nil {
-		return 0
-	}
-	var total int64
-	for _, l := range layers {
-		sz, _ := l.Size()
-		total += sz
-	}
-	return total
-}
-
 // isLocalRegistry returns true if the image ref points to the embedded registry
 // (localhost or any configured local address).
 func (m *Manager) isLocalRegistry(imageRef string) bool {
@@ -177,20 +161,6 @@ func (m *Manager) isLocalRegistry(imageRef string) bool {
 		}
 	}
 	return false
-}
-
-// tarballSize reads through a tar archive and sums the file sizes.
-func tarballSize(data []byte) int64 {
-	tr := tar.NewReader(bytes.NewReader(data))
-	var total int64
-	for {
-		hdr, err := tr.Next()
-		if err != nil {
-			break
-		}
-		total += hdr.Size
-	}
-	return total
 }
 
 // ReleaseImage decrements the use count of an image.

@@ -19,11 +19,11 @@ import (
 // on configured images. When a new digest is detected, it pulls the
 // manifest and blobs into the local registry store and emits a PushEvent.
 type ImageWatcher struct {
-	cfg     config.RegistryConfig
-	store   *BlobStore
-	events  chan<- PushEvent
-	log     *zap.SugaredLogger
-	client  *http.Client
+	cfg    config.RegistryConfig
+	store  *BlobStore
+	events chan<- PushEvent
+	log    *zap.SugaredLogger
+	client *http.Client
 
 	mu          sync.Mutex
 	lastDigests map[string]string // upstream ref → last seen digest

@@ -54,7 +54,7 @@ func TestCatalogEmpty(t *testing.T) {
 	r.handleCatalog(w, req)
 
 	var result map[string][]string
-	json.NewDecoder(w.Body).Decode(&result)
+	_ = json.NewDecoder(w.Body).Decode(&result)
 	if len(result["repositories"]) != 0 {
 		t.Errorf("expected empty repositories, got %v", result["repositories"])
 	}
@@ -91,7 +91,7 @@ func TestManifestHead(t *testing.T) {
 	r := newTestRegistry(t)
 
 	// Store a manifest first
-	r.store.PutManifest("testrepo", "v1", "application/vnd.docker.distribution.manifest.v2+json",
+	_ = r.store.PutManifest("testrepo", "v1", "application/vnd.docker.distribution.manifest.v2+json",
 		bytes.NewBufferString("test-manifest-data"))
 
 	req := httptest.NewRequest(http.MethodHead, "/v2/testrepo/manifests/v1", nil)
@@ -111,7 +111,7 @@ func TestBlobHeadAndGet(t *testing.T) {
 	blobData := []byte("hello world blob data")
 	digest := "sha256:abc123"
 
-	r.store.PutBlob(digest, bytes.NewReader(blobData))
+	_ = r.store.PutBlob(digest, bytes.NewReader(blobData))
 
 	// HEAD
 	headReq := httptest.NewRequest(http.MethodHead, "/v2/myrepo/blobs/"+digest, nil)
@@ -151,9 +151,9 @@ func TestBlobNotFound(t *testing.T) {
 func TestCatalogWithManifests(t *testing.T) {
 	r := newTestRegistry(t)
 
-	r.store.PutManifest("library/nginx", "latest", "application/json",
+	_ = r.store.PutManifest("library/nginx", "latest", "application/json",
 		bytes.NewBufferString("{}"))
-	r.store.PutManifest("myapp/backend", "v1", "application/json",
+	_ = r.store.PutManifest("myapp/backend", "v1", "application/json",
 		bytes.NewBufferString("{}"))
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/_catalog", nil)
@@ -161,7 +161,7 @@ func TestCatalogWithManifests(t *testing.T) {
 	r.handleCatalog(w, req)
 
 	var result map[string][]string
-	json.NewDecoder(w.Body).Decode(&result)
+	_ = json.NewDecoder(w.Body).Decode(&result)
 
 	repos := result["repositories"]
 	if len(repos) != 2 {
@@ -184,7 +184,7 @@ func TestManifestMethodNotAllowed(t *testing.T) {
 func TestNestedRepoPath(t *testing.T) {
 	r := newTestRegistry(t)
 
-	r.store.PutManifest("library/nginx", "latest", "application/json",
+	_ = r.store.PutManifest("library/nginx", "latest", "application/json",
 		bytes.NewBufferString(`{"test": true}`))
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/library/nginx/manifests/latest", nil)

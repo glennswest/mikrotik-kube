@@ -27,7 +27,7 @@ func mockRouterOS(t *testing.T) *httptest.Server {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		json.NewEncoder(w).Encode([]map[string]string{
+		_ = json.NewEncoder(w).Encode([]map[string]string{
 			{".id": "*1", "name": "bridge"},
 			{".id": "*2", "name": "containers"},
 		})
@@ -39,7 +39,7 @@ func mockRouterOS(t *testing.T) *httptest.Server {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		json.NewEncoder(w).Encode([]map[string]string{
+		_ = json.NewEncoder(w).Encode([]map[string]string{
 			{".id": "*10", "name": "veth-app1", "address": "192.168.200.2/24", "gateway": "192.168.200.1"},
 		})
 	})
@@ -51,7 +51,7 @@ func mockRouterOS(t *testing.T) *httptest.Server {
 			return
 		}
 		var body map[string]string
-		json.NewDecoder(r.Body).Decode(&body)
+		_ = json.NewDecoder(r.Body).Decode(&body)
 		if body["name"] == "" {
 			http.Error(w, `{"error":"missing name"}`, http.StatusBadRequest)
 			return

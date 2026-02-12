@@ -24,7 +24,7 @@ func TestProbeMicroDNS(t *testing.T) {
 	// Set up a mock MicroDNS server
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/zones" {
-			json.NewEncoder(w).Encode([]dns.Zone{
+			_ = json.NewEncoder(w).Encode([]dns.Zone{
 				{ID: "zone-1", Name: "gt.lo"},
 				{ID: "zone-2", Name: "test.lo"},
 			})
@@ -37,11 +37,11 @@ func TestProbeMicroDNS(t *testing.T) {
 	// Extract host:port from test server
 	// probeMicroDNS uses ip:8080, but we'll test the underlying logic
 	ctx := context.Background()
-	zones := probeMicroDNS(ctx, srv.Client(), srv.URL[7:]) // strip "http://"
+	_ = probeMicroDNS(ctx, srv.Client(), srv.URL[7:]) // strip "http://"
 	// This won't work directly because probeMicroDNS hardcodes port 8080.
 	// Instead, test that a non-responsive IP returns nil.
 	shortClient := &http.Client{Timeout: 500 * time.Millisecond}
-	zones = probeMicroDNS(ctx, shortClient, "192.0.2.1") // RFC 5737 TEST-NET
+	zones := probeMicroDNS(ctx, shortClient, "192.0.2.1") // RFC 5737 TEST-NET
 	if zones != nil {
 		t.Errorf("expected nil zones for unreachable IP, got %v", zones)
 	}

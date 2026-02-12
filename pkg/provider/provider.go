@@ -362,7 +362,7 @@ func (p *MicroKubeProvider) GetPods(ctx context.Context) ([]*corev1.Pod, error) 
 // MikroTik device in the cluster.
 func (p *MicroKubeProvider) ConfigureNode(ctx context.Context, node *corev1.Node) {
 	node.Status.Capacity = corev1.ResourceList{
-		corev1.ResourceCPU:    resource.MustParse("4"),     // typical CHR/RB capacity
+		corev1.ResourceCPU:    resource.MustParse("4"), // typical CHR/RB capacity
 		corev1.ResourceMemory: resource.MustParse("1Gi"),
 		corev1.ResourcePods:   resource.MustParse("20"),
 	}
@@ -379,11 +379,11 @@ func (p *MicroKubeProvider) ConfigureNode(ctx context.Context, node *corev1.Node
 		},
 	}
 	node.Labels = map[string]string{
-		"type":                     "virtual-kubelet",
-		"kubernetes.io/os":         "linux",
-		"kubernetes.io/arch":       "arm64",
-		"node.kubernetes.io/role":  "mikrotik",
-		"mikrotik.io/device-type":  "routeros",
+		"type":                    "virtual-kubelet",
+		"kubernetes.io/os":        "linux",
+		"kubernetes.io/arch":      "arm64",
+		"node.kubernetes.io/role": "mikrotik",
+		"mikrotik.io/device-type": "routeros",
 	}
 
 	// Add taint so normal pods aren't scheduled here
@@ -730,7 +730,7 @@ func (p *MicroKubeProvider) RunUpdateAPI(ctx context.Context, listenAddr string)
 
 		log.Infow("update-container complete", "name", req.Name, "tag", req.Tag)
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"ok"}`)
+		_, _ = fmt.Fprintf(w, `{"status":"ok"}`)
 	})
 
 	srv := &http.Server{Addr: listenAddr, Handler: mux}
@@ -739,7 +739,7 @@ func (p *MicroKubeProvider) RunUpdateAPI(ctx context.Context, listenAddr string)
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		srv.Shutdown(shutdownCtx)
+		_ = srv.Shutdown(shutdownCtx)
 	}()
 
 	log.Infow("update API listening", "addr", listenAddr)

@@ -3,7 +3,6 @@ package dzo
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -36,7 +35,7 @@ func (o *Operator) RunAPI(ctx context.Context, listenAddr string) {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		srv.Shutdown(shutdownCtx)
+		_ = srv.Shutdown(shutdownCtx)
 	}()
 
 	o.log.Infow("DZO API listening", "addr", listenAddr)
@@ -129,7 +128,7 @@ func (o *Operator) handleHealthz(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	_ = json.NewEncoder(w).Encode(v)
 }
 
 // decodeDottedName handles zone names with dots (e.g., "kube.gt.lo")
@@ -143,5 +142,5 @@ func decodeDottedName(pathValue, rawPath, prefix string) string {
 			return rawPath[idx+len(prefix):]
 		}
 	}
-	return fmt.Sprintf("%s", pathValue)
+	return pathValue
 }
