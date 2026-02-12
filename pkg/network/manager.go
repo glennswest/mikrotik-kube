@@ -249,6 +249,48 @@ func (m *Manager) DNSClient() *dns.Client {
 	return m.dns
 }
 
+// GetPortInfo returns the IP (without CIDR mask) and network name for a veth allocation.
+func (m *Manager) GetPortInfo(vethName string) (ip, networkName string, ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	alloc, exists := m.allocs[vethName]
+	if !exists {
+		return "", "", false
+	}
+	return alloc.ip.String(), alloc.networkName, true
+}
+
+// RegisterDNS registers an additional A record in the named network's DNS zone.
+func (m *Manager) RegisterDNS(ctx context.Context, networkName, hostname, ip string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ns, err := m.resolveNetwork(networkName)
+	if err != nil {
+		return err
+	}
+	if m.dns == nil || ns.zoneID == "" {
+		return nil
+	}
+	return m.dns.RegisterHost(ctx, ns.def.DNS.Endpoint, ns.zoneID, hostname, ip, 60)
+}
+
+// DeregisterDNS removes the A record matching hostname+ip from the named network's DNS zone.
+func (m *Manager) DeregisterDNS(ctx context.Context, networkName, hostname, ip string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ns, err := m.resolveNetwork(networkName)
+	if err != nil {
+		return err
+	}
+	if m.dns == nil || ns.zoneID == "" {
+		return nil
+	}
+	return m.dns.DeregisterHostByIP(ctx, ns.def.DNS.Endpoint, ns.zoneID, hostname, ip)
+}
+
 // GetAllocations returns a snapshot of current IP allocations across all networks.
 func (m *Manager) GetAllocations() map[string]string {
 	return m.ipam.AllAllocations()

@@ -37,6 +37,9 @@ const (
 	annotationFile = "vkube.io/file"
 	// annotationNamespace selects a DZO namespace for DNS registration.
 	annotationNamespace = "vkube.io/namespace"
+	// annotationAliases defines extra DNS aliases for pod containers.
+	// Format: "alias=container,alias2=container2,alias3" (no =container means first container).
+	annotationAliases = "vkube.io/aliases"
 )
 
 // Deps holds injected dependencies for the provider.
@@ -89,6 +92,8 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 	networkName := pod.Annotations[annotationNetwork]
 	namespaceName := pod.Annotations[annotationNamespace]
 
+	containerIPs := make(map[string]string) // container name → bare IP
+
 	for i, container := range pod.Spec.Containers {
 		name := sanitizeName(pod, container.Name)
 
@@ -105,27 +110,28 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 			}
 		}
 
-		// 2. Allocate network (with DNS registration)
+		// 2. Allocate network (registers containerName.podName in network zone)
 		vethName := fmt.Sprintf("veth-%s-%d", truncate(pod.Name, 8), i)
-		ip, gw, dnsServer, err := p.deps.NetworkMgr.AllocateInterface(ctx, vethName, pod.Name, networkName)
+		containerHostname := container.Name + "." + pod.Name
+		ip, gw, dnsServer, err := p.deps.NetworkMgr.AllocateInterface(ctx, vethName, containerHostname, networkName)
 		if err != nil {
 			return fmt.Errorf("allocating network for %s: %w", name, err)
 		}
-		log.Infow("allocated network", "veth", vethName, "ip", ip, "gateway", gw, "dns", dnsServer)
+		bareIP := strings.Split(ip, "/")[0]
+		containerIPs[container.Name] = bareIP
+		log.Infow("allocated network", "veth", vethName, "ip", ip, "gateway", gw, "dns", dnsServer,
+			"container_hostname", containerHostname)
 
-		// 2b. If namespace is specified, register DNS in namespace's zone instead
+		// 2b. If namespace is specified, register container subdomain in namespace zone too
 		if namespaceName != "" && p.deps.Namespace != nil {
 			endpoint, zoneID, err := p.deps.Namespace.ResolveNamespace(namespaceName)
 			if err != nil {
 				log.Warnw("failed to resolve namespace, using default DNS", "namespace", namespaceName, "error", err)
 			} else {
-				bareIP := strings.Split(ip, "/")[0]
 				dnsClient := p.deps.NetworkMgr.DNSClient()
 				if dnsClient != nil {
-					if regErr := dnsClient.RegisterHost(ctx, endpoint, zoneID, pod.Name, bareIP, 60); regErr != nil {
-						log.Warnw("failed to register in namespace zone", "namespace", namespaceName, "error", regErr)
-					} else {
-						log.Infow("registered in namespace zone", "namespace", namespaceName, "hostname", pod.Name, "ip", bareIP)
+					if regErr := dnsClient.RegisterHost(ctx, endpoint, zoneID, containerHostname, bareIP, 60); regErr != nil {
+						log.Warnw("failed to register container in namespace zone", "namespace", namespaceName, "error", regErr)
 					}
 				}
 				p.deps.Namespace.AddContainerToNamespace(namespaceName, name)
@@ -145,7 +151,7 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 			startOnBoot = "true"
 		}
 
-		// 6. Create the RouterOS container
+		// 5. Create the RouterOS container
 		spec := routeros.ContainerSpec{
 			Name:        name,
 			File:        tarballPath,
@@ -162,7 +168,7 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 			return fmt.Errorf("creating container %s: %w", name, err)
 		}
 
-		// 7. Start the container
+		// 6. Start the container
 		ct, err := p.deps.ROS.GetContainer(ctx, name)
 		if err != nil {
 			return fmt.Errorf("getting created container %s: %w", name, err)
@@ -171,7 +177,7 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 			return fmt.Errorf("starting container %s: %w", name, err)
 		}
 
-		// 8. Register with lifecycle manager for boot ordering / health probes
+		// 7. Register with lifecycle manager for boot ordering / health probes
 		if startOnBoot == "true" {
 			p.deps.LifecycleMgr.Register(name, lifecycle.ContainerUnit{
 				Name:          name,
@@ -189,6 +195,9 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 
 		log.Infow("container created and started", "name", name, "id", ct.ID)
 	}
+
+	// 8. Register DNS aliases (pod-level default + custom aliases from annotation)
+	p.registerPodAliases(ctx, pod, networkName, namespaceName, containerIPs, log)
 
 	// Track the pod
 	p.pods[podKey(pod)] = pod.DeepCopy()
@@ -215,6 +224,21 @@ func (p *MicroKubeProvider) DeletePod(ctx context.Context, pod *corev1.Pod) erro
 	log := p.deps.Logger.With("pod", podKey(pod))
 	log.Infow("deleting pod")
 
+	networkName := pod.Annotations[annotationNetwork]
+	namespaceName := pod.Annotations[annotationNamespace]
+
+	// Collect container IPs before releasing anything (needed for alias cleanup)
+	containerIPs := make(map[string]string)
+	for i, container := range pod.Spec.Containers {
+		vethName := fmt.Sprintf("veth-%s-%d", truncate(pod.Name, 8), i)
+		if portIP, _, ok := p.deps.NetworkMgr.GetPortInfo(vethName); ok {
+			containerIPs[container.Name] = portIP
+		}
+	}
+
+	// Deregister DNS aliases before releasing interfaces
+	p.deregisterPodAliases(ctx, pod, networkName, namespaceName, containerIPs, log)
+
 	for i, container := range pod.Spec.Containers {
 		name := sanitizeName(pod, container.Name)
 
@@ -235,7 +259,7 @@ func (p *MicroKubeProvider) DeletePod(ctx context.Context, pod *corev1.Pod) erro
 			log.Warnw("error removing container", "name", name, "error", err)
 		}
 
-		// Release network resources
+		// ReleaseInterface deregisters the container subdomain record (containerName.podName)
 		vethName := fmt.Sprintf("veth-%s-%d", truncate(pod.Name, 8), i)
 		if err := p.deps.NetworkMgr.ReleaseInterface(ctx, vethName); err != nil {
 			log.Warnw("error releasing network", "veth", vethName, "error", err)
@@ -827,6 +851,130 @@ func (p *MicroKubeProvider) replaceContainer(ctx context.Context, name, newTag s
 	}
 
 	return nil
+}
+
+// ─── DNS Aliases ─────────────────────────────────────────────────────────────
+
+// dnsAlias maps an alias hostname to a container name within the pod.
+type dnsAlias struct {
+	hostname      string
+	containerName string
+}
+
+// parseAliases parses the vkube.io/aliases annotation.
+// Format: "alias=container,alias2=container2,alias3"
+// Aliases without "=container" target the default (first) container.
+func parseAliases(annotation, defaultContainer string) []dnsAlias {
+	var aliases []dnsAlias
+	for _, part := range strings.Split(annotation, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if eq := strings.IndexByte(part, '='); eq >= 0 {
+			aliases = append(aliases, dnsAlias{
+				hostname:      strings.TrimSpace(part[:eq]),
+				containerName: strings.TrimSpace(part[eq+1:]),
+			})
+		} else {
+			aliases = append(aliases, dnsAlias{
+				hostname:      part,
+				containerName: defaultContainer,
+			})
+		}
+	}
+	return aliases
+}
+
+// registerPodAliases registers the default pod alias (podName → first container IP)
+// and any custom aliases from vkube.io/aliases in both the network zone and
+// namespace zone (if applicable).
+func (p *MicroKubeProvider) registerPodAliases(ctx context.Context, pod *corev1.Pod, networkName, namespaceName string, containerIPs map[string]string, log *zap.SugaredLogger) {
+	if len(pod.Spec.Containers) == 0 || len(containerIPs) == 0 {
+		return
+	}
+
+	firstContainer := pod.Spec.Containers[0].Name
+
+	// Build the full alias list: default pod alias + custom aliases
+	aliases := []dnsAlias{{hostname: pod.Name, containerName: firstContainer}}
+	if ann := pod.Annotations[annotationAliases]; ann != "" {
+		aliases = append(aliases, parseAliases(ann, firstContainer)...)
+	}
+
+	// Resolve namespace zone (if applicable)
+	var nsEndpoint, nsZoneID string
+	if namespaceName != "" && p.deps.Namespace != nil {
+		ep, zid, err := p.deps.Namespace.ResolveNamespace(namespaceName)
+		if err == nil {
+			nsEndpoint, nsZoneID = ep, zid
+		}
+	}
+
+	dnsClient := p.deps.NetworkMgr.DNSClient()
+
+	for _, a := range aliases {
+		ip, ok := containerIPs[a.containerName]
+		if !ok {
+			log.Warnw("alias references unknown container", "alias", a.hostname, "container", a.containerName)
+			continue
+		}
+
+		// Register in network zone
+		if regErr := p.deps.NetworkMgr.RegisterDNS(ctx, networkName, a.hostname, ip); regErr != nil {
+			log.Warnw("failed to register DNS alias", "alias", a.hostname, "ip", ip, "error", regErr)
+		} else {
+			log.Infow("DNS alias registered", "alias", a.hostname, "container", a.containerName, "ip", ip)
+		}
+
+		// Register in namespace zone
+		if nsZoneID != "" && dnsClient != nil {
+			if regErr := dnsClient.RegisterHost(ctx, nsEndpoint, nsZoneID, a.hostname, ip, 60); regErr != nil {
+				log.Warnw("failed to register DNS alias in namespace zone", "alias", a.hostname, "error", regErr)
+			}
+		}
+	}
+}
+
+// deregisterPodAliases removes the default pod alias and custom aliases.
+func (p *MicroKubeProvider) deregisterPodAliases(ctx context.Context, pod *corev1.Pod, networkName, namespaceName string, containerIPs map[string]string, log *zap.SugaredLogger) {
+	if len(pod.Spec.Containers) == 0 || len(containerIPs) == 0 {
+		return
+	}
+
+	firstContainer := pod.Spec.Containers[0].Name
+
+	aliases := []dnsAlias{{hostname: pod.Name, containerName: firstContainer}}
+	if ann := pod.Annotations[annotationAliases]; ann != "" {
+		aliases = append(aliases, parseAliases(ann, firstContainer)...)
+	}
+
+	var nsEndpoint, nsZoneID string
+	if namespaceName != "" && p.deps.Namespace != nil {
+		ep, zid, err := p.deps.Namespace.ResolveNamespace(namespaceName)
+		if err == nil {
+			nsEndpoint, nsZoneID = ep, zid
+		}
+	}
+
+	dnsClient := p.deps.NetworkMgr.DNSClient()
+
+	for _, a := range aliases {
+		ip, ok := containerIPs[a.containerName]
+		if !ok {
+			continue
+		}
+
+		if err := p.deps.NetworkMgr.DeregisterDNS(ctx, networkName, a.hostname, ip); err != nil {
+			log.Warnw("error deregistering DNS alias", "alias", a.hostname, "ip", ip, "error", err)
+		}
+
+		if nsZoneID != "" && dnsClient != nil {
+			if err := dnsClient.DeregisterHostByIP(ctx, nsEndpoint, nsZoneID, a.hostname, ip); err != nil {
+				log.Warnw("error deregistering DNS alias from namespace zone", "alias", a.hostname, "error", err)
+			}
+		}
+	}
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

@@ -211,6 +211,62 @@ func (c *Client) DeregisterHost(ctx context.Context, endpoint, zoneID, hostname 
 	return nil
 }
 
+// DeregisterHostByIP removes A records matching both hostname and IP from a zone.
+// Unlike DeregisterHost which removes all A records for a hostname, this only
+// removes the specific record for one IP — used for cleaning up pod-level
+// round-robin records without removing other containers' entries.
+func (c *Client) DeregisterHostByIP(ctx context.Context, endpoint, zoneID, hostname, ip string) error {
+	url := fmt.Sprintf("%s/api/v1/zones/%s/records", endpoint, zoneID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return fmt.Errorf("building record list request: %w", err)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("listing records in zone %s: %w", zoneID, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("reading record list response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("listing records: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var records []Record
+	if err := json.Unmarshal(body, &records); err != nil {
+		return fmt.Errorf("decoding records: %w", err)
+	}
+
+	for _, r := range records {
+		if r.Name == hostname && r.Type == "A" && r.Content == ip {
+			delURL := fmt.Sprintf("%s/api/v1/zones/%s/records/%s", endpoint, zoneID, r.ID)
+			delReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, delURL, nil)
+			if err != nil {
+				return fmt.Errorf("building delete request: %w", err)
+			}
+
+			delResp, err := c.http.Do(delReq)
+			if err != nil {
+				return fmt.Errorf("deleting record %s: %w", r.ID, err)
+			}
+			delResp.Body.Close()
+
+			if delResp.StatusCode != http.StatusOK && delResp.StatusCode != http.StatusNoContent {
+				return fmt.Errorf("deleting record %s: HTTP %d", r.ID, delResp.StatusCode)
+			}
+
+			c.log.Infow("DNS record deregistered by IP", "hostname", hostname, "ip", ip, "record_id", r.ID, "zone", zoneID)
+		}
+	}
+
+	return nil
+}
+
 // Close cleans up the client.
 func (c *Client) Close() {
 	c.http.CloseIdleConnections()

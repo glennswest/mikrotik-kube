@@ -216,6 +216,10 @@ func run(cmd *cobra.Command, args []string) error {
 
 	log.Info("lifecycle manager ready")
 
+	// ── HTTP API mux (shared across DZO, namespace, network, pod APIs) ──
+	mux := http.NewServeMux()
+	listenAddr := ":8082"
+
 	// ── Domain Zone Operator + Namespace Manager (optional) ─────────
 	var dzoOp *dzo.Operator
 	var nsMgr *namespace.Manager
@@ -232,32 +236,16 @@ func run(cmd *cobra.Command, args []string) error {
 				nsMgr = nil
 			}
 
-			// Shared HTTP mux for DZO + namespace + network API
-			listenAddr := cfg.DZO.ListenAddr
-			if listenAddr == "" {
-				listenAddr = ":8082"
+			if cfg.DZO.ListenAddr != "" {
+				listenAddr = cfg.DZO.ListenAddr
 			}
-			mux := http.NewServeMux()
 			dzoOp.RegisterRoutes(mux)
 			if nsMgr != nil {
 				nsMgr.RegisterRoutes(mux)
 			}
-			netMgr.RegisterRoutes(mux)
-			go func() {
-				srv := &http.Server{Addr: listenAddr, Handler: mux}
-				go func() {
-					<-ctx.Done()
-					shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-					defer cancel()
-					_ = srv.Shutdown(shutdownCtx)
-				}()
-				log.Infow("DZO+namespace API listening", "addr", listenAddr)
-				if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-					log.Errorw("DZO+namespace API error", "error", err)
-				}
-			}()
 		}
 	}
+	netMgr.RegisterRoutes(mux)
 
 	// ── Embedded Registry (optional) ────────────────────────────────
 	var reg *registry.Registry
@@ -283,6 +271,22 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("creating provider: %w", err)
 	}
+
+	// ── Register provider Pod API routes and start HTTP server ──────
+	p.RegisterRoutes(mux)
+	go func() {
+		srv := &http.Server{Addr: listenAddr, Handler: mux}
+		go func() {
+			<-ctx.Done()
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(shutdownCtx)
+		}()
+		log.Infow("API server listening", "addr", listenAddr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Errorw("API server error", "error", err)
+		}
+	}()
 
 	// ── Image Watcher (mirrors GHCR → local registry) ──────────────
 	if reg != nil && len(cfg.Registry.WatchImages) > 0 {
