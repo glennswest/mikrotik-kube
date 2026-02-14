@@ -199,6 +199,9 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 	// 8. Register DNS aliases (pod-level default + custom aliases from annotation)
 	p.registerPodAliases(ctx, pod, networkName, namespaceName, containerIPs, log)
 
+	// 9. Push pod→container mappings to micrologs
+	p.pushLogMappings(ctx, pod, log)
+
 	// Track the pod
 	p.pods[podKey(pod)] = pod.DeepCopy()
 
@@ -973,6 +976,50 @@ func (p *MicroKubeProvider) deregisterPodAliases(ctx context.Context, pod *corev
 			if err := dnsClient.DeregisterHostByIP(ctx, nsEndpoint, nsZoneID, a.hostname, ip); err != nil {
 				log.Warnw("error deregistering DNS alias from namespace zone", "alias", a.hostname, "error", err)
 			}
+		}
+	}
+}
+
+// ─── Micrologs Integration ──────────────────────────────────────────────────
+
+// pushLogMappings sends pod→container name mappings to the micrologs service.
+func (p *MicroKubeProvider) pushLogMappings(ctx context.Context, pod *corev1.Pod, log *zap.SugaredLogger) {
+	if !p.deps.Config.Logging.Enabled || p.deps.Config.Logging.URL == "" {
+		return
+	}
+
+	url := strings.TrimRight(p.deps.Config.Logging.URL, "/") + "/metadata/mapping"
+
+	for _, container := range pod.Spec.Containers {
+		rosName := sanitizeName(pod, container.Name)
+		payload := map[string]string{
+			"namespace": pod.Namespace,
+			"pod":       pod.Name,
+			"container": container.Name,
+			"ros_name":  rosName,
+		}
+		body, err := json.Marshal(payload)
+		if err != nil {
+			log.Warnw("failed to marshal log mapping", "error", err)
+			continue
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(body))
+		if err != nil {
+			log.Warnw("failed to create log mapping request", "error", err)
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Warnw("failed to push log mapping", "container", rosName, "error", err)
+			continue
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			log.Warnw("micrologs rejected mapping", "container", rosName, "status", resp.StatusCode)
 		}
 	}
 }

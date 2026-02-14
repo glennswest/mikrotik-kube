@@ -20,6 +20,7 @@ type Config struct {
 	Registry   RegistryConfig  `yaml:"registry"`
 	DZO        DZOConfig       `yaml:"dzo"`
 	Namespace  NamespaceConfig `yaml:"namespace"`
+	Logging    LoggingConfig   `yaml:"logging"`
 
 	// Deprecated: single-network config for backward compatibility.
 	// If present and Networks is empty, it is migrated into Networks.
@@ -33,6 +34,12 @@ type DZOConfig struct {
 	StatePath     string `yaml:"statePath"`     // e.g. "/etc/microkube/dzo-state.yaml"
 	MicroDNSImage string `yaml:"microdnsImage"` // e.g. "192.168.200.2:5000/microdns:latest"
 	DefaultMode   string `yaml:"defaultMode"`   // "open" or "nested"
+}
+
+// LoggingConfig configures the connection to micrologs.
+type LoggingConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	URL     string `yaml:"url"` // e.g. "http://logging.kube.gt.lo:8084"
 }
 
 // NamespaceConfig configures the namespace manager.

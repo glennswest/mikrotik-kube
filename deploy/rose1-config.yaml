@@ -74,6 +74,10 @@ namespace:
   statePath: /etc/microkube/namespace-state.yaml
   defaultMode: "nested"
 
+logging:
+  enabled: true
+  url: "http://logging.kube.gt.lo:8084"
+
 registry:
   enabled: true
   listenAddr: ":5000"
@@ -95,3 +99,7 @@ registry:
       localRepo: "mkube-update"
     - upstream: "ghcr.io/glennswest/microdns:latest"
       localRepo: "microdns"
+    - upstream: "ghcr.io/glenneth/micrologs:latest"
+      localRepo: "micrologs"
+    - upstream: "ghcr.io/glenneth/micrologs-collector-routeros:latest"
+      localRepo: "micrologs-collector-routeros"

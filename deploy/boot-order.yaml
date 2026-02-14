@@ -280,6 +280,53 @@ spec:
         - name: data
           mountPath: /data
 
+# ── Logging (priority 65 — before update manager) ────────────────────────
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: micrologs
+  namespace: infra
+  annotations:
+    vkube.io/network: gt
+    vkube.io/boot-priority: "65"
+    vkube.io/aliases: "logging"
+    vkube.io/image-policy: auto
+spec:
+  restartPolicy: Always
+  containers:
+    - name: micrologs
+      image: ghcr.io/glenneth/micrologs:latest
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 8084
+        periodSeconds: 30
+      volumeMounts:
+        - name: logs
+          mountPath: /raid1/logs
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: logcollector
+  namespace: infra
+  annotations:
+    vkube.io/network: gt
+    vkube.io/boot-priority: "66"
+    vkube.io/depends-on: "micrologs-micrologs"
+    vkube.io/image-policy: auto
+spec:
+  restartPolicy: Always
+  containers:
+    - name: collector
+      image: ghcr.io/glenneth/micrologs-collector-routeros:latest
+      volumeMounts:
+        - name: config
+          mountPath: /etc/micrologs-collector
+
 # ── Update manager (priority 70 — after all services) ────────────────────
 
 ---
