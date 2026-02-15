@@ -297,7 +297,7 @@ spec:
   restartPolicy: Always
   containers:
     - name: micrologs
-      image: ghcr.io/glenneth/micrologs:latest
+      image: ghcr.io/glennswest/micrologs:latest
       livenessProbe:
         httpGet:
           path: /healthz
@@ -322,7 +322,7 @@ spec:
   restartPolicy: Always
   containers:
     - name: collector
-      image: ghcr.io/glenneth/micrologs-collector-routeros:latest
+      image: ghcr.io/glennswest/micrologs-collector-routeros:latest
       volumeMounts:
         - name: config
           mountPath: /etc/micrologs-collector

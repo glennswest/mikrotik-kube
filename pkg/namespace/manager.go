@@ -9,7 +9,7 @@ import (
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
-	"github.com/glenneth/microkube/pkg/config"
+	"github.com/glennswest/microkube/pkg/config"
 )
 
 // Manager manages namespaces. It uses a ZoneResolver (typically the DZO operator)

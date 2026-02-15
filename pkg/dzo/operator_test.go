@@ -11,8 +11,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/glenneth/microkube/pkg/config"
-	"github.com/glenneth/microkube/pkg/dns"
+	"github.com/glennswest/microkube/pkg/config"
+	"github.com/glennswest/microkube/pkg/dns"
 )
 
 // mockMicroDNS creates an httptest server that simulates MicroDNS API.

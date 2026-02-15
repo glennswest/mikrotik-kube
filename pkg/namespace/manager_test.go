@@ -15,7 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/glenneth/microkube/pkg/config"
+	"github.com/glennswest/microkube/pkg/config"
 )
 
 // mockZoneResolver implements ZoneResolver for tests.

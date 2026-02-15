@@ -9,9 +9,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/glenneth/microkube/pkg/config"
-	"github.com/glenneth/microkube/pkg/network"
-	"github.com/glenneth/microkube/pkg/routeros"
+	"github.com/glennswest/microkube/pkg/config"
+	"github.com/glennswest/microkube/pkg/network"
+	"github.com/glennswest/microkube/pkg/routeros"
 )
 
 // mockRouterOS creates an httptest.Server that simulates RouterOS REST API

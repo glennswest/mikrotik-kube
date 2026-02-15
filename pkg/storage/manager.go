@@ -15,8 +15,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"go.uber.org/zap"
 
-	"github.com/glenneth/microkube/pkg/config"
-	"github.com/glenneth/microkube/pkg/routeros"
+	"github.com/glennswest/microkube/pkg/config"
+	"github.com/glennswest/microkube/pkg/routeros"
 )
 
 // Manager handles OCI image → tarball conversion, volume provisioning,

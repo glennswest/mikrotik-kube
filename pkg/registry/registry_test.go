@@ -10,7 +10,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/glenneth/microkube/pkg/config"
+	"github.com/glennswest/microkube/pkg/config"
 )
 
 func newTestRegistry(t *testing.T) *Registry {

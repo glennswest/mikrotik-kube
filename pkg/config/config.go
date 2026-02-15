@@ -129,7 +129,7 @@ type RegistryConfig struct {
 // When a new digest is detected, the image is pulled into the local registry
 // and a PushEvent is emitted for mkube-update to detect.
 type WatchImage struct {
-	// Upstream is the full image reference to poll (e.g., "ghcr.io/glenneth/microdns:latest")
+	// Upstream is the full image reference to poll (e.g., "ghcr.io/glennswest/microdns:latest")
 	Upstream string `yaml:"upstream"`
 	// LocalRepo is the repo name in the local registry (e.g., "microdns")
 	LocalRepo string `yaml:"localRepo"`

@@ -5,7 +5,7 @@ package driver
 import (
 	"testing"
 
-	"github.com/glenneth/microkube/pkg/network"
+	"github.com/glennswest/microkube/pkg/network"
 	"go.uber.org/zap"
 )
 

@@ -12,11 +12,11 @@ import (
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
-	"github.com/glenneth/microkube/pkg/config"
-	"github.com/glenneth/microkube/pkg/dns"
-	"github.com/glenneth/microkube/pkg/lifecycle"
-	"github.com/glenneth/microkube/pkg/network"
-	"github.com/glenneth/microkube/pkg/routeros"
+	"github.com/glennswest/microkube/pkg/config"
+	"github.com/glennswest/microkube/pkg/dns"
+	"github.com/glennswest/microkube/pkg/lifecycle"
+	"github.com/glennswest/microkube/pkg/network"
+	"github.com/glennswest/microkube/pkg/routeros"
 )
 
 // Operator manages DNS zones and MicroDNS instances.

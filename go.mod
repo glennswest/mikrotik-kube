@@ -1,4 +1,4 @@
-module github.com/glenneth/microkube
+module github.com/glennswest/microkube
 
 go 1.24.0
 

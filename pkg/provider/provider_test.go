@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"github.com/glenneth/microkube/pkg/config"
+	"github.com/glennswest/microkube/pkg/config"
 )
 
 func TestPodKey(t *testing.T) {

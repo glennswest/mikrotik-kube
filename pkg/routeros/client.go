@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/glenneth/microkube/pkg/config"
+	"github.com/glennswest/microkube/pkg/config"
 )
 
 // Client wraps both the RouterOS REST API and the RouterOS protocol API.

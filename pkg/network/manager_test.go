@@ -4,8 +4,8 @@ import (
 	"net"
 	"testing"
 
-	"github.com/glenneth/microkube/pkg/config"
-	"github.com/glenneth/microkube/pkg/network/ipam"
+	"github.com/glennswest/microkube/pkg/config"
+	"github.com/glennswest/microkube/pkg/network/ipam"
 )
 
 func TestGetAllocations(t *testing.T) {

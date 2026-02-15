@@ -11,8 +11,8 @@ func TestParseUpstreamRef(t *testing.T) {
 		wantRepo string
 		wantTag  string
 	}{
-		{"ghcr.io/glenneth/microdns:latest", "ghcr.io", "glenneth/microdns", "latest"},
-		{"ghcr.io/glenneth/microdns:v2.1", "ghcr.io", "glenneth/microdns", "v2.1"},
+		{"ghcr.io/glennswest/microdns:latest", "ghcr.io", "glennswest/microdns", "latest"},
+		{"ghcr.io/glennswest/microdns:v2.1", "ghcr.io", "glennswest/microdns", "v2.1"},
 		{"docker.io/library/nginx:1.25", "docker.io", "library/nginx", "1.25"},
 		{"ghcr.io/org/repo", "ghcr.io", "org/repo", "latest"},
 		{"registry.example.com:5000/app:v1", "registry.example.com:5000", "app", "v1"},
@@ -28,7 +28,7 @@ func TestParseUpstreamRef(t *testing.T) {
 }
 
 func TestParseWWWAuthenticate(t *testing.T) {
-	header := `Bearer realm="https://ghcr.io/token",service="ghcr.io",scope="repository:glenneth/microdns:pull"`
+	header := `Bearer realm="https://ghcr.io/token",service="ghcr.io",scope="repository:glennswest/microdns:pull"`
 	params := parseWWWAuthenticate(header)
 
 	if params["realm"] != "https://ghcr.io/token" {
@@ -37,7 +37,7 @@ func TestParseWWWAuthenticate(t *testing.T) {
 	if params["service"] != "ghcr.io" {
 		t.Errorf("service = %q", params["service"])
 	}
-	if params["scope"] != "repository:glenneth/microdns:pull" {
+	if params["scope"] != "repository:glennswest/microdns:pull" {
 		t.Errorf("scope = %q", params["scope"])
 	}
 }

@@ -11,10 +11,10 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/glenneth/microkube/pkg/config"
-	"github.com/glenneth/microkube/pkg/dns"
-	"github.com/glenneth/microkube/pkg/lifecycle"
-	"github.com/glenneth/microkube/pkg/routeros"
+	"github.com/glennswest/microkube/pkg/config"
+	"github.com/glennswest/microkube/pkg/dns"
+	"github.com/glennswest/microkube/pkg/lifecycle"
+	"github.com/glennswest/microkube/pkg/routeros"
 )
 
 // Container represents a discovered container with its full network context.

@@ -6,8 +6,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/glenneth/microkube/pkg/network"
-	"github.com/glenneth/microkube/pkg/routeros"
+	"github.com/glennswest/microkube/pkg/network"
+	"github.com/glennswest/microkube/pkg/routeros"
 )
 
 // RouterOS implements network.NetworkDriver by wrapping a routeros.Client.
