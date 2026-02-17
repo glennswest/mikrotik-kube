@@ -15,12 +15,21 @@ trap "rm -rf ${WORK}" EXIT
 
 # Build rootfs layer
 LAYER_DIR="${WORK}/rootfs"
-mkdir -p "${LAYER_DIR}/etc/mkube" "${LAYER_DIR}/usr/local/bin" "${LAYER_DIR}/data"
+mkdir -p "${LAYER_DIR}/etc/mkube" "${LAYER_DIR}/etc/ssl/certs" "${LAYER_DIR}/usr/local/bin" "${LAYER_DIR}/data"
 echo "root:x:0:0:root:/:/usr/local/bin/mkube" > "${LAYER_DIR}/etc/passwd"
 echo "root:x:0:" > "${LAYER_DIR}/etc/group"
 cp "${BINARY}" "${LAYER_DIR}/usr/local/bin/mkube"
 chmod +x "${LAYER_DIR}/usr/local/bin/mkube"
 cp "${CONFIG}" "${LAYER_DIR}/etc/mkube/config.yaml"
+
+# Include CA certificates so Go's TLS can verify upstream registries
+if [ -f /etc/ssl/cert.pem ]; then
+    cp /etc/ssl/cert.pem "${LAYER_DIR}/etc/ssl/certs/ca-certificates.crt"
+elif [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+    cp /etc/ssl/certs/ca-certificates.crt "${LAYER_DIR}/etc/ssl/certs/ca-certificates.crt"
+else
+    echo "WARNING: No CA certificate bundle found, TLS verification will fail" >&2
+fi
 
 # Create layer tarball
 LAYER_TAR="${WORK}/layer.tar"
