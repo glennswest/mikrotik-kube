@@ -23,7 +23,7 @@ jobs:
         with:
           go-version: "1.24"
 
-      - name: Build microkube (${{ matrix.arch }})
+      - name: Build mkube (${{ matrix.arch }})
         run: make build ARCH=${{ matrix.arch }}
 
       - name: Build mkube-update (${{ matrix.arch }})
@@ -36,12 +36,12 @@ jobs:
       - name: Create tarballs
         run: |
           cd dist
-          tar czf microkube-${{ github.ref_name }}-${{ matrix.arch }}.tar.gz microkube-${{ matrix.arch }}
+          tar czf mkube-${{ github.ref_name }}-${{ matrix.arch }}.tar.gz mkube-${{ matrix.arch }}
           tar czf mkube-update-${{ github.ref_name }}-${{ matrix.arch }}.tar.gz mkube-update-${{ matrix.arch }}
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/microkube-${{ github.ref_name }}-${{ matrix.arch }}.tar.gz
+            dist/mkube-${{ github.ref_name }}-${{ matrix.arch }}.tar.gz
             dist/mkube-update-${{ github.ref_name }}-${{ matrix.arch }}.tar.gz

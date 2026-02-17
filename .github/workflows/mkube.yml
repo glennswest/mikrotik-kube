@@ -1,17 +1,17 @@
-# Build and push microkube image to GHCR on changes to its source.
+# Build and push mkube image to GHCR on changes to its source.
 
-name: microkube
+name: mkube
 
 on:
   push:
     branches: [main]
     paths:
-      - "cmd/microkube/**"
+      - "cmd/mkube/**"
       - "pkg/**"
       - "go.mod"
       - "go.sum"
       - "Dockerfile"
-      - ".github/workflows/microkube.yml"
+      - ".github/workflows/mkube.yml"
       - ".github/workflows/build-image.yml"
   workflow_dispatch:
 
@@ -23,7 +23,7 @@ jobs:
   build:
     uses: ./.github/workflows/build-image.yml
     with:
-      image-name: microkube
+      image-name: mkube
       context: .
       dockerfile: Dockerfile
       platforms: linux/arm64

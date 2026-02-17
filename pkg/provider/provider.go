@@ -22,12 +22,12 @@ import (
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/glennswest/microkube/pkg/config"
-	"github.com/glennswest/microkube/pkg/lifecycle"
-	"github.com/glennswest/microkube/pkg/namespace"
-	"github.com/glennswest/microkube/pkg/network"
-	"github.com/glennswest/microkube/pkg/routeros"
-	"github.com/glennswest/microkube/pkg/storage"
+	"github.com/glennswest/mkube/pkg/config"
+	"github.com/glennswest/mkube/pkg/lifecycle"
+	"github.com/glennswest/mkube/pkg/namespace"
+	"github.com/glennswest/mkube/pkg/network"
+	"github.com/glennswest/mkube/pkg/routeros"
+	"github.com/glennswest/mkube/pkg/storage"
 )
 
 const (
@@ -397,7 +397,7 @@ func (p *MicroKubeProvider) ConfigureNode(ctx context.Context, node *corev1.Node
 	node.Status.NodeInfo = corev1.NodeSystemInfo{
 		Architecture:    "arm64",
 		OperatingSystem: "linux",
-		KubeletVersion:  "v1.29.0-microkube",
+		KubeletVersion:  "v1.29.0-mkube",
 	}
 	node.Status.Conditions = []corev1.NodeCondition{
 		{
@@ -409,15 +409,15 @@ func (p *MicroKubeProvider) ConfigureNode(ctx context.Context, node *corev1.Node
 		"type":                    "virtual-kubelet",
 		"kubernetes.io/os":        "linux",
 		"kubernetes.io/arch":      "arm64",
-		"node.kubernetes.io/role": "mikrotik",
-		"mikrotik.io/device-type": "routeros",
+		"node.kubernetes.io/role": "mkube",
+		"mkube.io/device-type":    "routeros",
 	}
 
 	// Add taint so normal pods aren't scheduled here
 	node.Spec.Taints = []corev1.Taint{
 		{
 			Key:    "virtual-kubelet.io/provider",
-			Value:  "mikrotik",
+			Value:  "mkube",
 			Effect: corev1.TaintEffectNoSchedule,
 		},
 	}

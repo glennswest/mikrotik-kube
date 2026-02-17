@@ -34,8 +34,8 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if cfg.NodeName != "mikrotik-node" {
-		t.Errorf("expected default NodeName 'mikrotik-node', got %q", cfg.NodeName)
+	if cfg.NodeName != "mkube-node" {
+		t.Errorf("expected default NodeName 'mkube-node', got %q", cfg.NodeName)
 	}
 	if cfg.RouterOS.Address != "192.168.200.1:8728" {
 		t.Errorf("expected default RouterOS address, got %q", cfg.RouterOS.Address)

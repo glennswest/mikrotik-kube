@@ -10,7 +10,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 
-	nw "github.com/glennswest/microkube/pkg/network"
+	nw "github.com/glennswest/mkube/pkg/network"
 )
 
 // Linux implements nw.NetworkDriver using netlink syscalls.

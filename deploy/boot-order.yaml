@@ -1,6 +1,6 @@
-# Boot order manifest for microkube standalone reconciler on rose1.gw.lo
+# Boot order manifest for mkube standalone reconciler on rose1.gw.lo
 #
-# Defines all containers managed by microkube. The standalone reconciler
+# Defines all containers managed by mkube. The standalone reconciler
 # reads this file and ensures each pod exists on the RouterOS device.
 #
 # Annotations:

@@ -15,12 +15,12 @@ trap "rm -rf ${WORK}" EXIT
 
 # Build rootfs layer
 LAYER_DIR="${WORK}/rootfs"
-mkdir -p "${LAYER_DIR}/etc/microkube" "${LAYER_DIR}/usr/local/bin" "${LAYER_DIR}/data"
-echo "root:x:0:0:root:/:/usr/local/bin/microkube" > "${LAYER_DIR}/etc/passwd"
+mkdir -p "${LAYER_DIR}/etc/mkube" "${LAYER_DIR}/usr/local/bin" "${LAYER_DIR}/data"
+echo "root:x:0:0:root:/:/usr/local/bin/mkube" > "${LAYER_DIR}/etc/passwd"
 echo "root:x:0:" > "${LAYER_DIR}/etc/group"
-cp "${BINARY}" "${LAYER_DIR}/usr/local/bin/microkube"
-chmod +x "${LAYER_DIR}/usr/local/bin/microkube"
-cp "${CONFIG}" "${LAYER_DIR}/etc/microkube/config.yaml"
+cp "${BINARY}" "${LAYER_DIR}/usr/local/bin/mkube"
+chmod +x "${LAYER_DIR}/usr/local/bin/mkube"
+cp "${CONFIG}" "${LAYER_DIR}/etc/mkube/config.yaml"
 
 # Create layer tarball
 LAYER_TAR="${WORK}/layer.tar"
@@ -42,8 +42,8 @@ CONFIG_SHA=$(cat <<CFGJSON | shasum -a 256 | awk '{print $1}'
   "architecture": "arm64",
   "os": "linux",
   "config": {
-    "Entrypoint": ["/usr/local/bin/microkube"],
-    "Cmd": ["--config", "/etc/microkube/config.yaml"],
+    "Entrypoint": ["/usr/local/bin/mkube"],
+    "Cmd": ["--config", "/etc/mkube/config.yaml"],
     "WorkingDir": "/"
   },
   "rootfs": {
@@ -59,8 +59,8 @@ cat > "${WORK}/${CONFIG_SHA}.json" <<CFGJSON
   "architecture": "arm64",
   "os": "linux",
   "config": {
-    "Entrypoint": ["/usr/local/bin/microkube"],
-    "Cmd": ["--config", "/etc/microkube/config.yaml"],
+    "Entrypoint": ["/usr/local/bin/mkube"],
+    "Cmd": ["--config", "/etc/mkube/config.yaml"],
     "WorkingDir": "/"
   },
   "rootfs": {
@@ -76,8 +76,8 @@ cat > "${LAYER_SAVE_DIR}/json" <<LAYERJSON
   "id": "${LAYER_ID}",
   "created": "1970-01-01T00:00:00Z",
   "config": {
-    "Entrypoint": ["/usr/local/bin/microkube"],
-    "Cmd": ["--config", "/etc/microkube/config.yaml"]
+    "Entrypoint": ["/usr/local/bin/mkube"],
+    "Cmd": ["--config", "/etc/mkube/config.yaml"]
   }
 }
 LAYERJSON
@@ -86,14 +86,14 @@ LAYERJSON
 cat > "${WORK}/manifest.json" <<MANIFEST
 [{
   "Config": "${CONFIG_SHA}.json",
-  "RepoTags": ["microkube:latest"],
+  "RepoTags": ["mkube:latest"],
   "Layers": ["${LAYER_ID}/layer.tar"]
 }]
 MANIFEST
 
 # Create repositories file
 cat > "${WORK}/repositories" <<REPOS
-{"microkube":{"latest":"${LAYER_ID}"}}
+{"mkube":{"latest":"${LAYER_ID}"}}
 REPOS
 
 # Build final docker-save tar

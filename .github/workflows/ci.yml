@@ -50,5 +50,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: microkube-${{ matrix.arch }}
-          path: dist/microkube-${{ matrix.arch }}
+          name: mkube-${{ matrix.arch }}
+          path: dist/mkube-${{ matrix.arch }}

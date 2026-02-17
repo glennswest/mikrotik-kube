@@ -10,9 +10,9 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/glennswest/microkube/pkg/config"
-	"github.com/glennswest/microkube/pkg/dns"
-	"github.com/glennswest/microkube/pkg/routeros"
+	"github.com/glennswest/mkube/pkg/config"
+	"github.com/glennswest/mkube/pkg/dns"
+	"github.com/glennswest/mkube/pkg/routeros"
 )
 
 func testLogger() *zap.SugaredLogger {

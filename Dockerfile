@@ -1,4 +1,4 @@
-# Multi-stage build for microkube
+# Multi-stage build for mkube
 # Produces a minimal static binary suitable for RouterOS containers.
 #
 # RouterOS container constraints:
@@ -25,8 +25,8 @@ ARG COMMIT=none
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT}" \
-    -o /microkube \
-    ./cmd/microkube/
+    -o /mkube \
+    ./cmd/mkube/
 
 # ── Stage 2: Runtime ────────────────────────────────────────────────────────
 FROM alpine:3.19
@@ -37,19 +37,19 @@ RUN apk add --no-cache \
     tini
 
 # Create non-root user
-RUN addgroup -S microkube && adduser -S -G microkube microkube
+RUN addgroup -S mkube && adduser -S -G mkube mkube
 
 # Create data directories
-RUN mkdir -p /etc/microkube /data/registry /data/cache /data/volumes \
-    && chown -R microkube:microkube /data
+RUN mkdir -p /etc/mkube /data/registry /data/cache /data/volumes \
+    && chown -R mkube:mkube /data
 
-COPY --from=builder /microkube /usr/local/bin/microkube
+COPY --from=builder /mkube /usr/local/bin/mkube
 
 # Default config
-COPY deploy/config.yaml /etc/microkube/config.yaml
+COPY deploy/config.yaml /etc/mkube/config.yaml
 
 EXPOSE 5000 8080
 
 # Use tini as PID 1 (proper signal handling in containers)
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["microkube", "--config", "/etc/microkube/config.yaml"]
+CMD ["mkube", "--config", "/etc/mkube/config.yaml"]

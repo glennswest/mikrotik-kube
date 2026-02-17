@@ -1,4 +1,4 @@
 dist/
 *.tar.gz
 *.tar
-/microkube
+/mkube

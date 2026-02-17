@@ -10,7 +10,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/glennswest/microkube/pkg/config"
+	"github.com/glennswest/mkube/pkg/config"
 )
 
 // PushEvent is emitted when a manifest is pushed to the registry.

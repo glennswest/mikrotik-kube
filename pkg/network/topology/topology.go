@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/glennswest/microkube/pkg/network"
+	"github.com/glennswest/mkube/pkg/network"
 )
 
 // Node represents a device in the topology that has a NetworkDriver.

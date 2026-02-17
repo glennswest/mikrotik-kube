@@ -9,7 +9,7 @@ import (
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
-	"github.com/glennswest/microkube/pkg/config"
+	"github.com/glennswest/mkube/pkg/config"
 )
 
 // Manager manages namespaces. It uses a ZoneResolver (typically the DZO operator)
@@ -99,7 +99,7 @@ func (m *Manager) Bootstrap(ctx context.Context) error {
 func (m *Manager) migrateDZOState() bool {
 	dzoPath := m.dzoCfg.StatePath
 	if dzoPath == "" {
-		dzoPath = "/etc/microkube/dzo-state.yaml"
+		dzoPath = "/etc/mkube/dzo-state.yaml"
 	}
 
 	data, err := os.ReadFile(dzoPath)
@@ -330,7 +330,7 @@ func (m *Manager) statePath() string {
 	if m.cfg.StatePath != "" {
 		return m.cfg.StatePath
 	}
-	return "/etc/microkube/namespace-state.yaml"
+	return "/etc/mkube/namespace-state.yaml"
 }
 
 func (m *Manager) defaultMode() string {

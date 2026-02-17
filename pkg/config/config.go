@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config is the top-level configuration for microkube.
+// Config is the top-level configuration for mkube.
 type Config struct {
 	NodeName   string          `yaml:"nodeName"`
 	Standalone bool            `yaml:"standalone"`
@@ -31,7 +31,7 @@ type Config struct {
 type DZOConfig struct {
 	Enabled       bool   `yaml:"enabled"`
 	ListenAddr    string `yaml:"listenAddr"`    // e.g. ":8082"
-	StatePath     string `yaml:"statePath"`     // e.g. "/etc/microkube/dzo-state.yaml"
+	StatePath     string `yaml:"statePath"`     // e.g. "/etc/mkube/dzo-state.yaml"
 	MicroDNSImage string `yaml:"microdnsImage"` // e.g. "192.168.200.2:5000/microdns:latest"
 	DefaultMode   string `yaml:"defaultMode"`   // "open" or "nested"
 }
@@ -44,7 +44,7 @@ type LoggingConfig struct {
 
 // NamespaceConfig configures the namespace manager.
 type NamespaceConfig struct {
-	StatePath   string `yaml:"statePath"`   // e.g. "/etc/microkube/namespace-state.yaml"
+	StatePath   string `yaml:"statePath"`   // e.g. "/etc/mkube/namespace-state.yaml"
 	DefaultMode string `yaml:"defaultMode"` // "open" or "nested", overrides DZO defaultMode
 }
 
@@ -161,7 +161,7 @@ func Load(flags *pflag.FlagSet) (*Config, error) {
 	configPath, _ := flags.GetString("config")
 
 	cfg := &Config{
-		NodeName:   "mikrotik-node",
+		NodeName:   "mkube-node",
 		Standalone: false,
 		RouterOS: RouterOSConfig{
 			Address:        "192.168.200.1:8728",
@@ -176,7 +176,7 @@ func Load(flags *pflag.FlagSet) (*Config, error) {
 			GCKeepLastN:       5,
 		},
 		Lifecycle: LifecycleConfig{
-			BootManifestPath: "/etc/microkube/boot-order.yaml",
+			BootManifestPath: "/etc/mkube/boot-order.yaml",
 			WatchdogInterval: 5,
 			MaxRestarts:      5,
 			RestartCooldown:  10,

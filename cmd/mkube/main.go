@@ -1,11 +1,11 @@
-// microkube: A single-binary Virtual Kubelet provider for MikroTik RouterOS
+// mkube: A single-binary Virtual Kubelet provider for MikroTik RouterOS
 // with integrated network management, storage management, systemd boot services,
 // and an optional embedded OCI registry (Zot).
 //
 // Architecture:
 //
 //	┌──────────────────────────────────────────────────────────────────┐
-//	│  microkube (single Go binary)                                      │
+//	│  mkube (single Go binary)                                      │
 //	│                                                                  │
 //	│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
 //	│  │ Virtual       │  │ Network      │  │ Storage Manager        │ │
@@ -50,18 +50,18 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
-	"github.com/glennswest/microkube/pkg/config"
-	"github.com/glennswest/microkube/pkg/discovery"
-	"github.com/glennswest/microkube/pkg/dns"
-	"github.com/glennswest/microkube/pkg/dzo"
-	"github.com/glennswest/microkube/pkg/lifecycle"
-	"github.com/glennswest/microkube/pkg/namespace"
-	"github.com/glennswest/microkube/pkg/network"
-	netdriver "github.com/glennswest/microkube/pkg/network/driver"
-	"github.com/glennswest/microkube/pkg/provider"
-	"github.com/glennswest/microkube/pkg/registry"
-	"github.com/glennswest/microkube/pkg/routeros"
-	"github.com/glennswest/microkube/pkg/storage"
+	"github.com/glennswest/mkube/pkg/config"
+	"github.com/glennswest/mkube/pkg/discovery"
+	"github.com/glennswest/mkube/pkg/dns"
+	"github.com/glennswest/mkube/pkg/dzo"
+	"github.com/glennswest/mkube/pkg/lifecycle"
+	"github.com/glennswest/mkube/pkg/namespace"
+	"github.com/glennswest/mkube/pkg/network"
+	netdriver "github.com/glennswest/mkube/pkg/network/driver"
+	"github.com/glennswest/mkube/pkg/provider"
+	"github.com/glennswest/mkube/pkg/registry"
+	"github.com/glennswest/mkube/pkg/routeros"
+	"github.com/glennswest/mkube/pkg/storage"
 )
 
 var (
@@ -71,7 +71,7 @@ var (
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:     "microkube",
+		Use:     "mkube",
 		Short:   "Virtual Kubelet provider for MikroTik RouterOS containers",
 		Version: fmt.Sprintf("%s (%s)", version, commit),
 		RunE:    run,
@@ -79,9 +79,9 @@ func main() {
 
 	// Global flags
 	f := rootCmd.Flags()
-	f.String("config", "/etc/microkube/config.yaml", "Path to configuration file")
+	f.String("config", "/etc/mkube/config.yaml", "Path to configuration file")
 	f.String("kubeconfig", "", "Path to kubeconfig (optional, for standalone mode)")
-	f.String("node-name", "mikrotik-node", "Kubernetes node name for this device")
+	f.String("node-name", "mkube-node", "Kubernetes node name for this device")
 	f.Bool("standalone", false, "Run without a Kubernetes API server (local reconciler only)")
 	f.Bool("enable-registry", true, "Enable embedded Zot OCI registry")
 
@@ -111,7 +111,7 @@ func run(cmd *cobra.Command, args []string) error {
 	defer func() { _ = logger.Sync() }()
 	log := logger.Sugar()
 
-	log.Infow("starting microkube", "version", version)
+	log.Infow("starting mkube", "version", version)
 
 	// ── Configuration ───────────────────────────────────────────────
 	cfg, err := config.Load(cmd.Flags())

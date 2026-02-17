@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/glennswest/microkube/pkg/network"
+	"github.com/glennswest/mkube/pkg/network"
 )
 
 // stubDriver is a minimal NetworkDriver for testing topology operations.

@@ -12,11 +12,11 @@ import (
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
-	"github.com/glennswest/microkube/pkg/config"
-	"github.com/glennswest/microkube/pkg/dns"
-	"github.com/glennswest/microkube/pkg/lifecycle"
-	"github.com/glennswest/microkube/pkg/network"
-	"github.com/glennswest/microkube/pkg/routeros"
+	"github.com/glennswest/mkube/pkg/config"
+	"github.com/glennswest/mkube/pkg/dns"
+	"github.com/glennswest/mkube/pkg/lifecycle"
+	"github.com/glennswest/mkube/pkg/network"
+	"github.com/glennswest/mkube/pkg/routeros"
 )
 
 // Operator manages DNS zones and MicroDNS instances.
@@ -501,7 +501,7 @@ func (o *Operator) waitForMicroDNS(ctx context.Context, endpoint string, timeout
 func (o *Operator) loadState() error {
 	path := o.cfg.StatePath
 	if path == "" {
-		path = "/etc/microkube/dzo-state.yaml"
+		path = "/etc/mkube/dzo-state.yaml"
 	}
 
 	data, err := os.ReadFile(path)
@@ -530,7 +530,7 @@ func (o *Operator) loadState() error {
 func (o *Operator) saveState() error {
 	path := o.cfg.StatePath
 	if path == "" {
-		path = "/etc/microkube/dzo-state.yaml"
+		path = "/etc/mkube/dzo-state.yaml"
 	}
 
 	data, err := yaml.Marshal(o.state)

@@ -1,17 +1,17 @@
-# microkube default configuration
-# This file is loaded from /etc/microkube/config.yaml
+# mkube default configuration
+# This file is loaded from /etc/mkube/config.yaml
 #
 # For device-specific overrides, see deploy/rose1-config.yaml
 # or create your own <device>-config.yaml.
 
-nodeName: mikrotik-node
+nodeName: mkube-node
 standalone: true  # Set to false when connected to a K8s API server
 
 routeros:
   address: "192.168.200.1:8728"
   restUrl: "https://192.168.200.1/rest"
   user: admin
-  password: ""  # Set via MICROKUBE_PASSWORD env var
+  password: ""  # Set via MKUBE_PASSWORD env var
   useTLS: false
   insecureVerify: true  # RouterOS uses self-signed certs by default
 
@@ -33,7 +33,7 @@ storage:
   gcDryRun: false
 
 systemd:
-  bootManifestPath: /etc/microkube/boot-order.yaml
+  bootManifestPath: /etc/mkube/boot-order.yaml
   watchdogIntervalSeconds: 15
   maxRestarts: 5
   restartCooldown: 10

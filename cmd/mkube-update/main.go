@@ -2,7 +2,7 @@
 // replaces RouterOS containers when new images are available.
 //
 // For most containers, mkube-update talks directly to the RouterOS REST API.
-// For its own container (self-update), it calls the microkube update API
+// For its own container (self-update), it calls the mkube update API
 // which performs the swap.
 
 package main
@@ -181,7 +181,7 @@ func (u *Updater) poll(ctx context.Context) {
 			trimScheme(u.cfg.RegistryURL), w.Repo, w.Tag)
 
 		if w.SelfUpdate {
-			// Self-update: ask microkube to replace us
+			// Self-update: ask mkube to replace us
 			for _, name := range targets {
 				if err := u.requestSelfUpdate(ctx, name, imageRef); err != nil {
 					u.log.Errorw("self-update request failed", "name", name, "error", err)
@@ -335,9 +335,9 @@ func (u *Updater) replaceContainer(ctx context.Context, name, imageRef string) e
 	return nil
 }
 
-// requestSelfUpdate calls the microkube update API to replace our own container.
+// requestSelfUpdate calls the mkube update API to replace our own container.
 func (u *Updater) requestSelfUpdate(ctx context.Context, name, imageRef string) error {
-	u.log.Infow("requesting self-update via microkube API", "name", name, "tag", imageRef)
+	u.log.Infow("requesting self-update via mkube API", "name", name, "tag", imageRef)
 
 	body, _ := json.Marshal(map[string]string{
 		"name": name,

@@ -12,7 +12,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/glennswest/microkube/pkg/config"
+	"github.com/glennswest/mkube/pkg/config"
 )
 
 // ImageWatcher periodically polls upstream registries for digest changes

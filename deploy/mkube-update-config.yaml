@@ -9,7 +9,7 @@ mkubeAPI: "http://192.168.200.2:8080"
 pollSeconds: 60
 
 watches:
-  - repo: microkube
+  - repo: mkube
     tag: latest
     container: kube.gt.lo
   - repo: mkube-update
