@@ -86,20 +86,26 @@ registry:
     - "192.168.200.2:5000"
   pullThrough: true
   upstreamRegistries:
-    - "docker.io"
+    # docker.io removed — not used, paywalled, returns HTML for API requests
     - "ghcr.io"
   # Poll GHCR for new image digests every 2 minutes.
   # New images are mirrored locally and trigger rolling updates
   # for pods with vkube.io/image-policy: auto.
   watchPollSeconds: 120
   watchImages:
-    - upstream: "ghcr.io/glennswest/mkube:latest"
+    - upstream: "ghcr.io/glennswest/mkube:edge"
       localRepo: "mkube"
-    - upstream: "ghcr.io/glennswest/mkube-update:latest"
+    - upstream: "ghcr.io/glennswest/mkube-update:edge"
       localRepo: "mkube-update"
-    - upstream: "ghcr.io/glennswest/microdns:latest"
+    - upstream: "ghcr.io/glennswest/microdns:edge"
       localRepo: "microdns"
-    - upstream: "ghcr.io/glennswest/micrologs:latest"
+    - upstream: "ghcr.io/glennswest/micrologs:edge"
       localRepo: "micrologs"
-    - upstream: "ghcr.io/glennswest/micrologs-collector-routeros:latest"
+    - upstream: "ghcr.io/glennswest/micrologs-collector-routeros:edge"
       localRepo: "micrologs-collector-routeros"
+    - upstream: "ghcr.io/glennswest/fastregistry:edge"
+      localRepo: "fastregistry"
+    - upstream: "ghcr.io/glennswest/agent-monitor:edge"
+      localRepo: "agent-monitor"
+    - upstream: "ghcr.io/glennswest/console-server:edge"
+      localRepo: "console-server"

@@ -2,8 +2,10 @@ package registry
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -29,6 +31,7 @@ type Registry struct {
 	log        *zap.SugaredLogger
 	server     *http.Server
 	store      *BlobStore
+	client     *http.Client
 	PushEvents chan PushEvent
 }
 
@@ -40,9 +43,15 @@ func Start(ctx context.Context, cfg config.RegistryConfig, log *zap.SugaredLogge
 	}
 
 	r := &Registry{
-		cfg:        cfg,
-		log:        log,
-		store:      store,
+		cfg:   cfg,
+		log:   log,
+		store: store,
+		client: &http.Client{
+			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: false},
+			},
+		},
 		PushEvents: make(chan PushEvent, 64),
 	}
 
@@ -327,41 +336,73 @@ func (r *Registry) handleCatalog(w http.ResponseWriter, req *http.Request) {
 // pullThroughManifest fetches a manifest from upstream, caches it, and serves it.
 func (r *Registry) pullThroughManifest(w http.ResponseWriter, req *http.Request, repo, ref string) {
 	for _, upstream := range r.cfg.UpstreamRegistries {
-		upstreamURL := fmt.Sprintf("https://%s/v2/%s/manifests/%s", upstream, repo, ref)
+		host := resolveRegistryHost(upstream)
+		upstreamURL := fmt.Sprintf("https://%s/v2/%s/manifests/%s", host, repo, ref)
 		proxyReq, err := http.NewRequestWithContext(req.Context(), http.MethodGet, upstreamURL, nil)
 		if err != nil {
 			continue
 		}
 		proxyReq.Header.Set("Accept", req.Header.Get("Accept"))
 
-		resp, err := http.DefaultClient.Do(proxyReq)
-		if err != nil || resp.StatusCode >= 400 {
-			if resp != nil {
-				resp.Body.Close()
+		resp, err := r.client.Do(proxyReq)
+		if err != nil {
+			continue
+		}
+
+		// Handle 401 with token exchange
+		if resp.StatusCode == http.StatusUnauthorized {
+			resp.Body.Close()
+			token, err := r.getUpstreamToken(req.Context(), resp, upstream, repo)
+			if err != nil {
+				r.log.Debugw("pull-through auth failed", "upstream", upstream, "error", err)
+				continue
 			}
+			proxyReq, _ = http.NewRequestWithContext(req.Context(), http.MethodGet, upstreamURL, nil)
+			proxyReq.Header.Set("Accept", req.Header.Get("Accept"))
+			proxyReq.Header.Set("Authorization", "Bearer "+token)
+			resp, err = r.client.Do(proxyReq)
+			if err != nil {
+				continue
+			}
+		}
+
+		if resp.StatusCode >= 400 {
+			resp.Body.Close()
 			continue
 		}
 
 		contentType := resp.Header.Get("Content-Type")
 		digest := resp.Header.Get("Docker-Content-Digest")
 
-		// Cache it locally
-		if err := r.store.PutManifest(repo, ref, contentType, resp.Body); err != nil {
+		// Validate: reject HTML responses (e.g., Docker Hub website)
+		if !isJSONContentType(contentType) {
 			resp.Body.Close()
+			r.log.Debugw("pull-through manifest rejected: not JSON",
+				"upstream", upstream, "contentType", contentType)
+			continue
+		}
+
+		// Read body and validate it's actual JSON
+		data, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			continue
+		}
+
+		if len(data) > 0 && data[0] != '{' && data[0] != '[' {
+			r.log.Debugw("pull-through manifest rejected: body not JSON",
+				"upstream", upstream, "prefix", string(data[:min(50, len(data))]))
+			continue
+		}
+
+		// Cache it locally
+		if err := r.store.PutManifest(repo, ref, contentType, io.NopCloser(strings.NewReader(string(data)))); err != nil {
 			r.log.Warnw("failed to cache manifest", "repo", repo, "ref", ref, "error", err)
 			http.Error(w, "cache error", http.StatusInternalServerError)
 			return
 		}
-		resp.Body.Close()
 
-		// Serve from cache
-		data, ct, err := r.store.GetManifest(repo, ref)
-		if err != nil {
-			http.Error(w, "cache read error", http.StatusInternalServerError)
-			return
-		}
-
-		w.Header().Set("Content-Type", ct)
+		w.Header().Set("Content-Type", contentType)
 		if digest != "" {
 			w.Header().Set("Docker-Content-Digest", digest)
 		}
@@ -376,17 +417,45 @@ func (r *Registry) pullThroughManifest(w http.ResponseWriter, req *http.Request,
 // pullThroughBlob fetches a blob from upstream, caches it, and serves it.
 func (r *Registry) pullThroughBlob(w http.ResponseWriter, req *http.Request, repo, digest string) {
 	for _, upstream := range r.cfg.UpstreamRegistries {
-		upstreamURL := fmt.Sprintf("https://%s/v2/%s/blobs/%s", upstream, repo, digest)
+		host := resolveRegistryHost(upstream)
+		upstreamURL := fmt.Sprintf("https://%s/v2/%s/blobs/%s", host, repo, digest)
 		proxyReq, err := http.NewRequestWithContext(req.Context(), http.MethodGet, upstreamURL, nil)
 		if err != nil {
 			continue
 		}
 
-		resp, err := http.DefaultClient.Do(proxyReq)
-		if err != nil || resp.StatusCode >= 400 {
-			if resp != nil {
-				resp.Body.Close()
+		resp, err := r.client.Do(proxyReq)
+		if err != nil {
+			continue
+		}
+
+		// Handle 401 with token exchange
+		if resp.StatusCode == http.StatusUnauthorized {
+			resp.Body.Close()
+			token, err := r.getUpstreamToken(req.Context(), resp, upstream, repo)
+			if err != nil {
+				r.log.Debugw("pull-through blob auth failed", "upstream", upstream, "error", err)
+				continue
 			}
+			proxyReq, _ = http.NewRequestWithContext(req.Context(), http.MethodGet, upstreamURL, nil)
+			proxyReq.Header.Set("Authorization", "Bearer "+token)
+			resp, err = r.client.Do(proxyReq)
+			if err != nil {
+				continue
+			}
+		}
+
+		if resp.StatusCode >= 400 {
+			resp.Body.Close()
+			continue
+		}
+
+		// Validate: reject HTML responses
+		ct := resp.Header.Get("Content-Type")
+		if strings.HasPrefix(ct, "text/html") {
+			resp.Body.Close()
+			r.log.Debugw("pull-through blob rejected: HTML response",
+				"upstream", upstream, "digest", digest)
 			continue
 		}
 
@@ -415,4 +484,56 @@ func (r *Registry) pullThroughBlob(w http.ResponseWriter, req *http.Request, rep
 	}
 
 	http.Error(w, "blob not found on any upstream", http.StatusNotFound)
+}
+
+// getUpstreamToken handles the OCI/Docker token exchange for pull-through.
+// Reuses parseWWWAuthenticate and extractJSONString from the same package.
+func (r *Registry) getUpstreamToken(ctx context.Context, resp *http.Response, host, repo string) (string, error) {
+	challenge := resp.Header.Get("WWW-Authenticate")
+	if challenge == "" {
+		return "", fmt.Errorf("no WWW-Authenticate header")
+	}
+
+	params := parseWWWAuthenticate(challenge)
+	realm := params["realm"]
+	if realm == "" {
+		return "", fmt.Errorf("no realm in WWW-Authenticate")
+	}
+
+	service := params["service"]
+	scope := params["scope"]
+	if scope == "" {
+		scope = fmt.Sprintf("repository:%s:pull", repo)
+	}
+
+	tokenURL := fmt.Sprintf("%s?service=%s&scope=%s", realm, service, scope)
+	tokenReq, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL, nil)
+	if err != nil {
+		return "", err
+	}
+
+	tokenResp, err := r.client.Do(tokenReq)
+	if err != nil {
+		return "", fmt.Errorf("token request: %w", err)
+	}
+	defer tokenResp.Body.Close()
+
+	if tokenResp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("token endpoint returned %d", tokenResp.StatusCode)
+	}
+
+	body, err := io.ReadAll(tokenResp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	token := extractJSONString(body, "token")
+	if token == "" {
+		token = extractJSONString(body, "access_token")
+	}
+	if token == "" {
+		return "", fmt.Errorf("no token in response")
+	}
+
+	return token, nil
 }

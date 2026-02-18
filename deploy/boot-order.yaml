@@ -195,29 +195,6 @@ spec:
         - name: data
           mountPath: /data
 
-# ── PXE server (priority 30 — after network) ───────────────────────────────
-
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: pxe-g10
-  namespace: infra
-  annotations:
-    vkube.io/network: g10
-    vkube.io/boot-priority: "30"
-    vkube.io/depends-on: "network-gw-netman"
-spec:
-  restartPolicy: Always
-  containers:
-    - name: pxe
-      image: localhost/alpine-ssh:latest
-      volumeMounts:
-        - name: root
-          mountPath: /
-        - name: tftpboot
-          mountPath: /tftpboot
-
 # ── Fast registry (priority 40) ────────────────────────────────────────────
 
 ---
@@ -297,7 +274,7 @@ spec:
   restartPolicy: Always
   containers:
     - name: micrologs
-      image: ghcr.io/glennswest/micrologs:latest
+      image: 192.168.200.2:5000/micrologs:latest
       livenessProbe:
         httpGet:
           path: /healthz
@@ -322,7 +299,7 @@ spec:
   restartPolicy: Always
   containers:
     - name: collector
-      image: ghcr.io/glennswest/micrologs-collector-routeros:latest
+      image: 192.168.200.2:5000/micrologs-collector-routeros:latest
       volumeMounts:
         - name: config
           mountPath: /etc/micrologs-collector

@@ -5,6 +5,7 @@ name: mkube-update
 on:
   push:
     branches: [main]
+    tags: ["v*"]
     paths:
       - "cmd/mkube-update/**"
       - "pkg/**"

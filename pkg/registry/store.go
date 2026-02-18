@@ -299,6 +299,56 @@ func (s *BlobStore) CleanupStaleUploads(maxAge time.Duration) {
 	}
 }
 
+// PurgeRepo removes all manifests for a given repo from the store.
+func (s *BlobStore) PurgeRepo(repo string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dir := filepath.Join(s.root, "manifests", repo)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		return nil
+	}
+	return os.RemoveAll(dir)
+}
+
+// ValidateManifests checks all stored manifests and removes any that are not
+// valid JSON (e.g., HTML pages cached by a broken pull-through). Returns the
+// number of corrupted entries removed.
+func (s *BlobStore) ValidateManifests() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	manifestsDir := filepath.Join(s.root, "manifests")
+	removed := 0
+
+	_ = filepath.Walk(manifestsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		if strings.HasSuffix(info.Name(), ".type") {
+			return nil
+		}
+		if !strings.HasSuffix(info.Name(), ".json") {
+			return nil
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		// A valid manifest must be a JSON object
+		if len(data) == 0 || (data[0] != '{' && data[0] != '[') {
+			os.Remove(path)
+			os.Remove(path + ".type")
+			removed++
+		}
+		return nil
+	})
+
+	return removed
+}
+
 func computeDigest(data []byte) string {
 	h := sha256.Sum256(data)
 	return "sha256:" + hex.EncodeToString(h[:])

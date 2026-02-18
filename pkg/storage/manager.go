@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/crane"
 	"github.com/google/go-containerregistry/pkg/name"
+	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"go.uber.org/zap"
 
@@ -110,12 +112,27 @@ func (m *Manager) EnsureImage(ctx context.Context, imageRef string) (string, err
 // pullAndUpload pulls an OCI image from a registry, converts it to a
 // RouterOS-compatible flat rootfs tar, and uploads it.
 func (m *Manager) pullAndUpload(ctx context.Context, imageRef, tarballPath string) error {
+	// Rewrite bare localhost/ refs to the configured local registry address
+	imageRef = m.rewriteLocalhost(imageRef)
+
 	// Determine crane options — allow insecure for localhost registry
 	opts := []crane.Option{crane.WithContext(ctx)}
+
+	// Explicit platform: target is always Linux (RouterOS), arch matches build
+	opts = append(opts, crane.WithPlatform(&v1.Platform{
+		OS:           "linux",
+		Architecture: runtime.GOARCH,
+	}))
+
 	if m.isLocalRegistry(imageRef) {
 		opts = append(opts, crane.Insecure)
 	} else {
-		opts = append(opts, crane.WithAuthFromKeychain(authn.DefaultKeychain))
+		// DefaultKeychain reads ~/.docker/config.json if present;
+		// Anonymous fallback lets the transport handle OAuth2 bearer
+		// token exchange for public registries (GHCR, Docker Hub, etc.)
+		opts = append(opts, crane.WithAuthFromKeychain(
+			authn.NewMultiKeychain(authn.DefaultKeychain, anonymousKeychain{}),
+		))
 	}
 
 	m.log.Infow("pulling OCI image", "ref", imageRef)
@@ -144,15 +161,27 @@ func (m *Manager) pullAndUpload(ctx context.Context, imageRef, tarballPath strin
 	return nil
 }
 
+// rewriteLocalhost rewrites bare "localhost/foo:tag" refs to the configured
+// local registry address. go-containerregistry treats "localhost/foo" (no port)
+// as docker.io/localhost/foo, not a local registry.
+func (m *Manager) rewriteLocalhost(imageRef string) string {
+	if strings.HasPrefix(imageRef, "localhost/") && len(m.registryCfg.LocalAddresses) > 0 {
+		rewritten := m.registryCfg.LocalAddresses[0] + "/" + strings.TrimPrefix(imageRef, "localhost/")
+		m.log.Infow("rewrote bare localhost ref", "original", imageRef, "rewritten", rewritten)
+		return rewritten
+	}
+	return imageRef
+}
+
 // isLocalRegistry returns true if the image ref points to the embedded registry
 // (localhost or any configured local address).
 func (m *Manager) isLocalRegistry(imageRef string) bool {
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
-		return strings.HasPrefix(imageRef, "localhost:")
+		return strings.HasPrefix(imageRef, "localhost:") || strings.HasPrefix(imageRef, "localhost/")
 	}
 	registry := ref.Context().RegistryStr()
-	if registry == "localhost:5000" || strings.HasPrefix(registry, "localhost:") {
+	if registry == "localhost" || registry == "localhost:5000" || strings.HasPrefix(registry, "localhost:") {
 		return true
 	}
 	for _, addr := range m.registryCfg.LocalAddresses {
@@ -302,6 +331,14 @@ func (m *Manager) runGC(ctx context.Context) {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+// anonymousKeychain is a Keychain that always returns Anonymous auth,
+// allowing the transport layer to handle OAuth2 bearer token exchange.
+type anonymousKeychain struct{}
+
+func (anonymousKeychain) Resolve(authn.Resource) (authn.Authenticator, error) {
+	return authn.Anonymous, nil
+}
 
 func sanitizeImageRef(ref string) string {
 	result := make([]byte, 0, len(ref))
