@@ -9,6 +9,8 @@ import (
 )
 
 // RegisterRoutes registers DZO zone, instance, and health handlers on the provided mux.
+// Note: /healthz is only registered when DZO runs standalone via RunAPI.
+// When sharing a mux with the provider, the provider registers /healthz.
 func (o *Operator) RegisterRoutes(mux *http.ServeMux) {
 	// Zones
 	mux.HandleFunc("GET /api/v1/zones", o.handleListZones)
@@ -19,15 +21,13 @@ func (o *Operator) RegisterRoutes(mux *http.ServeMux) {
 	// Instances (read-only)
 	mux.HandleFunc("GET /api/v1/instances", o.handleListInstances)
 	mux.HandleFunc("GET /api/v1/instances/{name}", o.handleGetInstance)
-
-	// Health
-	mux.HandleFunc("GET /healthz", o.handleHealthz)
 }
 
 // RunAPI starts the DZO REST API server on its own mux (convenience wrapper).
 func (o *Operator) RunAPI(ctx context.Context, listenAddr string) {
 	mux := http.NewServeMux()
 	o.RegisterRoutes(mux)
+	mux.HandleFunc("GET /healthz", o.handleHealthz)
 
 	srv := &http.Server{Addr: listenAddr, Handler: mux}
 

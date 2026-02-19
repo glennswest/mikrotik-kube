@@ -95,6 +95,13 @@ type StorageConfig struct {
 	BasePath     string `yaml:"basePath"`     // root for container volumes
 	TarballCache string `yaml:"tarballCache"` // cache for downloaded image tarballs
 
+	// When set, write tarballs to local disk instead of uploading via REST API.
+	// This is the mkube container's root-dir as seen by the RouterOS host,
+	// e.g. "raid1/images/kube.gt.lo". A file written inside the container at
+	// /raid1/cache/foo.tar becomes visible to RouterOS at
+	// raid1/images/kube.gt.lo/raid1/cache/foo.tar.
+	SelfRootDir string `yaml:"selfRootDir"`
+
 	// Garbage collection
 	GCIntervalMinutes int  `yaml:"gcIntervalMinutes"`
 	GCKeepLastN       int  `yaml:"gcKeepLastN"` // keep last N unused images

@@ -168,10 +168,12 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 			return fmt.Errorf("creating container %s: %w", name, err)
 		}
 
-		// 6. Start the container
-		ct, err := p.deps.ROS.GetContainer(ctx, name)
+		// 6. Wait for tarball extraction then start the container.
+		// After creation RouterOS extracts the tarball; the container is
+		// not yet "stopped" until extraction finishes.
+		ct, err := p.waitForStopped(ctx, name, 120*time.Second)
 		if err != nil {
-			return fmt.Errorf("getting created container %s: %w", name, err)
+			return fmt.Errorf("waiting for container %s to be ready: %w", name, err)
 		}
 		if err := p.deps.ROS.StartContainer(ctx, ct.ID); err != nil {
 			return fmt.Errorf("starting container %s: %w", name, err)
@@ -206,6 +208,32 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 	p.pods[podKey(pod)] = pod.DeepCopy()
 
 	return nil
+}
+
+// waitForStopped polls until the container reaches the "stopped" state
+// (tarball extraction complete) or the timeout expires.
+func (p *MicroKubeProvider) waitForStopped(ctx context.Context, name string, timeout time.Duration) (*routeros.Container, error) {
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		ct, err := p.deps.ROS.GetContainer(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		if ct.IsStopped() {
+			return ct, nil
+		}
+		p.deps.Logger.Debugw("waiting for container extraction", "name", name)
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-deadline:
+			return nil, fmt.Errorf("timed out waiting for container %s to reach stopped state", name)
+		case <-ticker.C:
+		}
+	}
 }
 
 // UpdatePod handles pod spec updates. RouterOS containers are immutable,

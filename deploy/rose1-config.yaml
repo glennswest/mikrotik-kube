@@ -53,6 +53,7 @@ networks:
 storage:
   basePath: /raid1/images
   tarballCache: /raid1/cache
+  selfRootDir: raid1/images/kube.gt.lo
   gcIntervalMinutes: 60
   gcKeepLastN: 10
   gcDryRun: false

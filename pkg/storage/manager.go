@@ -1,10 +1,15 @@
 package storage
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -99,14 +104,23 @@ func (m *Manager) EnsureImage(ctx context.Context, imageRef string) (string, err
 		return "", fmt.Errorf("pulling image %s: %w", imageRef, err)
 	}
 
+	// When selfRootDir is set, translate the container-internal path to the
+	// host-visible path that RouterOS uses for container file references.
+	// e.g. /raid1/cache/foo.tar → raid1/images/kube.gt.lo/raid1/cache/foo.tar
+	hostPath := tarballPath
+	if m.cfg.SelfRootDir != "" {
+		hostPath = m.cfg.SelfRootDir + "/" + strings.TrimPrefix(tarballPath, "/")
+		m.log.Infow("translated tarball path for RouterOS", "container", tarballPath, "host", hostPath)
+	}
+
 	m.images[imageRef] = &CachedImage{
 		Ref:         imageRef,
-		TarballPath: tarballPath,
+		TarballPath: hostPath,
 		PulledAt:    time.Now(),
 		InUse:       1,
 	}
 
-	return tarballPath, nil
+	return hostPath, nil
 }
 
 // pullAndUpload pulls an OCI image from a registry, converts it to a
@@ -141,21 +155,42 @@ func (m *Manager) pullAndUpload(ctx context.Context, imageRef, tarballPath strin
 		return fmt.Errorf("pulling image %s: %w", imageRef, err)
 	}
 
-	// Flatten OCI layers into a single rootfs tarball.
-	// mutate.Extract merges all layers (applying whiteouts) into one reader.
+	// Flatten OCI layers into a single uncompressed rootfs tarball,
+	// then wrap it in docker-save format that RouterOS expects.
 	m.log.Infow("flattening OCI layers to rootfs", "ref", imageRef)
 	rootfsReader := mutate.Extract(img)
 	defer rootfsReader.Close()
 
-	// Read the flattened rootfs into a buffer for upload
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, rootfsReader); err != nil {
+	var rootfsBuf bytes.Buffer
+	if _, err := io.Copy(&rootfsBuf, rootfsReader); err != nil {
 		return fmt.Errorf("extracting rootfs for %s: %w", imageRef, err)
 	}
 
-	m.log.Infow("uploading tarball to RouterOS", "ref", imageRef, "path", tarballPath, "size", buf.Len())
-	if err := m.ros.UploadFile(ctx, tarballPath, bytes.NewReader(buf.Bytes())); err != nil {
-		return fmt.Errorf("uploading %s to RouterOS: %w", tarballPath, err)
+	// Extract image config for entrypoint/cmd/env
+	imgCfg, err := img.ConfigFile()
+	if err != nil {
+		return fmt.Errorf("reading image config for %s: %w", imageRef, err)
+	}
+
+	// Build docker-save format archive with uncompressed layer
+	var dockerSave bytes.Buffer
+	if err := writeDockerSave(&dockerSave, rootfsBuf.Bytes(), imageRef, imgCfg); err != nil {
+		return fmt.Errorf("building docker-save for %s: %w", imageRef, err)
+	}
+
+	if m.cfg.SelfRootDir != "" {
+		m.log.Infow("writing docker-save tarball to local disk", "ref", imageRef, "path", tarballPath, "size", dockerSave.Len())
+		if err := os.MkdirAll(filepath.Dir(tarballPath), 0o755); err != nil {
+			return fmt.Errorf("creating cache dir for %s: %w", tarballPath, err)
+		}
+		if err := os.WriteFile(tarballPath, dockerSave.Bytes(), 0o644); err != nil {
+			return fmt.Errorf("writing tarball %s: %w", tarballPath, err)
+		}
+	} else {
+		m.log.Infow("uploading tarball to RouterOS", "ref", imageRef, "path", tarballPath, "size", dockerSave.Len())
+		if err := m.ros.UploadFile(ctx, tarballPath, bytes.NewReader(dockerSave.Bytes())); err != nil {
+			return fmt.Errorf("uploading %s to RouterOS: %w", tarballPath, err)
+		}
 	}
 
 	return nil
@@ -331,6 +366,122 @@ func (m *Manager) runGC(ctx context.Context) {
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+// writeDockerSave writes a docker-save format tar archive to w.
+// RouterOS requires this format with uncompressed layers.
+// The structure matches what `docker save` produces:
+//   - manifest.json
+//   - repositories
+//   - <config-sha>.json
+//   - <layer-id>/layer.tar
+//   - <layer-id>/VERSION
+//   - <layer-id>/json
+func writeDockerSave(w io.Writer, rootfsData []byte, imageRef string, imgCfg *v1.ConfigFile) error {
+	// Compute layer SHA256
+	layerHash := sha256.Sum256(rootfsData)
+	layerID := fmt.Sprintf("%x", layerHash)
+
+	// Derive a repo:tag from the image ref
+	repoTag := "mkube:latest"
+	if ref, err := name.NewTag(imageRef, name.WeakValidation); err == nil {
+		repoTag = ref.Context().RepositoryStr() + ":" + ref.TagStr()
+	}
+	parts := strings.SplitN(repoTag, ":", 2)
+	repo, tag := parts[0], "latest"
+	if len(parts) == 2 {
+		tag = parts[1]
+	}
+
+	// Build container config from the original image config
+	containerCfg := map[string]interface{}{}
+	if imgCfg != nil {
+		if len(imgCfg.Config.Entrypoint) > 0 {
+			containerCfg["Entrypoint"] = imgCfg.Config.Entrypoint
+		}
+		if len(imgCfg.Config.Cmd) > 0 {
+			containerCfg["Cmd"] = imgCfg.Config.Cmd
+		}
+		if imgCfg.Config.WorkingDir != "" {
+			containerCfg["WorkingDir"] = imgCfg.Config.WorkingDir
+		}
+		if len(imgCfg.Config.Env) > 0 {
+			containerCfg["Env"] = imgCfg.Config.Env
+		}
+	}
+
+	// Build image config JSON
+	configObj := map[string]interface{}{
+		"architecture": runtime.GOARCH,
+		"os":           "linux",
+		"rootfs": map[string]interface{}{
+			"type":     "layers",
+			"diff_ids": []string{"sha256:" + layerID},
+		},
+	}
+	if len(containerCfg) > 0 {
+		configObj["config"] = containerCfg
+	}
+	configJSON, _ := json.Marshal(configObj)
+	configHash := sha256.Sum256(configJSON)
+	configName := fmt.Sprintf("%x.json", configHash)
+
+	// Build manifest.json
+	manifestJSON, _ := json.Marshal([]map[string]interface{}{
+		{
+			"Config":   configName,
+			"RepoTags": []string{repoTag},
+			"Layers":   []string{layerID + "/layer.tar"},
+		},
+	})
+
+	// Build repositories file
+	reposJSON, _ := json.Marshal(map[string]map[string]string{
+		repo: {tag: layerID},
+	})
+
+	// Build layer json (legacy docker format)
+	layerJSON, _ := json.Marshal(map[string]interface{}{
+		"id":      layerID,
+		"created": "1970-01-01T00:00:00Z",
+		"config":  containerCfg,
+	})
+
+	tw := tar.NewWriter(w)
+	defer tw.Close()
+
+	addFile := func(name string, data []byte) error {
+		if err := tw.WriteHeader(&tar.Header{
+			Name: name,
+			Size: int64(len(data)),
+			Mode: 0o644,
+		}); err != nil {
+			return err
+		}
+		_, err := tw.Write(data)
+		return err
+	}
+
+	if err := addFile("manifest.json", manifestJSON); err != nil {
+		return err
+	}
+	if err := addFile("repositories", reposJSON); err != nil {
+		return err
+	}
+	if err := addFile(configName, configJSON); err != nil {
+		return err
+	}
+	if err := addFile(layerID+"/VERSION", []byte("1.0")); err != nil {
+		return err
+	}
+	if err := addFile(layerID+"/json", layerJSON); err != nil {
+		return err
+	}
+	if err := addFile(layerID+"/layer.tar", rootfsData); err != nil {
+		return err
+	}
+
+	return nil
+}
 
 // anonymousKeychain is a Keychain that always returns Anonymous auth,
 // allowing the transport layer to handle OAuth2 bearer token exchange.
