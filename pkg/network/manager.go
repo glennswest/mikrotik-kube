@@ -144,7 +144,7 @@ func (m *Manager) InitDNSZones(ctx context.Context) {
 // AllocateInterface creates a veth, assigns an IP from the specified network,
 // registers a DNS A record, and adds it to the network's bridge.
 // If networkName is empty, the first (default) network is used.
-func (m *Manager) AllocateInterface(ctx context.Context, vethName, hostname, networkName string) (ip string, gateway string, dnsServer string, err error) {
+func (m *Manager) AllocateInterface(ctx context.Context, vethName, hostname, networkName, staticIP string) (ip string, gateway string, dnsServer string, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -154,9 +154,20 @@ func (m *Manager) AllocateInterface(ctx context.Context, vethName, hostname, net
 	}
 
 	// Allocate an IP via IPAM
-	allocatedIP, err := m.ipam.Allocate(ns.def.Name, vethName)
-	if err != nil {
-		return "", "", "", err
+	var allocatedIP net.IP
+	if staticIP != "" {
+		allocatedIP = net.ParseIP(staticIP)
+		if allocatedIP == nil {
+			return "", "", "", fmt.Errorf("invalid static IP %q", staticIP)
+		}
+		if err := m.ipam.AllocateStatic(ns.def.Name, vethName, allocatedIP); err != nil {
+			return "", "", "", err
+		}
+	} else {
+		allocatedIP, err = m.ipam.Allocate(ns.def.Name, vethName)
+		if err != nil {
+			return "", "", "", err
+		}
 	}
 
 	ones, _ := ns.subnet.Mask.Size()

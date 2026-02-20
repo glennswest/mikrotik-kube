@@ -42,6 +42,8 @@ const (
 	// annotationAliases defines extra DNS aliases for pod containers.
 	// Format: "alias=container,alias2=container2,alias3" (no =container means first container).
 	annotationAliases = "vkube.io/aliases"
+	// annotationStaticIP requests a specific IP address for the pod's containers.
+	annotationStaticIP = "vkube.io/static-ip"
 )
 
 // Deps holds injected dependencies for the provider.
@@ -125,7 +127,8 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 		// 2. Allocate network (registers containerName.podName in network zone)
 		vethName := fmt.Sprintf("veth-%s-%d", truncate(pod.Name, 8), i)
 		containerHostname := container.Name + "." + pod.Name
-		ip, gw, dnsServer, err := p.deps.NetworkMgr.AllocateInterface(ctx, vethName, containerHostname, networkName)
+		staticIP := pod.Annotations[annotationStaticIP]
+		ip, gw, dnsServer, err := p.deps.NetworkMgr.AllocateInterface(ctx, vethName, containerHostname, networkName, staticIP)
 		if err != nil {
 			// If veth exists from a previous failed attempt, clean up and retry
 			if strings.Contains(err.Error(), "already have interface") {
@@ -133,7 +136,7 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 				if releaseErr := p.deps.NetworkMgr.ReleaseInterface(ctx, vethName); releaseErr != nil {
 					log.Warnw("failed to release orphaned veth", "veth", vethName, "error", releaseErr)
 				}
-				ip, gw, dnsServer, err = p.deps.NetworkMgr.AllocateInterface(ctx, vethName, containerHostname, networkName)
+				ip, gw, dnsServer, err = p.deps.NetworkMgr.AllocateInterface(ctx, vethName, containerHostname, networkName, staticIP)
 			}
 			if err != nil {
 				return fmt.Errorf("allocating network for %s: %w", name, err)

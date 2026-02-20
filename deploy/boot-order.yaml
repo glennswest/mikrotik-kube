@@ -30,6 +30,7 @@ metadata:
     vkube.io/network: gt
     vkube.io/boot-priority: "5"
     vkube.io/image-policy: auto
+    vkube.io/static-ip: "192.168.200.10"
 spec:
   restartPolicy: Always
   containers:
@@ -66,6 +67,8 @@ metadata:
     vkube.io/network: gw
     vkube.io/boot-priority: "10"
     vkube.io/image-policy: auto
+    vkube.io/aliases: "mdns"
+    vkube.io/static-ip: "192.168.1.199"
 spec:
   restartPolicy: Always
   containers:
@@ -104,6 +107,8 @@ metadata:
     vkube.io/network: g10
     vkube.io/boot-priority: "11"
     vkube.io/image-policy: auto
+    vkube.io/aliases: "mdns"
+    vkube.io/static-ip: "192.168.10.199"
 spec:
   restartPolicy: Always
   containers:
@@ -142,6 +147,8 @@ metadata:
     vkube.io/network: g11
     vkube.io/boot-priority: "12"
     vkube.io/image-policy: auto
+    vkube.io/aliases: "mdns"
+    vkube.io/static-ip: "192.168.11.199"
 spec:
   restartPolicy: Always
   containers:
@@ -180,6 +187,8 @@ metadata:
     vkube.io/network: gt
     vkube.io/boot-priority: "13"
     vkube.io/image-policy: auto
+    vkube.io/aliases: "mdns"
+    vkube.io/static-ip: "192.168.200.199"
 spec:
   restartPolicy: Always
   containers:
@@ -221,6 +230,8 @@ metadata:
     vkube.io/boot-priority: "20"
     vkube.io/depends-on: "mdns-gw-microdns,mdns-g10-microdns"
     vkube.io/file: "raid1/tarballs/netman.tar"
+    vkube.io/aliases: "network"
+    vkube.io/static-ip: "192.168.10.20"
 spec:
   restartPolicy: Always
   containers:
@@ -241,6 +252,8 @@ metadata:
   annotations:
     vkube.io/network: g10
     vkube.io/boot-priority: "40"
+    vkube.io/aliases: "registry"
+    vkube.io/static-ip: "192.168.10.30"
 spec:
   restartPolicy: Always
   containers:
@@ -263,6 +276,8 @@ metadata:
   annotations:
     vkube.io/network: g10
     vkube.io/boot-priority: "50"
+    vkube.io/aliases: "agent"
+    vkube.io/static-ip: "192.168.10.40"
 spec:
   restartPolicy: Always
   containers:
@@ -298,7 +313,8 @@ metadata:
     vkube.io/network: gt
     vkube.io/boot-priority: "60"
     vkube.io/image-policy: auto
-    vkube.io/aliases: "console"
+    vkube.io/aliases: "console.rose1"
+    vkube.io/static-ip: "192.168.200.20"
 spec:
   restartPolicy: Always
   volumes:
@@ -330,6 +346,7 @@ metadata:
     vkube.io/boot-priority: "65"
     vkube.io/aliases: "logging"
     vkube.io/image-policy: auto
+    vkube.io/static-ip: "192.168.200.30"
 spec:
   restartPolicy: Always
   containers:
@@ -355,6 +372,8 @@ metadata:
     vkube.io/boot-priority: "66"
     vkube.io/depends-on: "micrologs-micrologs"
     vkube.io/image-policy: auto
+    vkube.io/aliases: "logcollector"
+    vkube.io/static-ip: "192.168.200.31"
 spec:
   restartPolicy: Always
   containers:

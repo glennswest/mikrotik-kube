@@ -69,7 +69,7 @@ func TestRegisterHost(t *testing.T) {
 		if r.Method == http.MethodPost && r.URL.Path == "/api/v1/zones/zone-123/records" {
 			_ = json.NewDecoder(r.Body).Decode(&receivedReq)
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(Record{ID: "rec-1", Name: receivedReq.Name, Type: "A", Content: receivedReq.Content})
+			_ = json.NewEncoder(w).Encode(Record{ID: "rec-1", Name: receivedReq.Name, Type: "A", Data: receivedReq.Data})
 			return
 		}
 		http.NotFound(w, r)
@@ -84,11 +84,11 @@ func TestRegisterHost(t *testing.T) {
 	if receivedReq.Name != "myapp" {
 		t.Errorf("expected hostname 'myapp', got %q", receivedReq.Name)
 	}
-	if receivedReq.Content != "192.168.200.5" {
-		t.Errorf("expected IP '192.168.200.5', got %q", receivedReq.Content)
+	if receivedReq.Data.Data != "192.168.200.5" {
+		t.Errorf("expected IP '192.168.200.5', got %q", receivedReq.Data.Data)
 	}
-	if receivedReq.Type != "A" {
-		t.Errorf("expected record type 'A', got %q", receivedReq.Type)
+	if receivedReq.Data.Type != "A" {
+		t.Errorf("expected record type 'A', got %q", receivedReq.Data.Type)
 	}
 	if receivedReq.TTL != 60 {
 		t.Errorf("expected TTL 60, got %d", receivedReq.TTL)
@@ -98,9 +98,9 @@ func TestRegisterHost(t *testing.T) {
 func TestDeregisterHost(t *testing.T) {
 	deleted := make(map[string]bool)
 	records := []Record{
-		{ID: "rec-1", Name: "myapp", Type: "A", Content: "192.168.200.5"},
-		{ID: "rec-2", Name: "other", Type: "A", Content: "192.168.200.6"},
-		{ID: "rec-3", Name: "myapp", Type: "CNAME", Content: "alias"},
+		{ID: "rec-1", Name: "myapp", Type: "A", Data: RecordData{Type: "A", Data: "192.168.200.5"}},
+		{ID: "rec-2", Name: "other", Type: "A", Data: RecordData{Type: "A", Data: "192.168.200.6"}},
+		{ID: "rec-3", Name: "myapp", Type: "CNAME", Data: RecordData{Type: "CNAME", Data: "alias"}},
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

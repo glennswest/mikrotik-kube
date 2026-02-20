@@ -26,13 +26,19 @@ type Zone struct {
 	Name string `json:"name"`
 }
 
+// RecordData represents the typed data payload in a MicroDNS record.
+type RecordData struct {
+	Type string `json:"type"`
+	Data string `json:"data"`
+}
+
 // Record represents a MicroDNS DNS record.
 type Record struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Type    string `json:"record_type"`
-	Content string `json:"content"`
-	TTL     int    `json:"ttl"`
+	ID   string     `json:"id"`
+	Name string     `json:"name"`
+	Type string     `json:"type"`
+	Data RecordData `json:"data"`
+	TTL  int        `json:"ttl"`
 }
 
 type createZoneRequest struct {
@@ -40,10 +46,9 @@ type createZoneRequest struct {
 }
 
 type createRecordRequest struct {
-	Name    string `json:"name"`
-	Type    string `json:"record_type"`
-	Content string `json:"content"`
-	TTL     int    `json:"ttl"`
+	Name string     `json:"name"`
+	TTL  int        `json:"ttl"`
+	Data RecordData `json:"data"`
 }
 
 // NewClient creates a new MicroDNS REST client.
@@ -128,10 +133,9 @@ func (c *Client) EnsureZone(ctx context.Context, endpoint, zoneName string) (str
 // RegisterHost creates an A record in the specified zone.
 func (c *Client) RegisterHost(ctx context.Context, endpoint, zoneID, hostname, ip string, ttl int) error {
 	payload, _ := json.Marshal(createRecordRequest{
-		Name:    hostname,
-		Type:    "A",
-		Content: ip,
-		TTL:     ttl,
+		Name: hostname,
+		TTL:  ttl,
+		Data: RecordData{Type: "A", Data: ip},
 	})
 
 	url := fmt.Sprintf("%s/api/v1/zones/%s/records", endpoint, zoneID)
@@ -243,7 +247,7 @@ func (c *Client) DeregisterHostByIP(ctx context.Context, endpoint, zoneID, hostn
 	}
 
 	for _, r := range records {
-		if r.Name == hostname && r.Type == "A" && r.Content == ip {
+		if r.Name == hostname && r.Type == "A" && r.Data.Data == ip {
 			delURL := fmt.Sprintf("%s/api/v1/zones/%s/records/%s", endpoint, zoneID, r.ID)
 			delReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, delURL, nil)
 			if err != nil {

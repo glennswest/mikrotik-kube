@@ -178,3 +178,81 @@ func TestAllocateUnknownPool(t *testing.T) {
 		t.Error("expected error for unknown pool")
 	}
 }
+
+func TestAllocateStatic(t *testing.T) {
+	a := NewAllocator()
+	_, subnet, _ := net.ParseCIDR("192.168.200.0/24")
+	gw := net.ParseIP("192.168.200.1")
+	a.AddPool("gt", subnet, gw)
+
+	// Allocate a specific IP
+	err := a.AllocateStatic("gt", "veth-mdns-0", net.ParseIP("192.168.200.199"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	got := a.Get("gt", "veth-mdns-0")
+	if got.String() != "192.168.200.199" {
+		t.Errorf("expected 192.168.200.199, got %s", got)
+	}
+
+	// Dynamic allocation should skip the statically allocated IP
+	ip, err := a.Allocate("gt", "veth-dyn-0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ip.String() == "192.168.200.199" {
+		t.Error("dynamic allocation should skip statically allocated IP")
+	}
+}
+
+func TestAllocateStaticDuplicate(t *testing.T) {
+	a := NewAllocator()
+	_, subnet, _ := net.ParseCIDR("192.168.200.0/24")
+	gw := net.ParseIP("192.168.200.1")
+	a.AddPool("gt", subnet, gw)
+
+	// First static allocation succeeds
+	if err := a.AllocateStatic("gt", "veth-0", net.ParseIP("192.168.200.10")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Same IP for different key should fail
+	err := a.AllocateStatic("gt", "veth-1", net.ParseIP("192.168.200.10"))
+	if err == nil {
+		t.Error("expected error for duplicate static IP")
+	}
+}
+
+func TestAllocateStaticGateway(t *testing.T) {
+	a := NewAllocator()
+	_, subnet, _ := net.ParseCIDR("192.168.200.0/24")
+	gw := net.ParseIP("192.168.200.1")
+	a.AddPool("gt", subnet, gw)
+
+	err := a.AllocateStatic("gt", "veth-0", net.ParseIP("192.168.200.1"))
+	if err == nil {
+		t.Error("expected error for gateway IP")
+	}
+}
+
+func TestAllocateStaticOutOfSubnet(t *testing.T) {
+	a := NewAllocator()
+	_, subnet, _ := net.ParseCIDR("192.168.200.0/24")
+	gw := net.ParseIP("192.168.200.1")
+	a.AddPool("gt", subnet, gw)
+
+	err := a.AllocateStatic("gt", "veth-0", net.ParseIP("10.0.0.5"))
+	if err == nil {
+		t.Error("expected error for IP outside subnet")
+	}
+}
+
+func TestAllocateStaticUnknownPool(t *testing.T) {
+	a := NewAllocator()
+
+	err := a.AllocateStatic("nonexistent", "veth-0", net.ParseIP("192.168.200.10"))
+	if err == nil {
+		t.Error("expected error for unknown pool")
+	}
+}

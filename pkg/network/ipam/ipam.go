@@ -54,6 +54,31 @@ func (a *Allocator) Allocate(poolName, key string) (net.IP, error) {
 	return allocateFromPool(pool, key)
 }
 
+// AllocateStatic reserves a specific IP in the named pool.
+// Returns error if IP is outside subnet, is the gateway, or already taken.
+func (a *Allocator) AllocateStatic(poolName, key string, ip net.IP) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	pool, ok := a.pools[poolName]
+	if !ok {
+		return fmt.Errorf("IPAM pool %q not found", poolName)
+	}
+	if !pool.Subnet.Contains(ip) {
+		return fmt.Errorf("IP %s not in subnet %s", ip, pool.Subnet)
+	}
+	if ip.Equal(pool.Gateway) {
+		return fmt.Errorf("IP %s is the gateway", ip)
+	}
+	for k, existing := range pool.Allocated {
+		if existing.Equal(ip) {
+			return fmt.Errorf("IP %s already allocated to %s", ip, k)
+		}
+	}
+	pool.Allocated[key] = ip
+	return nil
+}
+
 // Release frees the IP held by key in the named pool.
 func (a *Allocator) Release(poolName, key string) {
 	a.mu.Lock()

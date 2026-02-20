@@ -343,7 +343,7 @@ func (o *Operator) createMicroDNSInstance(ctx context.Context, zoneName, network
 	vethName := fmt.Sprintf("veth-mdns-%s", truncate(safeName, 10))
 
 	// Allocate IP via network manager
-	ip, _, _, err := o.netMgr.AllocateInterface(ctx, vethName, containerName, networkName)
+	ip, _, _, err := o.netMgr.AllocateInterface(ctx, vethName, containerName, networkName, "")
 	if err != nil {
 		return nil, fmt.Errorf("allocating interface: %w", err)
 	}
