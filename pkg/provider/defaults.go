@@ -2,6 +2,8 @@ package provider
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,12 +17,21 @@ import (
 func generateDefaultConfigMaps(cfg *config.Config) []*corev1.ConfigMap {
 	gateway := cfg.DefaultNetwork().Gateway
 
+	// Derive mkube container IP: gateway .1 → mkube .2 (deploy convention)
+	mkubeIP := gateway
+	if parts := strings.Split(gateway, "."); len(parts) == 4 {
+		if n, err := strconv.Atoi(parts[3]); err == nil {
+			parts[3] = strconv.Itoa(n + 1)
+			mkubeIP = strings.Join(parts, ".")
+		}
+	}
+
 	consoleConfig := fmt.Sprintf(`listenAddr: ":9090"
 nodes:
   - name: %s
     address: "http://%s:8082"
 registryURL: "http://%s:5000"
-`, cfg.NodeName, gateway, gateway)
+`, cfg.NodeName, mkubeIP, mkubeIP)
 
 	return []*corev1.ConfigMap{
 		{
