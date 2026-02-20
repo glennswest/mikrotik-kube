@@ -34,7 +34,7 @@ spec:
   restartPolicy: Always
   containers:
     - name: nats
-      image: 192.168.200.2:5000/nats:latest
+      image: 192.168.200.2:5000/nats:edge
       startupProbe:
         tcpSocket:
           port: 4222
