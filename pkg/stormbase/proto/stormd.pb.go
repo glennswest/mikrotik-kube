@@ -711,6 +711,8 @@ type NodeStatusResponse struct {
 	NodeId          string                 `protobuf:"bytes,10,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
 	PodCidr         string                 `protobuf:"bytes,11,opt,name=pod_cidr,json=podCidr,proto3" json:"pod_cidr,omitempty"`
 	MeshPeers       uint32                 `protobuf:"varint,12,opt,name=mesh_peers,json=meshPeers,proto3" json:"mesh_peers,omitempty"`
+	Cordoned        bool                   `protobuf:"varint,13,opt,name=cordoned,proto3" json:"cordoned,omitempty"`
+	CordonReason    string                 `protobuf:"bytes,14,opt,name=cordon_reason,json=cordonReason,proto3" json:"cordon_reason,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -827,6 +829,20 @@ func (x *NodeStatusResponse) GetMeshPeers() uint32 {
 		return x.MeshPeers
 	}
 	return 0
+}
+
+func (x *NodeStatusResponse) GetCordoned() bool {
+	if x != nil {
+		return x.Cordoned
+	}
+	return false
+}
+
+func (x *NodeStatusResponse) GetCordonReason() string {
+	if x != nil {
+		return x.CordonReason
+	}
+	return ""
 }
 
 type ImagePullRequest struct {
@@ -1229,6 +1245,110 @@ func (x *NodeDrainResponse) GetWorkloadsStopped() uint32 {
 	return 0
 }
 
+type NodeCordonRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Reason        string                 `protobuf:"bytes,1,opt,name=reason,proto3" json:"reason,omitempty"` // e.g. "os-update", "maintenance"
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NodeCordonRequest) Reset() {
+	*x = NodeCordonRequest{}
+	mi := &file_stormd_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeCordonRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeCordonRequest) ProtoMessage() {}
+
+func (x *NodeCordonRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeCordonRequest.ProtoReflect.Descriptor instead.
+func (*NodeCordonRequest) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *NodeCordonRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type NodeCordonResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	Cordoned      bool                   `protobuf:"varint,3,opt,name=cordoned,proto3" json:"cordoned,omitempty"` // resulting cordon state
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NodeCordonResponse) Reset() {
+	*x = NodeCordonResponse{}
+	mi := &file_stormd_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeCordonResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeCordonResponse) ProtoMessage() {}
+
+func (x *NodeCordonResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeCordonResponse.ProtoReflect.Descriptor instead.
+func (*NodeCordonResponse) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *NodeCordonResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *NodeCordonResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *NodeCordonResponse) GetCordoned() bool {
+	if x != nil {
+		return x.Cordoned
+	}
+	return false
+}
+
 type MeshUpdateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Nodes         []*MeshNode            `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
@@ -1238,7 +1358,7 @@ type MeshUpdateRequest struct {
 
 func (x *MeshUpdateRequest) Reset() {
 	*x = MeshUpdateRequest{}
-	mi := &file_stormd_proto_msgTypes[20]
+	mi := &file_stormd_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1250,7 +1370,7 @@ func (x *MeshUpdateRequest) String() string {
 func (*MeshUpdateRequest) ProtoMessage() {}
 
 func (x *MeshUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[20]
+	mi := &file_stormd_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1263,7 +1383,7 @@ func (x *MeshUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MeshUpdateRequest.ProtoReflect.Descriptor instead.
 func (*MeshUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{20}
+	return file_stormd_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *MeshUpdateRequest) GetNodes() []*MeshNode {
@@ -1289,7 +1409,7 @@ type MeshNode struct {
 
 func (x *MeshNode) Reset() {
 	*x = MeshNode{}
-	mi := &file_stormd_proto_msgTypes[21]
+	mi := &file_stormd_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1301,7 +1421,7 @@ func (x *MeshNode) String() string {
 func (*MeshNode) ProtoMessage() {}
 
 func (x *MeshNode) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[21]
+	mi := &file_stormd_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1314,7 +1434,7 @@ func (x *MeshNode) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MeshNode.ProtoReflect.Descriptor instead.
 func (*MeshNode) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{21}
+	return file_stormd_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *MeshNode) GetNodeId() string {
@@ -1383,7 +1503,7 @@ type MeshUpdateResponse struct {
 
 func (x *MeshUpdateResponse) Reset() {
 	*x = MeshUpdateResponse{}
-	mi := &file_stormd_proto_msgTypes[22]
+	mi := &file_stormd_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1395,7 +1515,7 @@ func (x *MeshUpdateResponse) String() string {
 func (*MeshUpdateResponse) ProtoMessage() {}
 
 func (x *MeshUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[22]
+	mi := &file_stormd_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1408,7 +1528,7 @@ func (x *MeshUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MeshUpdateResponse.ProtoReflect.Descriptor instead.
 func (*MeshUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{22}
+	return file_stormd_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *MeshUpdateResponse) GetSuccess() bool {
@@ -1434,7 +1554,7 @@ type ServiceUpdateRequest struct {
 
 func (x *ServiceUpdateRequest) Reset() {
 	*x = ServiceUpdateRequest{}
-	mi := &file_stormd_proto_msgTypes[23]
+	mi := &file_stormd_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1446,7 +1566,7 @@ func (x *ServiceUpdateRequest) String() string {
 func (*ServiceUpdateRequest) ProtoMessage() {}
 
 func (x *ServiceUpdateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[23]
+	mi := &file_stormd_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1459,7 +1579,7 @@ func (x *ServiceUpdateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceUpdateRequest.ProtoReflect.Descriptor instead.
 func (*ServiceUpdateRequest) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{23}
+	return file_stormd_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ServiceUpdateRequest) GetServices() []*ServiceEntry {
@@ -1479,7 +1599,7 @@ type ServiceEntry struct {
 
 func (x *ServiceEntry) Reset() {
 	*x = ServiceEntry{}
-	mi := &file_stormd_proto_msgTypes[24]
+	mi := &file_stormd_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1491,7 +1611,7 @@ func (x *ServiceEntry) String() string {
 func (*ServiceEntry) ProtoMessage() {}
 
 func (x *ServiceEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[24]
+	mi := &file_stormd_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1504,7 +1624,7 @@ func (x *ServiceEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceEntry.ProtoReflect.Descriptor instead.
 func (*ServiceEntry) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{24}
+	return file_stormd_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ServiceEntry) GetName() string {
@@ -1533,7 +1653,7 @@ type ServiceEndpointMsg struct {
 
 func (x *ServiceEndpointMsg) Reset() {
 	*x = ServiceEndpointMsg{}
-	mi := &file_stormd_proto_msgTypes[25]
+	mi := &file_stormd_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1545,7 +1665,7 @@ func (x *ServiceEndpointMsg) String() string {
 func (*ServiceEndpointMsg) ProtoMessage() {}
 
 func (x *ServiceEndpointMsg) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[25]
+	mi := &file_stormd_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1558,7 +1678,7 @@ func (x *ServiceEndpointMsg) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceEndpointMsg.ProtoReflect.Descriptor instead.
 func (*ServiceEndpointMsg) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{25}
+	return file_stormd_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ServiceEndpointMsg) GetIp() string {
@@ -1599,7 +1719,7 @@ type ServiceUpdateResponse struct {
 
 func (x *ServiceUpdateResponse) Reset() {
 	*x = ServiceUpdateResponse{}
-	mi := &file_stormd_proto_msgTypes[26]
+	mi := &file_stormd_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1611,7 +1731,7 @@ func (x *ServiceUpdateResponse) String() string {
 func (*ServiceUpdateResponse) ProtoMessage() {}
 
 func (x *ServiceUpdateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[26]
+	mi := &file_stormd_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1624,7 +1744,7 @@ func (x *ServiceUpdateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ServiceUpdateResponse.ProtoReflect.Descriptor instead.
 func (*ServiceUpdateResponse) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{26}
+	return file_stormd_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ServiceUpdateResponse) GetSuccess() bool {
@@ -1649,7 +1769,7 @@ type ClusterStatusRequest struct {
 
 func (x *ClusterStatusRequest) Reset() {
 	*x = ClusterStatusRequest{}
-	mi := &file_stormd_proto_msgTypes[27]
+	mi := &file_stormd_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1661,7 +1781,7 @@ func (x *ClusterStatusRequest) String() string {
 func (*ClusterStatusRequest) ProtoMessage() {}
 
 func (x *ClusterStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[27]
+	mi := &file_stormd_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1674,7 +1794,7 @@ func (x *ClusterStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClusterStatusRequest.ProtoReflect.Descriptor instead.
 func (*ClusterStatusRequest) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{27}
+	return file_stormd_proto_rawDescGZIP(), []int{29}
 }
 
 type ClusterStatusResponse struct {
@@ -1690,7 +1810,7 @@ type ClusterStatusResponse struct {
 
 func (x *ClusterStatusResponse) Reset() {
 	*x = ClusterStatusResponse{}
-	mi := &file_stormd_proto_msgTypes[28]
+	mi := &file_stormd_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1702,7 +1822,7 @@ func (x *ClusterStatusResponse) String() string {
 func (*ClusterStatusResponse) ProtoMessage() {}
 
 func (x *ClusterStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[28]
+	mi := &file_stormd_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1715,7 +1835,7 @@ func (x *ClusterStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClusterStatusResponse.ProtoReflect.Descriptor instead.
 func (*ClusterStatusResponse) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{28}
+	return file_stormd_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ClusterStatusResponse) GetNodeCount() uint32 {
@@ -1762,7 +1882,7 @@ type WorkloadCheckpointRequest struct {
 
 func (x *WorkloadCheckpointRequest) Reset() {
 	*x = WorkloadCheckpointRequest{}
-	mi := &file_stormd_proto_msgTypes[29]
+	mi := &file_stormd_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1774,7 +1894,7 @@ func (x *WorkloadCheckpointRequest) String() string {
 func (*WorkloadCheckpointRequest) ProtoMessage() {}
 
 func (x *WorkloadCheckpointRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[29]
+	mi := &file_stormd_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1787,7 +1907,7 @@ func (x *WorkloadCheckpointRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkloadCheckpointRequest.ProtoReflect.Descriptor instead.
 func (*WorkloadCheckpointRequest) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{29}
+	return file_stormd_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *WorkloadCheckpointRequest) GetName() string {
@@ -1808,7 +1928,7 @@ type WorkloadCheckpointResponse struct {
 
 func (x *WorkloadCheckpointResponse) Reset() {
 	*x = WorkloadCheckpointResponse{}
-	mi := &file_stormd_proto_msgTypes[30]
+	mi := &file_stormd_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1820,7 +1940,7 @@ func (x *WorkloadCheckpointResponse) String() string {
 func (*WorkloadCheckpointResponse) ProtoMessage() {}
 
 func (x *WorkloadCheckpointResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[30]
+	mi := &file_stormd_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1833,7 +1953,7 @@ func (x *WorkloadCheckpointResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkloadCheckpointResponse.ProtoReflect.Descriptor instead.
 func (*WorkloadCheckpointResponse) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{30}
+	return file_stormd_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *WorkloadCheckpointResponse) GetSuccess() bool {
@@ -1866,7 +1986,7 @@ type WorkloadRestoreRequest struct {
 
 func (x *WorkloadRestoreRequest) Reset() {
 	*x = WorkloadRestoreRequest{}
-	mi := &file_stormd_proto_msgTypes[31]
+	mi := &file_stormd_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1878,7 +1998,7 @@ func (x *WorkloadRestoreRequest) String() string {
 func (*WorkloadRestoreRequest) ProtoMessage() {}
 
 func (x *WorkloadRestoreRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[31]
+	mi := &file_stormd_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1891,7 +2011,7 @@ func (x *WorkloadRestoreRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkloadRestoreRequest.ProtoReflect.Descriptor instead.
 func (*WorkloadRestoreRequest) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{31}
+	return file_stormd_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *WorkloadRestoreRequest) GetCheckpointPath() string {
@@ -1912,7 +2032,7 @@ type WorkloadRestoreResponse struct {
 
 func (x *WorkloadRestoreResponse) Reset() {
 	*x = WorkloadRestoreResponse{}
-	mi := &file_stormd_proto_msgTypes[32]
+	mi := &file_stormd_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1924,7 +2044,7 @@ func (x *WorkloadRestoreResponse) String() string {
 func (*WorkloadRestoreResponse) ProtoMessage() {}
 
 func (x *WorkloadRestoreResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[32]
+	mi := &file_stormd_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1937,7 +2057,7 @@ func (x *WorkloadRestoreResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkloadRestoreResponse.ProtoReflect.Descriptor instead.
 func (*WorkloadRestoreResponse) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{32}
+	return file_stormd_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *WorkloadRestoreResponse) GetSuccess() bool {
@@ -1971,7 +2091,7 @@ type VmMigrateRequest struct {
 
 func (x *VmMigrateRequest) Reset() {
 	*x = VmMigrateRequest{}
-	mi := &file_stormd_proto_msgTypes[33]
+	mi := &file_stormd_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1983,7 +2103,7 @@ func (x *VmMigrateRequest) String() string {
 func (*VmMigrateRequest) ProtoMessage() {}
 
 func (x *VmMigrateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[33]
+	mi := &file_stormd_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1996,7 +2116,7 @@ func (x *VmMigrateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VmMigrateRequest.ProtoReflect.Descriptor instead.
 func (*VmMigrateRequest) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{33}
+	return file_stormd_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *VmMigrateRequest) GetWorkloadName() string {
@@ -2023,7 +2143,7 @@ type VmMigrateResponse struct {
 
 func (x *VmMigrateResponse) Reset() {
 	*x = VmMigrateResponse{}
-	mi := &file_stormd_proto_msgTypes[34]
+	mi := &file_stormd_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2035,7 +2155,7 @@ func (x *VmMigrateResponse) String() string {
 func (*VmMigrateResponse) ProtoMessage() {}
 
 func (x *VmMigrateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[34]
+	mi := &file_stormd_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2048,7 +2168,7 @@ func (x *VmMigrateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VmMigrateResponse.ProtoReflect.Descriptor instead.
 func (*VmMigrateResponse) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{34}
+	return file_stormd_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *VmMigrateResponse) GetSuccess() bool {
@@ -2075,7 +2195,7 @@ type VmSnapshotRequest struct {
 
 func (x *VmSnapshotRequest) Reset() {
 	*x = VmSnapshotRequest{}
-	mi := &file_stormd_proto_msgTypes[35]
+	mi := &file_stormd_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2087,7 +2207,7 @@ func (x *VmSnapshotRequest) String() string {
 func (*VmSnapshotRequest) ProtoMessage() {}
 
 func (x *VmSnapshotRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[35]
+	mi := &file_stormd_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2100,7 +2220,7 @@ func (x *VmSnapshotRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VmSnapshotRequest.ProtoReflect.Descriptor instead.
 func (*VmSnapshotRequest) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{35}
+	return file_stormd_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *VmSnapshotRequest) GetWorkloadName() string {
@@ -2128,7 +2248,7 @@ type VmSnapshotResponse struct {
 
 func (x *VmSnapshotResponse) Reset() {
 	*x = VmSnapshotResponse{}
-	mi := &file_stormd_proto_msgTypes[36]
+	mi := &file_stormd_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2140,7 +2260,7 @@ func (x *VmSnapshotResponse) String() string {
 func (*VmSnapshotResponse) ProtoMessage() {}
 
 func (x *VmSnapshotResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[36]
+	mi := &file_stormd_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2153,7 +2273,7 @@ func (x *VmSnapshotResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VmSnapshotResponse.ProtoReflect.Descriptor instead.
 func (*VmSnapshotResponse) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{36}
+	return file_stormd_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *VmSnapshotResponse) GetSuccess() bool {
@@ -2191,7 +2311,7 @@ type NetworkPolicy struct {
 
 func (x *NetworkPolicy) Reset() {
 	*x = NetworkPolicy{}
-	mi := &file_stormd_proto_msgTypes[37]
+	mi := &file_stormd_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2203,7 +2323,7 @@ func (x *NetworkPolicy) String() string {
 func (*NetworkPolicy) ProtoMessage() {}
 
 func (x *NetworkPolicy) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[37]
+	mi := &file_stormd_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2216,7 +2336,7 @@ func (x *NetworkPolicy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkPolicy.ProtoReflect.Descriptor instead.
 func (*NetworkPolicy) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{37}
+	return file_stormd_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *NetworkPolicy) GetName() string {
@@ -2265,7 +2385,7 @@ type NetworkPolicyRule struct {
 
 func (x *NetworkPolicyRule) Reset() {
 	*x = NetworkPolicyRule{}
-	mi := &file_stormd_proto_msgTypes[38]
+	mi := &file_stormd_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2277,7 +2397,7 @@ func (x *NetworkPolicyRule) String() string {
 func (*NetworkPolicyRule) ProtoMessage() {}
 
 func (x *NetworkPolicyRule) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[38]
+	mi := &file_stormd_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2290,7 +2410,7 @@ func (x *NetworkPolicyRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkPolicyRule.ProtoReflect.Descriptor instead.
 func (*NetworkPolicyRule) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{38}
+	return file_stormd_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *NetworkPolicyRule) GetPorts() []uint32 {
@@ -2323,7 +2443,7 @@ type NetworkPolicyApplyRequest struct {
 
 func (x *NetworkPolicyApplyRequest) Reset() {
 	*x = NetworkPolicyApplyRequest{}
-	mi := &file_stormd_proto_msgTypes[39]
+	mi := &file_stormd_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2335,7 +2455,7 @@ func (x *NetworkPolicyApplyRequest) String() string {
 func (*NetworkPolicyApplyRequest) ProtoMessage() {}
 
 func (x *NetworkPolicyApplyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[39]
+	mi := &file_stormd_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2348,7 +2468,7 @@ func (x *NetworkPolicyApplyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkPolicyApplyRequest.ProtoReflect.Descriptor instead.
 func (*NetworkPolicyApplyRequest) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{39}
+	return file_stormd_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *NetworkPolicyApplyRequest) GetPolicy() *NetworkPolicy {
@@ -2369,7 +2489,7 @@ type NetworkPolicyApplyResponse struct {
 
 func (x *NetworkPolicyApplyResponse) Reset() {
 	*x = NetworkPolicyApplyResponse{}
-	mi := &file_stormd_proto_msgTypes[40]
+	mi := &file_stormd_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2381,7 +2501,7 @@ func (x *NetworkPolicyApplyResponse) String() string {
 func (*NetworkPolicyApplyResponse) ProtoMessage() {}
 
 func (x *NetworkPolicyApplyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[40]
+	mi := &file_stormd_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2394,7 +2514,7 @@ func (x *NetworkPolicyApplyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkPolicyApplyResponse.ProtoReflect.Descriptor instead.
 func (*NetworkPolicyApplyResponse) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{40}
+	return file_stormd_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *NetworkPolicyApplyResponse) GetSuccess() bool {
@@ -2428,7 +2548,7 @@ type NetworkPolicyDeleteRequest struct {
 
 func (x *NetworkPolicyDeleteRequest) Reset() {
 	*x = NetworkPolicyDeleteRequest{}
-	mi := &file_stormd_proto_msgTypes[41]
+	mi := &file_stormd_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2440,7 +2560,7 @@ func (x *NetworkPolicyDeleteRequest) String() string {
 func (*NetworkPolicyDeleteRequest) ProtoMessage() {}
 
 func (x *NetworkPolicyDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[41]
+	mi := &file_stormd_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2453,7 +2573,7 @@ func (x *NetworkPolicyDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkPolicyDeleteRequest.ProtoReflect.Descriptor instead.
 func (*NetworkPolicyDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{41}
+	return file_stormd_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *NetworkPolicyDeleteRequest) GetName() string {
@@ -2481,7 +2601,7 @@ type NetworkPolicyDeleteResponse struct {
 
 func (x *NetworkPolicyDeleteResponse) Reset() {
 	*x = NetworkPolicyDeleteResponse{}
-	mi := &file_stormd_proto_msgTypes[42]
+	mi := &file_stormd_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2493,7 +2613,7 @@ func (x *NetworkPolicyDeleteResponse) String() string {
 func (*NetworkPolicyDeleteResponse) ProtoMessage() {}
 
 func (x *NetworkPolicyDeleteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[42]
+	mi := &file_stormd_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2506,7 +2626,7 @@ func (x *NetworkPolicyDeleteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkPolicyDeleteResponse.ProtoReflect.Descriptor instead.
 func (*NetworkPolicyDeleteResponse) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{42}
+	return file_stormd_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *NetworkPolicyDeleteResponse) GetSuccess() bool {
@@ -2539,7 +2659,7 @@ type NetworkPolicyListRequest struct {
 
 func (x *NetworkPolicyListRequest) Reset() {
 	*x = NetworkPolicyListRequest{}
-	mi := &file_stormd_proto_msgTypes[43]
+	mi := &file_stormd_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2551,7 +2671,7 @@ func (x *NetworkPolicyListRequest) String() string {
 func (*NetworkPolicyListRequest) ProtoMessage() {}
 
 func (x *NetworkPolicyListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[43]
+	mi := &file_stormd_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2564,7 +2684,7 @@ func (x *NetworkPolicyListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkPolicyListRequest.ProtoReflect.Descriptor instead.
 func (*NetworkPolicyListRequest) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{43}
+	return file_stormd_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *NetworkPolicyListRequest) GetNamespace() string {
@@ -2583,7 +2703,7 @@ type NetworkPolicyListResponse struct {
 
 func (x *NetworkPolicyListResponse) Reset() {
 	*x = NetworkPolicyListResponse{}
-	mi := &file_stormd_proto_msgTypes[44]
+	mi := &file_stormd_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2595,7 +2715,7 @@ func (x *NetworkPolicyListResponse) String() string {
 func (*NetworkPolicyListResponse) ProtoMessage() {}
 
 func (x *NetworkPolicyListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_stormd_proto_msgTypes[44]
+	mi := &file_stormd_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2608,7 +2728,7 @@ func (x *NetworkPolicyListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NetworkPolicyListResponse.ProtoReflect.Descriptor instead.
 func (*NetworkPolicyListResponse) Descriptor() ([]byte, []int) {
-	return file_stormd_proto_rawDescGZIP(), []int{44}
+	return file_stormd_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *NetworkPolicyListResponse) GetPolicies() []*NetworkPolicy {
@@ -2669,7 +2789,7 @@ const file_stormd_proto_rawDesc = "" +
 	"\ttimestamp\x18\x01 \x01(\tR\ttimestamp\x12\x16\n" +
 	"\x06stream\x18\x02 \x01(\tR\x06stream\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\"\x13\n" +
-	"\x11NodeStatusRequest\"\x9f\x03\n" +
+	"\x11NodeStatusRequest\"\xe0\x03\n" +
 	"\x12NodeStatusResponse\x12\x1a\n" +
 	"\bhostname\x18\x01 \x01(\tR\bhostname\x12\x1f\n" +
 	"\vuptime_secs\x18\x02 \x01(\x04R\n" +
@@ -2686,7 +2806,9 @@ const file_stormd_proto_rawDesc = "" +
 	" \x01(\tR\x06nodeId\x12\x19\n" +
 	"\bpod_cidr\x18\v \x01(\tR\apodCidr\x12\x1d\n" +
 	"\n" +
-	"mesh_peers\x18\f \x01(\rR\tmeshPeers\"0\n" +
+	"mesh_peers\x18\f \x01(\rR\tmeshPeers\x12\x1a\n" +
+	"\bcordoned\x18\r \x01(\bR\bcordoned\x12#\n" +
+	"\rcordon_reason\x18\x0e \x01(\tR\fcordonReason\"0\n" +
 	"\x10ImagePullRequest\x12\x1c\n" +
 	"\treference\x18\x01 \x01(\tR\treference\"p\n" +
 	"\x11ImagePullResponse\x12\x18\n" +
@@ -2708,7 +2830,13 @@ const file_stormd_proto_rawDesc = "" +
 	"\x11NodeDrainResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12+\n" +
-	"\x11workloads_stopped\x18\x03 \x01(\rR\x10workloadsStopped\";\n" +
+	"\x11workloads_stopped\x18\x03 \x01(\rR\x10workloadsStopped\"+\n" +
+	"\x11NodeCordonRequest\x12\x16\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\"d\n" +
+	"\x12NodeCordonResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1a\n" +
+	"\bcordoned\x18\x03 \x01(\bR\bcordoned\";\n" +
 	"\x11MeshUpdateRequest\x12&\n" +
 	"\x05nodes\x18\x01 \x03(\v2\x10.stormd.MeshNodeR\x05nodes\"\xe0\x01\n" +
 	"\bMeshNode\x12\x17\n" +
@@ -2796,7 +2924,7 @@ const file_stormd_proto_rawDesc = "" +
 	"\x18NetworkPolicyListRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\"N\n" +
 	"\x19NetworkPolicyListResponse\x121\n" +
-	"\bpolicies\x18\x01 \x03(\v2\x15.stormd.NetworkPolicyR\bpolicies2\xdd\f\n" +
+	"\bpolicies\x18\x01 \x03(\v2\x15.stormd.NetworkPolicyR\bpolicies2\xe9\r\n" +
 	"\vStormDaemon\x12I\n" +
 	"\fWorkloadList\x12\x1b.stormd.WorkloadListRequest\x1a\x1c.stormd.WorkloadListResponse\x12N\n" +
 	"\rWorkloadStart\x12\x1d.stormd.WorkloadActionRequest\x1a\x1e.stormd.WorkloadActionResponse\x12M\n" +
@@ -2808,7 +2936,10 @@ const file_stormd_proto_rawDesc = "" +
 	"\tImagePull\x12\x18.stormd.ImagePullRequest\x1a\x19.stormd.ImagePullResponse\x12@\n" +
 	"\tImageList\x12\x18.stormd.ImageListRequest\x1a\x19.stormd.ImageListResponse\x12O\n" +
 	"\x0eWorkloadCreate\x12\x1d.stormd.WorkloadCreateRequest\x1a\x1e.stormd.WorkloadActionResponse\x12@\n" +
-	"\tNodeDrain\x12\x18.stormd.NodeDrainRequest\x1a\x19.stormd.NodeDrainResponse\x12F\n" +
+	"\tNodeDrain\x12\x18.stormd.NodeDrainRequest\x1a\x19.stormd.NodeDrainResponse\x12C\n" +
+	"\n" +
+	"NodeCordon\x12\x19.stormd.NodeCordonRequest\x1a\x1a.stormd.NodeCordonResponse\x12E\n" +
+	"\fNodeUncordon\x12\x19.stormd.NodeCordonRequest\x1a\x1a.stormd.NodeCordonResponse\x12F\n" +
 	"\vImageEnsure\x12\x1a.stormd.ImageEnsureRequest\x1a\x1b.stormd.ImageEnsureResponse\x12C\n" +
 	"\n" +
 	"MeshUpdate\x12\x19.stormd.MeshUpdateRequest\x1a\x1a.stormd.MeshUpdateResponse\x12L\n" +
@@ -2821,7 +2952,7 @@ const file_stormd_proto_rawDesc = "" +
 	"\x0fWorkloadRestore\x12\x1e.stormd.WorkloadRestoreRequest\x1a\x1f.stormd.WorkloadRestoreResponse\x12@\n" +
 	"\tVmMigrate\x12\x18.stormd.VmMigrateRequest\x1a\x19.stormd.VmMigrateResponse\x12C\n" +
 	"\n" +
-	"VmSnapshot\x12\x19.stormd.VmSnapshotRequest\x1a\x1a.stormd.VmSnapshotResponseb\x06proto3"
+	"VmSnapshot\x12\x19.stormd.VmSnapshotRequest\x1a\x1a.stormd.VmSnapshotResponseB:Z8github.com/glennswest/mkube/pkg/stormbase/proto;stormdpbb\x06proto3"
 
 var (
 	file_stormd_proto_rawDescOnce sync.Once
@@ -2835,7 +2966,7 @@ func file_stormd_proto_rawDescGZIP() []byte {
 	return file_stormd_proto_rawDescData
 }
 
-var file_stormd_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
+var file_stormd_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
 var file_stormd_proto_goTypes = []any{
 	(*WorkloadListRequest)(nil),         // 0: stormd.WorkloadListRequest
 	(*WorkloadListResponse)(nil),        // 1: stormd.WorkloadListResponse
@@ -2857,44 +2988,46 @@ var file_stormd_proto_goTypes = []any{
 	(*ImageEnsureResponse)(nil),         // 17: stormd.ImageEnsureResponse
 	(*NodeDrainRequest)(nil),            // 18: stormd.NodeDrainRequest
 	(*NodeDrainResponse)(nil),           // 19: stormd.NodeDrainResponse
-	(*MeshUpdateRequest)(nil),           // 20: stormd.MeshUpdateRequest
-	(*MeshNode)(nil),                    // 21: stormd.MeshNode
-	(*MeshUpdateResponse)(nil),          // 22: stormd.MeshUpdateResponse
-	(*ServiceUpdateRequest)(nil),        // 23: stormd.ServiceUpdateRequest
-	(*ServiceEntry)(nil),                // 24: stormd.ServiceEntry
-	(*ServiceEndpointMsg)(nil),          // 25: stormd.ServiceEndpointMsg
-	(*ServiceUpdateResponse)(nil),       // 26: stormd.ServiceUpdateResponse
-	(*ClusterStatusRequest)(nil),        // 27: stormd.ClusterStatusRequest
-	(*ClusterStatusResponse)(nil),       // 28: stormd.ClusterStatusResponse
-	(*WorkloadCheckpointRequest)(nil),   // 29: stormd.WorkloadCheckpointRequest
-	(*WorkloadCheckpointResponse)(nil),  // 30: stormd.WorkloadCheckpointResponse
-	(*WorkloadRestoreRequest)(nil),      // 31: stormd.WorkloadRestoreRequest
-	(*WorkloadRestoreResponse)(nil),     // 32: stormd.WorkloadRestoreResponse
-	(*VmMigrateRequest)(nil),            // 33: stormd.VmMigrateRequest
-	(*VmMigrateResponse)(nil),           // 34: stormd.VmMigrateResponse
-	(*VmSnapshotRequest)(nil),           // 35: stormd.VmSnapshotRequest
-	(*VmSnapshotResponse)(nil),          // 36: stormd.VmSnapshotResponse
-	(*NetworkPolicy)(nil),               // 37: stormd.NetworkPolicy
-	(*NetworkPolicyRule)(nil),           // 38: stormd.NetworkPolicyRule
-	(*NetworkPolicyApplyRequest)(nil),   // 39: stormd.NetworkPolicyApplyRequest
-	(*NetworkPolicyApplyResponse)(nil),  // 40: stormd.NetworkPolicyApplyResponse
-	(*NetworkPolicyDeleteRequest)(nil),  // 41: stormd.NetworkPolicyDeleteRequest
-	(*NetworkPolicyDeleteResponse)(nil), // 42: stormd.NetworkPolicyDeleteResponse
-	(*NetworkPolicyListRequest)(nil),    // 43: stormd.NetworkPolicyListRequest
-	(*NetworkPolicyListResponse)(nil),   // 44: stormd.NetworkPolicyListResponse
+	(*NodeCordonRequest)(nil),           // 20: stormd.NodeCordonRequest
+	(*NodeCordonResponse)(nil),          // 21: stormd.NodeCordonResponse
+	(*MeshUpdateRequest)(nil),           // 22: stormd.MeshUpdateRequest
+	(*MeshNode)(nil),                    // 23: stormd.MeshNode
+	(*MeshUpdateResponse)(nil),          // 24: stormd.MeshUpdateResponse
+	(*ServiceUpdateRequest)(nil),        // 25: stormd.ServiceUpdateRequest
+	(*ServiceEntry)(nil),                // 26: stormd.ServiceEntry
+	(*ServiceEndpointMsg)(nil),          // 27: stormd.ServiceEndpointMsg
+	(*ServiceUpdateResponse)(nil),       // 28: stormd.ServiceUpdateResponse
+	(*ClusterStatusRequest)(nil),        // 29: stormd.ClusterStatusRequest
+	(*ClusterStatusResponse)(nil),       // 30: stormd.ClusterStatusResponse
+	(*WorkloadCheckpointRequest)(nil),   // 31: stormd.WorkloadCheckpointRequest
+	(*WorkloadCheckpointResponse)(nil),  // 32: stormd.WorkloadCheckpointResponse
+	(*WorkloadRestoreRequest)(nil),      // 33: stormd.WorkloadRestoreRequest
+	(*WorkloadRestoreResponse)(nil),     // 34: stormd.WorkloadRestoreResponse
+	(*VmMigrateRequest)(nil),            // 35: stormd.VmMigrateRequest
+	(*VmMigrateResponse)(nil),           // 36: stormd.VmMigrateResponse
+	(*VmSnapshotRequest)(nil),           // 37: stormd.VmSnapshotRequest
+	(*VmSnapshotResponse)(nil),          // 38: stormd.VmSnapshotResponse
+	(*NetworkPolicy)(nil),               // 39: stormd.NetworkPolicy
+	(*NetworkPolicyRule)(nil),           // 40: stormd.NetworkPolicyRule
+	(*NetworkPolicyApplyRequest)(nil),   // 41: stormd.NetworkPolicyApplyRequest
+	(*NetworkPolicyApplyResponse)(nil),  // 42: stormd.NetworkPolicyApplyResponse
+	(*NetworkPolicyDeleteRequest)(nil),  // 43: stormd.NetworkPolicyDeleteRequest
+	(*NetworkPolicyDeleteResponse)(nil), // 44: stormd.NetworkPolicyDeleteResponse
+	(*NetworkPolicyListRequest)(nil),    // 45: stormd.NetworkPolicyListRequest
+	(*NetworkPolicyListResponse)(nil),   // 46: stormd.NetworkPolicyListResponse
 }
 var file_stormd_proto_depIdxs = []int32{
 	2,  // 0: stormd.WorkloadListResponse.workloads:type_name -> stormd.WorkloadInfo
 	6,  // 1: stormd.WorkloadCreateRequest.ports:type_name -> stormd.PortMapping
 	7,  // 2: stormd.WorkloadCreateRequest.volumes:type_name -> stormd.VolumeMount
-	21, // 3: stormd.MeshUpdateRequest.nodes:type_name -> stormd.MeshNode
-	24, // 4: stormd.ServiceUpdateRequest.services:type_name -> stormd.ServiceEntry
-	25, // 5: stormd.ServiceEntry.endpoints:type_name -> stormd.ServiceEndpointMsg
-	21, // 6: stormd.ClusterStatusResponse.nodes:type_name -> stormd.MeshNode
-	38, // 7: stormd.NetworkPolicy.ingress_rules:type_name -> stormd.NetworkPolicyRule
-	38, // 8: stormd.NetworkPolicy.egress_rules:type_name -> stormd.NetworkPolicyRule
-	37, // 9: stormd.NetworkPolicyApplyRequest.policy:type_name -> stormd.NetworkPolicy
-	37, // 10: stormd.NetworkPolicyListResponse.policies:type_name -> stormd.NetworkPolicy
+	23, // 3: stormd.MeshUpdateRequest.nodes:type_name -> stormd.MeshNode
+	26, // 4: stormd.ServiceUpdateRequest.services:type_name -> stormd.ServiceEntry
+	27, // 5: stormd.ServiceEntry.endpoints:type_name -> stormd.ServiceEndpointMsg
+	23, // 6: stormd.ClusterStatusResponse.nodes:type_name -> stormd.MeshNode
+	40, // 7: stormd.NetworkPolicy.ingress_rules:type_name -> stormd.NetworkPolicyRule
+	40, // 8: stormd.NetworkPolicy.egress_rules:type_name -> stormd.NetworkPolicyRule
+	39, // 9: stormd.NetworkPolicyApplyRequest.policy:type_name -> stormd.NetworkPolicy
+	39, // 10: stormd.NetworkPolicyListResponse.policies:type_name -> stormd.NetworkPolicy
 	0,  // 11: stormd.StormDaemon.WorkloadList:input_type -> stormd.WorkloadListRequest
 	3,  // 12: stormd.StormDaemon.WorkloadStart:input_type -> stormd.WorkloadActionRequest
 	3,  // 13: stormd.StormDaemon.WorkloadStop:input_type -> stormd.WorkloadActionRequest
@@ -2905,40 +3038,44 @@ var file_stormd_proto_depIdxs = []int32{
 	14, // 18: stormd.StormDaemon.ImageList:input_type -> stormd.ImageListRequest
 	5,  // 19: stormd.StormDaemon.WorkloadCreate:input_type -> stormd.WorkloadCreateRequest
 	18, // 20: stormd.StormDaemon.NodeDrain:input_type -> stormd.NodeDrainRequest
-	16, // 21: stormd.StormDaemon.ImageEnsure:input_type -> stormd.ImageEnsureRequest
-	20, // 22: stormd.StormDaemon.MeshUpdate:input_type -> stormd.MeshUpdateRequest
-	23, // 23: stormd.StormDaemon.ServiceUpdate:input_type -> stormd.ServiceUpdateRequest
-	27, // 24: stormd.StormDaemon.ClusterStatus:input_type -> stormd.ClusterStatusRequest
-	39, // 25: stormd.StormDaemon.NetworkPolicyApply:input_type -> stormd.NetworkPolicyApplyRequest
-	41, // 26: stormd.StormDaemon.NetworkPolicyDelete:input_type -> stormd.NetworkPolicyDeleteRequest
-	43, // 27: stormd.StormDaemon.NetworkPolicyList:input_type -> stormd.NetworkPolicyListRequest
-	29, // 28: stormd.StormDaemon.WorkloadCheckpoint:input_type -> stormd.WorkloadCheckpointRequest
-	31, // 29: stormd.StormDaemon.WorkloadRestore:input_type -> stormd.WorkloadRestoreRequest
-	33, // 30: stormd.StormDaemon.VmMigrate:input_type -> stormd.VmMigrateRequest
-	35, // 31: stormd.StormDaemon.VmSnapshot:input_type -> stormd.VmSnapshotRequest
-	1,  // 32: stormd.StormDaemon.WorkloadList:output_type -> stormd.WorkloadListResponse
-	4,  // 33: stormd.StormDaemon.WorkloadStart:output_type -> stormd.WorkloadActionResponse
-	4,  // 34: stormd.StormDaemon.WorkloadStop:output_type -> stormd.WorkloadActionResponse
-	4,  // 35: stormd.StormDaemon.WorkloadRemove:output_type -> stormd.WorkloadActionResponse
-	9,  // 36: stormd.StormDaemon.WorkloadLogs:output_type -> stormd.LogEntry
-	11, // 37: stormd.StormDaemon.NodeStatus:output_type -> stormd.NodeStatusResponse
-	13, // 38: stormd.StormDaemon.ImagePull:output_type -> stormd.ImagePullResponse
-	15, // 39: stormd.StormDaemon.ImageList:output_type -> stormd.ImageListResponse
-	4,  // 40: stormd.StormDaemon.WorkloadCreate:output_type -> stormd.WorkloadActionResponse
-	19, // 41: stormd.StormDaemon.NodeDrain:output_type -> stormd.NodeDrainResponse
-	17, // 42: stormd.StormDaemon.ImageEnsure:output_type -> stormd.ImageEnsureResponse
-	22, // 43: stormd.StormDaemon.MeshUpdate:output_type -> stormd.MeshUpdateResponse
-	26, // 44: stormd.StormDaemon.ServiceUpdate:output_type -> stormd.ServiceUpdateResponse
-	28, // 45: stormd.StormDaemon.ClusterStatus:output_type -> stormd.ClusterStatusResponse
-	40, // 46: stormd.StormDaemon.NetworkPolicyApply:output_type -> stormd.NetworkPolicyApplyResponse
-	42, // 47: stormd.StormDaemon.NetworkPolicyDelete:output_type -> stormd.NetworkPolicyDeleteResponse
-	44, // 48: stormd.StormDaemon.NetworkPolicyList:output_type -> stormd.NetworkPolicyListResponse
-	30, // 49: stormd.StormDaemon.WorkloadCheckpoint:output_type -> stormd.WorkloadCheckpointResponse
-	32, // 50: stormd.StormDaemon.WorkloadRestore:output_type -> stormd.WorkloadRestoreResponse
-	34, // 51: stormd.StormDaemon.VmMigrate:output_type -> stormd.VmMigrateResponse
-	36, // 52: stormd.StormDaemon.VmSnapshot:output_type -> stormd.VmSnapshotResponse
-	32, // [32:53] is the sub-list for method output_type
-	11, // [11:32] is the sub-list for method input_type
+	20, // 21: stormd.StormDaemon.NodeCordon:input_type -> stormd.NodeCordonRequest
+	20, // 22: stormd.StormDaemon.NodeUncordon:input_type -> stormd.NodeCordonRequest
+	16, // 23: stormd.StormDaemon.ImageEnsure:input_type -> stormd.ImageEnsureRequest
+	22, // 24: stormd.StormDaemon.MeshUpdate:input_type -> stormd.MeshUpdateRequest
+	25, // 25: stormd.StormDaemon.ServiceUpdate:input_type -> stormd.ServiceUpdateRequest
+	29, // 26: stormd.StormDaemon.ClusterStatus:input_type -> stormd.ClusterStatusRequest
+	41, // 27: stormd.StormDaemon.NetworkPolicyApply:input_type -> stormd.NetworkPolicyApplyRequest
+	43, // 28: stormd.StormDaemon.NetworkPolicyDelete:input_type -> stormd.NetworkPolicyDeleteRequest
+	45, // 29: stormd.StormDaemon.NetworkPolicyList:input_type -> stormd.NetworkPolicyListRequest
+	31, // 30: stormd.StormDaemon.WorkloadCheckpoint:input_type -> stormd.WorkloadCheckpointRequest
+	33, // 31: stormd.StormDaemon.WorkloadRestore:input_type -> stormd.WorkloadRestoreRequest
+	35, // 32: stormd.StormDaemon.VmMigrate:input_type -> stormd.VmMigrateRequest
+	37, // 33: stormd.StormDaemon.VmSnapshot:input_type -> stormd.VmSnapshotRequest
+	1,  // 34: stormd.StormDaemon.WorkloadList:output_type -> stormd.WorkloadListResponse
+	4,  // 35: stormd.StormDaemon.WorkloadStart:output_type -> stormd.WorkloadActionResponse
+	4,  // 36: stormd.StormDaemon.WorkloadStop:output_type -> stormd.WorkloadActionResponse
+	4,  // 37: stormd.StormDaemon.WorkloadRemove:output_type -> stormd.WorkloadActionResponse
+	9,  // 38: stormd.StormDaemon.WorkloadLogs:output_type -> stormd.LogEntry
+	11, // 39: stormd.StormDaemon.NodeStatus:output_type -> stormd.NodeStatusResponse
+	13, // 40: stormd.StormDaemon.ImagePull:output_type -> stormd.ImagePullResponse
+	15, // 41: stormd.StormDaemon.ImageList:output_type -> stormd.ImageListResponse
+	4,  // 42: stormd.StormDaemon.WorkloadCreate:output_type -> stormd.WorkloadActionResponse
+	19, // 43: stormd.StormDaemon.NodeDrain:output_type -> stormd.NodeDrainResponse
+	21, // 44: stormd.StormDaemon.NodeCordon:output_type -> stormd.NodeCordonResponse
+	21, // 45: stormd.StormDaemon.NodeUncordon:output_type -> stormd.NodeCordonResponse
+	17, // 46: stormd.StormDaemon.ImageEnsure:output_type -> stormd.ImageEnsureResponse
+	24, // 47: stormd.StormDaemon.MeshUpdate:output_type -> stormd.MeshUpdateResponse
+	28, // 48: stormd.StormDaemon.ServiceUpdate:output_type -> stormd.ServiceUpdateResponse
+	30, // 49: stormd.StormDaemon.ClusterStatus:output_type -> stormd.ClusterStatusResponse
+	42, // 50: stormd.StormDaemon.NetworkPolicyApply:output_type -> stormd.NetworkPolicyApplyResponse
+	44, // 51: stormd.StormDaemon.NetworkPolicyDelete:output_type -> stormd.NetworkPolicyDeleteResponse
+	46, // 52: stormd.StormDaemon.NetworkPolicyList:output_type -> stormd.NetworkPolicyListResponse
+	32, // 53: stormd.StormDaemon.WorkloadCheckpoint:output_type -> stormd.WorkloadCheckpointResponse
+	34, // 54: stormd.StormDaemon.WorkloadRestore:output_type -> stormd.WorkloadRestoreResponse
+	36, // 55: stormd.StormDaemon.VmMigrate:output_type -> stormd.VmMigrateResponse
+	38, // 56: stormd.StormDaemon.VmSnapshot:output_type -> stormd.VmSnapshotResponse
+	34, // [34:57] is the sub-list for method output_type
+	11, // [11:34] is the sub-list for method input_type
 	11, // [11:11] is the sub-list for extension type_name
 	11, // [11:11] is the sub-list for extension extendee
 	0,  // [0:11] is the sub-list for field type_name
@@ -2955,7 +3092,7 @@ func file_stormd_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_stormd_proto_rawDesc), len(file_stormd_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   45,
+			NumMessages:   47,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

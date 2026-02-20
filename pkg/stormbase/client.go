@@ -251,6 +251,16 @@ func (c *Client) GRPCClient() stormdpb.StormDaemonClient {
 	return c.daemon
 }
 
+// IsNodeCordoned returns whether the remote stormd node is cordoned
+// and the reason string. Returns (false, "") on error.
+func (c *Client) IsNodeCordoned(ctx context.Context) (bool, string) {
+	resp, err := c.daemon.NodeStatus(ctx, &stormdpb.NodeStatusRequest{})
+	if err != nil {
+		return false, ""
+	}
+	return resp.Cordoned, resp.CordonReason
+}
+
 func workloadToContainer(w *stormdpb.WorkloadInfo) *runtime.Container {
 	return &runtime.Container{
 		ID:            w.ContainerId,

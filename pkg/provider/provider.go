@@ -27,6 +27,7 @@ import (
 	"github.com/glennswest/mkube/pkg/namespace"
 	"github.com/glennswest/mkube/pkg/network"
 	"github.com/glennswest/mkube/pkg/runtime"
+	"github.com/glennswest/mkube/pkg/stormbase"
 	"github.com/glennswest/mkube/pkg/storage"
 )
 
@@ -698,6 +699,41 @@ func (p *MicroKubeProvider) runNodeHeartbeat(ctx context.Context, clientset kube
 					node.Status.Conditions[i].LastHeartbeatTime = metav1.Now()
 				}
 			}
+
+			// Check if node is cordoned (stormbase backend only)
+			if sb, ok := p.deps.Runtime.(*stormbase.Client); ok {
+				cordoned, reason := sb.IsNodeCordoned(ctx)
+				node.Spec.Unschedulable = cordoned
+
+				// Add/remove NoSchedule taint for cordoned nodes
+				cordonTaint := corev1.Taint{
+					Key:    "stormbase.io/cordoned",
+					Value:  reason,
+					Effect: corev1.TaintEffectNoSchedule,
+				}
+				if cordoned {
+					hasTaint := false
+					for _, t := range node.Spec.Taints {
+						if t.Key == "stormbase.io/cordoned" {
+							hasTaint = true
+							break
+						}
+					}
+					if !hasTaint {
+						node.Spec.Taints = append(node.Spec.Taints, cordonTaint)
+						p.deps.Logger.Infow("node cordoned — added taint", "reason", reason)
+					}
+				} else {
+					filtered := make([]corev1.Taint, 0, len(node.Spec.Taints))
+					for _, t := range node.Spec.Taints {
+						if t.Key != "stormbase.io/cordoned" {
+							filtered = append(filtered, t)
+						}
+					}
+					node.Spec.Taints = filtered
+				}
+			}
+
 			if _, err := clientset.CoreV1().Nodes().UpdateStatus(ctx, node, metav1.UpdateOptions{}); err != nil {
 				p.deps.Logger.Warnw("heartbeat: failed to update", "error", err)
 			}

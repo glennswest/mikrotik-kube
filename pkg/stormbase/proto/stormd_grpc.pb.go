@@ -29,6 +29,8 @@ const (
 	StormDaemon_ImageList_FullMethodName           = "/stormd.StormDaemon/ImageList"
 	StormDaemon_WorkloadCreate_FullMethodName      = "/stormd.StormDaemon/WorkloadCreate"
 	StormDaemon_NodeDrain_FullMethodName           = "/stormd.StormDaemon/NodeDrain"
+	StormDaemon_NodeCordon_FullMethodName          = "/stormd.StormDaemon/NodeCordon"
+	StormDaemon_NodeUncordon_FullMethodName        = "/stormd.StormDaemon/NodeUncordon"
 	StormDaemon_ImageEnsure_FullMethodName         = "/stormd.StormDaemon/ImageEnsure"
 	StormDaemon_MeshUpdate_FullMethodName          = "/stormd.StormDaemon/MeshUpdate"
 	StormDaemon_ServiceUpdate_FullMethodName       = "/stormd.StormDaemon/ServiceUpdate"
@@ -60,6 +62,8 @@ type StormDaemonClient interface {
 	// Cluster operations (mkube → stormd over WireGuard gRPC)
 	WorkloadCreate(ctx context.Context, in *WorkloadCreateRequest, opts ...grpc.CallOption) (*WorkloadActionResponse, error)
 	NodeDrain(ctx context.Context, in *NodeDrainRequest, opts ...grpc.CallOption) (*NodeDrainResponse, error)
+	NodeCordon(ctx context.Context, in *NodeCordonRequest, opts ...grpc.CallOption) (*NodeCordonResponse, error)
+	NodeUncordon(ctx context.Context, in *NodeCordonRequest, opts ...grpc.CallOption) (*NodeCordonResponse, error)
 	ImageEnsure(ctx context.Context, in *ImageEnsureRequest, opts ...grpc.CallOption) (*ImageEnsureResponse, error)
 	MeshUpdate(ctx context.Context, in *MeshUpdateRequest, opts ...grpc.CallOption) (*MeshUpdateResponse, error)
 	ServiceUpdate(ctx context.Context, in *ServiceUpdateRequest, opts ...grpc.CallOption) (*ServiceUpdateResponse, error)
@@ -187,6 +191,26 @@ func (c *stormDaemonClient) NodeDrain(ctx context.Context, in *NodeDrainRequest,
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(NodeDrainResponse)
 	err := c.cc.Invoke(ctx, StormDaemon_NodeDrain_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stormDaemonClient) NodeCordon(ctx context.Context, in *NodeCordonRequest, opts ...grpc.CallOption) (*NodeCordonResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeCordonResponse)
+	err := c.cc.Invoke(ctx, StormDaemon_NodeCordon_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stormDaemonClient) NodeUncordon(ctx context.Context, in *NodeCordonRequest, opts ...grpc.CallOption) (*NodeCordonResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(NodeCordonResponse)
+	err := c.cc.Invoke(ctx, StormDaemon_NodeUncordon_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -321,6 +345,8 @@ type StormDaemonServer interface {
 	// Cluster operations (mkube → stormd over WireGuard gRPC)
 	WorkloadCreate(context.Context, *WorkloadCreateRequest) (*WorkloadActionResponse, error)
 	NodeDrain(context.Context, *NodeDrainRequest) (*NodeDrainResponse, error)
+	NodeCordon(context.Context, *NodeCordonRequest) (*NodeCordonResponse, error)
+	NodeUncordon(context.Context, *NodeCordonRequest) (*NodeCordonResponse, error)
 	ImageEnsure(context.Context, *ImageEnsureRequest) (*ImageEnsureResponse, error)
 	MeshUpdate(context.Context, *MeshUpdateRequest) (*MeshUpdateResponse, error)
 	ServiceUpdate(context.Context, *ServiceUpdateRequest) (*ServiceUpdateResponse, error)
@@ -374,6 +400,12 @@ func (UnimplementedStormDaemonServer) WorkloadCreate(context.Context, *WorkloadC
 }
 func (UnimplementedStormDaemonServer) NodeDrain(context.Context, *NodeDrainRequest) (*NodeDrainResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method NodeDrain not implemented")
+}
+func (UnimplementedStormDaemonServer) NodeCordon(context.Context, *NodeCordonRequest) (*NodeCordonResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method NodeCordon not implemented")
+}
+func (UnimplementedStormDaemonServer) NodeUncordon(context.Context, *NodeCordonRequest) (*NodeCordonResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method NodeUncordon not implemented")
 }
 func (UnimplementedStormDaemonServer) ImageEnsure(context.Context, *ImageEnsureRequest) (*ImageEnsureResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ImageEnsure not implemented")
@@ -598,6 +630,42 @@ func _StormDaemon_NodeDrain_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(StormDaemonServer).NodeDrain(ctx, req.(*NodeDrainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StormDaemon_NodeCordon_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NodeCordonRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StormDaemonServer).NodeCordon(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StormDaemon_NodeCordon_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StormDaemonServer).NodeCordon(ctx, req.(*NodeCordonRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StormDaemon_NodeUncordon_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(NodeCordonRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StormDaemonServer).NodeUncordon(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StormDaemon_NodeUncordon_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StormDaemonServer).NodeUncordon(ctx, req.(*NodeCordonRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -842,6 +910,14 @@ var StormDaemon_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "NodeDrain",
 			Handler:    _StormDaemon_NodeDrain_Handler,
+		},
+		{
+			MethodName: "NodeCordon",
+			Handler:    _StormDaemon_NodeCordon_Handler,
+		},
+		{
+			MethodName: "NodeUncordon",
+			Handler:    _StormDaemon_NodeUncordon_Handler,
 		},
 		{
 			MethodName: "ImageEnsure",
