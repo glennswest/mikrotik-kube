@@ -234,16 +234,16 @@ func (p *MicroKubeProvider) handleGetPodLog(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// Fall back to RouterOS logs filtered by container name
-	logs, err := p.deps.ROS.GetLogs(r.Context())
+	// Fall back to runtime logs filtered by container name
+	logs, err := p.deps.Runtime.GetLogs(r.Context(), rosName)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("error fetching logs: %v", err), http.StatusInternalServerError)
 		return
 	}
 
 	for _, entry := range logs {
-		if strings.Contains(entry.Message, rosName) || strings.Contains(entry.Topics, "container") {
-			_, _ = fmt.Fprintf(w, "%s %s %s\n", entry.Time, entry.Topics, entry.Message)
+		if strings.Contains(entry.Message, rosName) {
+			_, _ = fmt.Fprintf(w, "%s %s %s\n", entry.Timestamp, entry.Stream, entry.Message)
 		}
 	}
 }
@@ -280,7 +280,7 @@ func (p *MicroKubeProvider) buildNode(r *http.Request) *corev1.Node {
 	p.ConfigureNode(r.Context(), node)
 
 	// Enrich with live system resource data
-	sysRes, err := p.deps.ROS.GetSystemResource(r.Context())
+	sysRes, err := p.deps.Runtime.GetSystemResource(r.Context())
 	if err == nil {
 		if sysRes.CPUCount != "" {
 			node.Status.Capacity[corev1.ResourceCPU] = resource.MustParse(sysRes.CPUCount)

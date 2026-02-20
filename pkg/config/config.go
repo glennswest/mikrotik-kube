@@ -13,7 +13,9 @@ type Config struct {
 	NodeName   string          `yaml:"nodeName"`
 	Standalone bool            `yaml:"standalone"`
 	KubeConfig string          `yaml:"kubeconfig"`
+	Backend    string          `yaml:"backend"` // "routeros" (default) or "stormbase"
 	RouterOS   RouterOSConfig  `yaml:"routeros"`
+	StormBase  StormBaseConfig `yaml:"stormbase"`
 	Networks   []NetworkDef    `yaml:"networks"`
 	Storage    StorageConfig   `yaml:"storage"`
 	Lifecycle  LifecycleConfig `yaml:"lifecycle"`
@@ -25,6 +27,11 @@ type Config struct {
 	// Deprecated: single-network config for backward compatibility.
 	// If present and Networks is empty, it is migrated into Networks.
 	Network *legacyNetworkConfig `yaml:"network,omitempty"`
+}
+
+// IsStormBase returns true if the backend is stormbase.
+func (c *Config) IsStormBase() bool {
+	return c.Backend == "stormbase"
 }
 
 // DZOConfig configures the Domain Zone Operator.
@@ -88,6 +95,15 @@ type RouterOSConfig struct {
 	UseTLS         bool   `yaml:"useTLS"`
 	CACert         string `yaml:"caCert"`
 	InsecureVerify bool   `yaml:"insecureVerify"`
+}
+
+// StormBaseConfig holds connection settings for a stormd gRPC endpoint.
+type StormBaseConfig struct {
+	Address    string `yaml:"address"`    // e.g. "stormd.local:7443"
+	CACert     string `yaml:"caCert"`     // path to CA cert PEM
+	ClientCert string `yaml:"clientCert"` // path to client cert PEM
+	ClientKey  string `yaml:"clientKey"`  // path to client key PEM
+	Insecure   bool   `yaml:"insecure"`   // skip TLS (dev/test only)
 }
 
 type StorageConfig struct {
@@ -252,6 +268,9 @@ func applyFlagOverrides(cfg *Config, flags *pflag.FlagSet) {
 	}
 	if flags.Changed("kubeconfig") {
 		cfg.KubeConfig, _ = flags.GetString("kubeconfig")
+	}
+	if flags.Changed("backend") {
+		cfg.Backend, _ = flags.GetString("backend")
 	}
 	if flags.Changed("routeros-address") {
 		cfg.RouterOS.Address, _ = flags.GetString("routeros-address")

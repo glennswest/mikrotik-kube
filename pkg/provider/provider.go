@@ -26,7 +26,7 @@ import (
 	"github.com/glennswest/mkube/pkg/lifecycle"
 	"github.com/glennswest/mkube/pkg/namespace"
 	"github.com/glennswest/mkube/pkg/network"
-	"github.com/glennswest/mkube/pkg/routeros"
+	"github.com/glennswest/mkube/pkg/runtime"
 	"github.com/glennswest/mkube/pkg/storage"
 )
 
@@ -45,7 +45,7 @@ const (
 // Deps holds injected dependencies for the provider.
 type Deps struct {
 	Config       *config.Config
-	ROS          *routeros.Client
+	Runtime      runtime.ContainerRuntime
 	NetworkMgr   *network.Manager
 	StorageMgr   *storage.Manager
 	LifecycleMgr *lifecycle.Manager
@@ -151,20 +151,21 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 			startOnBoot = "true"
 		}
 
-		// 5. Create the RouterOS container
-		spec := routeros.ContainerSpec{
+		// 5. Create the container
+		spec := runtime.ContainerSpec{
 			Name:        name,
-			File:        tarballPath,
+			Image:       tarballPath,
 			Interface:   vethName,
 			RootDir:     fmt.Sprintf("%s/%s", p.deps.Config.Storage.BasePath, name),
 			Cmd:         strings.Join(container.Command, " "),
+			Command:     container.Command,
 			Hostname:    pod.Name,
 			DNS:         dnsServer,
 			Logging:     "true",
 			StartOnBoot: startOnBoot,
 		}
 
-		if err := p.deps.ROS.CreateContainer(ctx, spec); err != nil {
+		if err := p.deps.Runtime.CreateContainer(ctx, spec); err != nil {
 			return fmt.Errorf("creating container %s: %w", name, err)
 		}
 
@@ -175,7 +176,7 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 		if err != nil {
 			return fmt.Errorf("waiting for container %s to be ready: %w", name, err)
 		}
-		if err := p.deps.ROS.StartContainer(ctx, ct.ID); err != nil {
+		if err := p.deps.Runtime.StartContainer(ctx, ct.ID); err != nil {
 			return fmt.Errorf("starting container %s: %w", name, err)
 		}
 
@@ -212,13 +213,13 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 
 // waitForStopped polls until the container reaches the "stopped" state
 // (tarball extraction complete) or the timeout expires.
-func (p *MicroKubeProvider) waitForStopped(ctx context.Context, name string, timeout time.Duration) (*routeros.Container, error) {
+func (p *MicroKubeProvider) waitForStopped(ctx context.Context, name string, timeout time.Duration) (*runtime.Container, error) {
 	deadline := time.After(timeout)
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	for {
-		ct, err := p.deps.ROS.GetContainer(ctx, name)
+		ct, err := p.deps.Runtime.GetContainer(ctx, name)
 		if err != nil {
 			return nil, err
 		}
@@ -274,19 +275,19 @@ func (p *MicroKubeProvider) DeletePod(ctx context.Context, pod *corev1.Pod) erro
 		name := sanitizeName(pod, container.Name)
 
 		// Stop and remove the container
-		ct, err := p.deps.ROS.GetContainer(ctx, name)
+		ct, err := p.deps.Runtime.GetContainer(ctx, name)
 		if err != nil {
 			log.Warnw("container not found during delete", "name", name, "error", err)
 			continue
 		}
 
 		if ct.IsRunning() {
-			if err := p.deps.ROS.StopContainer(ctx, ct.ID); err != nil {
+			if err := p.deps.Runtime.StopContainer(ctx, ct.ID); err != nil {
 				log.Warnw("error stopping container", "name", name, "error", err)
 			}
 		}
 
-		if err := p.deps.ROS.RemoveContainer(ctx, ct.ID); err != nil {
+		if err := p.deps.Runtime.RemoveContainer(ctx, ct.ID); err != nil {
 			log.Warnw("error removing container", "name", name, "error", err)
 		}
 
@@ -334,7 +335,7 @@ func (p *MicroKubeProvider) GetPodStatus(ctx context.Context, namespace, name st
 
 	for _, container := range pod.Spec.Containers {
 		rosName := sanitizeName(pod, container.Name)
-		ct, err := p.deps.ROS.GetContainer(ctx, rosName)
+		ct, err := p.deps.Runtime.GetContainer(ctx, rosName)
 
 		cs := corev1.ContainerStatus{
 			Name:  container.Name,
@@ -414,16 +415,29 @@ func (p *MicroKubeProvider) GetPods(ctx context.Context) ([]*corev1.Pod, error) 
 // ─── NodeProvider Interface ─────────────────────────────────────────────────
 
 // ConfigureNode sets up the Kubernetes node object that represents this
-// MikroTik device in the cluster.
+// device in the cluster. Node labels vary by backend.
 func (p *MicroKubeProvider) ConfigureNode(ctx context.Context, node *corev1.Node) {
+	deviceType := p.deps.Runtime.Backend()
+	arch := "arm64"
+	cpu := resource.MustParse("4")
+	mem := resource.MustParse("1Gi")
+	maxPods := resource.MustParse("20")
+
+	if deviceType == "stormbase" {
+		arch = "amd64"
+		cpu = resource.MustParse("16")
+		mem = resource.MustParse("32Gi")
+		maxPods = resource.MustParse("110")
+	}
+
 	node.Status.Capacity = corev1.ResourceList{
-		corev1.ResourceCPU:    resource.MustParse("4"), // typical CHR/RB capacity
-		corev1.ResourceMemory: resource.MustParse("1Gi"),
-		corev1.ResourcePods:   resource.MustParse("20"),
+		corev1.ResourceCPU:    cpu,
+		corev1.ResourceMemory: mem,
+		corev1.ResourcePods:   maxPods,
 	}
 	node.Status.Allocatable = node.Status.Capacity
 	node.Status.NodeInfo = corev1.NodeSystemInfo{
-		Architecture:    "arm64",
+		Architecture:    arch,
 		OperatingSystem: "linux",
 		KubeletVersion:  "v1.29.0-mkube",
 	}
@@ -436,9 +450,9 @@ func (p *MicroKubeProvider) ConfigureNode(ctx context.Context, node *corev1.Node
 	node.Labels = map[string]string{
 		"type":                    "virtual-kubelet",
 		"kubernetes.io/os":        "linux",
-		"kubernetes.io/arch":      "arm64",
+		"kubernetes.io/arch":      arch,
 		"node.kubernetes.io/role": "mkube",
-		"mkube.io/device-type":    "routeros",
+		"mkube.io/device-type":    deviceType,
 	}
 
 	// Add taint so normal pods aren't scheduled here
@@ -486,11 +500,11 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 	}
 
 	// 2. List actual containers on RouterOS
-	actual, err := p.deps.ROS.ListContainers(ctx)
+	actual, err := p.deps.Runtime.ListContainers(ctx)
 	if err != nil {
 		return fmt.Errorf("listing containers: %w", err)
 	}
-	actualByName := make(map[string]routeros.Container, len(actual))
+	actualByName := make(map[string]runtime.Container, len(actual))
 	for _, c := range actual {
 		actualByName[c.Name] = c
 	}
@@ -809,7 +823,7 @@ func (p *MicroKubeProvider) replaceContainer(ctx context.Context, name, newTag s
 	log := p.deps.Logger.Named("update-api")
 
 	// Get the existing container to preserve its config
-	ct, err := p.deps.ROS.GetContainer(ctx, name)
+	ct, err := p.deps.Runtime.GetContainer(ctx, name)
 	if err != nil {
 		return fmt.Errorf("getting container %s: %w", name, err)
 	}
@@ -817,13 +831,13 @@ func (p *MicroKubeProvider) replaceContainer(ctx context.Context, name, newTag s
 	// Stop if running
 	if ct.IsRunning() {
 		log.Infow("stopping container", "name", name)
-		if err := p.deps.ROS.StopContainer(ctx, ct.ID); err != nil {
+		if err := p.deps.Runtime.StopContainer(ctx, ct.ID); err != nil {
 			return fmt.Errorf("stopping container %s: %w", name, err)
 		}
 		// Wait for stopped state
 		for i := 0; i < 30; i++ {
 			time.Sleep(time.Second)
-			ct, err = p.deps.ROS.GetContainer(ctx, name)
+			ct, err = p.deps.Runtime.GetContainer(ctx, name)
 			if err != nil {
 				return fmt.Errorf("checking container %s: %w", name, err)
 			}
@@ -838,12 +852,12 @@ func (p *MicroKubeProvider) replaceContainer(ctx context.Context, name, newTag s
 
 	// Remove
 	log.Infow("removing container", "name", name)
-	if err := p.deps.ROS.RemoveContainer(ctx, ct.ID); err != nil {
+	if err := p.deps.Runtime.RemoveContainer(ctx, ct.ID); err != nil {
 		return fmt.Errorf("removing container %s: %w", name, err)
 	}
 
 	// Recreate with new tag, preserving config
-	spec := routeros.ContainerSpec{
+	spec := runtime.ContainerSpec{
 		Name:        ct.Name,
 		Tag:         newTag,
 		Interface:   ct.Interface,
@@ -859,15 +873,15 @@ func (p *MicroKubeProvider) replaceContainer(ctx context.Context, name, newTag s
 	}
 
 	log.Infow("creating container with new tag", "name", name, "tag", newTag)
-	if err := p.deps.ROS.CreateContainer(ctx, spec); err != nil {
+	if err := p.deps.Runtime.CreateContainer(ctx, spec); err != nil {
 		return fmt.Errorf("creating container %s: %w", name, err)
 	}
 
 	// Wait for extraction then start
-	var newCt *routeros.Container
+	var newCt *runtime.Container
 	for i := 0; i < 60; i++ {
 		time.Sleep(time.Second)
-		newCt, err = p.deps.ROS.GetContainer(ctx, name)
+		newCt, err = p.deps.Runtime.GetContainer(ctx, name)
 		if err == nil {
 			break
 		}
@@ -877,7 +891,7 @@ func (p *MicroKubeProvider) replaceContainer(ctx context.Context, name, newTag s
 	}
 
 	log.Infow("starting container", "name", name)
-	if err := p.deps.ROS.StartContainer(ctx, newCt.ID); err != nil {
+	if err := p.deps.Runtime.StartContainer(ctx, newCt.ID); err != nil {
 		return fmt.Errorf("starting container %s: %w", name, err)
 	}
 

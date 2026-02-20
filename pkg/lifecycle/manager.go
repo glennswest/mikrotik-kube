@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/glennswest/mkube/pkg/config"
-	"github.com/glennswest/mkube/pkg/routeros"
+	"github.com/glennswest/mkube/pkg/runtime"
 )
 
 // Manager handles the full container lifecycle on RouterOS:
@@ -22,7 +22,7 @@ import (
 //   - Restart policies: configurable backoff and max restarts
 type Manager struct {
 	cfg config.LifecycleConfig
-	ros *routeros.Client
+	rt  runtime.ContainerRuntime // nil when stormd handles keepalive internally
 	log *zap.SugaredLogger
 
 	mu    sync.RWMutex
@@ -99,10 +99,12 @@ type HealthCheck struct {
 }
 
 // NewManager creates a new lifecycle manager.
-func NewManager(cfg config.LifecycleConfig, ros *routeros.Client, log *zap.SugaredLogger) *Manager {
+// The runtime parameter can be nil when the backend handles keepalive internally
+// (e.g., StormBase's stormd manages container restarts).
+func NewManager(cfg config.LifecycleConfig, rt runtime.ContainerRuntime, log *zap.SugaredLogger) *Manager {
 	return &Manager{
 		cfg:   cfg,
-		ros:   ros,
+		rt:    rt,
 		log:   log,
 		units: make(map[string]*ContainerUnit),
 	}
@@ -167,6 +169,11 @@ func (m *Manager) BootSequence() []*ContainerUnit {
 
 // ExecuteBootSequence starts all registered containers in dependency order.
 func (m *Manager) ExecuteBootSequence(ctx context.Context) error {
+	if m.rt == nil {
+		m.log.Info("skipping boot sequence (stormd manages container starts)")
+		return nil
+	}
+
 	sequence := m.BootSequence()
 	m.log.Infow("executing boot sequence", "containers", len(sequence))
 
@@ -178,7 +185,7 @@ func (m *Manager) ExecuteBootSequence(ctx context.Context) error {
 			"depends_on", unit.DependsOn,
 		)
 
-		if err := m.ros.StartContainer(ctx, unit.ContainerID); err != nil {
+		if err := m.rt.StartContainer(ctx, unit.ContainerID); err != nil {
 			m.log.Errorw("failed to start container during boot",
 				"name", unit.Name, "error", err)
 			continue
@@ -344,7 +351,10 @@ func (m *Manager) checkAll(ctx context.Context) {
 
 // handleKeepalive checks if a start-on-boot container is stopped and restarts it.
 func (m *Manager) handleKeepalive(ctx context.Context, name string, unit *ContainerUnit) {
-	ct, err := m.ros.GetContainer(ctx, unit.Name)
+	if m.rt == nil {
+		return // stormd handles keepalive internally
+	}
+	ct, err := m.rt.GetContainer(ctx, unit.Name)
 	if err != nil {
 		return
 	}
@@ -357,7 +367,7 @@ func (m *Manager) handleKeepalive(ctx context.Context, name string, unit *Contai
 			return
 		}
 		m.log.Infow("keepalive: restarting stopped container", "name", name)
-		if err := m.ros.StartContainer(ctx, ct.ID); err != nil {
+		if err := m.rt.StartContainer(ctx, ct.ID); err != nil {
 			m.log.Errorw("keepalive: failed to start container", "name", name, "error", err)
 			return
 		}
@@ -473,7 +483,10 @@ func (m *Manager) performLegacyHealthCheck(ctx context.Context, unit *ContainerU
 }
 
 func (m *Manager) statusCheck(ctx context.Context, unit *ContainerUnit) bool {
-	ct, err := m.ros.GetContainer(ctx, unit.Name)
+	if m.rt == nil {
+		return true // assume healthy when stormd manages lifecycle
+	}
+	ct, err := m.rt.GetContainer(ctx, unit.Name)
 	if err != nil {
 		return false
 	}
@@ -506,11 +519,12 @@ func (m *Manager) restartUnit(ctx context.Context, unit *ContainerUnit) {
 	m.log.Infow("restarting container", "name", unit.Name, "attempt", unit.RestartCount+1)
 	unit.Status = "restarting"
 
-	_ = m.ros.StopContainer(ctx, unit.ContainerID)
-	time.Sleep(2 * time.Second)
-
-	if err := m.ros.StartContainer(ctx, unit.ContainerID); err != nil {
-		m.log.Errorw("failed to restart container", "name", unit.Name, "error", err)
+	if m.rt != nil {
+		_ = m.rt.StopContainer(ctx, unit.ContainerID)
+		time.Sleep(2 * time.Second)
+		if err := m.rt.StartContainer(ctx, unit.ContainerID); err != nil {
+			m.log.Errorw("failed to restart container", "name", unit.Name, "error", err)
+		}
 	}
 
 	unit.RestartCount++

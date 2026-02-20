@@ -1,40 +1,5 @@
-// mkube: A single-binary Virtual Kubelet provider for MikroTik RouterOS
-// with integrated network management, storage management, systemd boot services,
-// and an optional embedded OCI registry (Zot).
-//
-// Architecture:
-//
-//	┌──────────────────────────────────────────────────────────────────┐
-//	│  mkube (single Go binary)                                      │
-//	│                                                                  │
-//	│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
-//	│  │ Virtual       │  │ Network      │  │ Storage Manager        │ │
-//	│  │ Kubelet Core  │  │ Manager      │  │ - volume provisioning  │ │
-//	│  │ + RouterOS    │  │ - IPAM       │  │ - garbage collection   │ │
-//	│  │   Provider    │  │ - VETH/bridge│  │ - tarball cache        │ │
-//	│  └──────┬───────┘  └──────┬───────┘  └────────────┬───────────┘ │
-//	│         │                 │                        │             │
-//	│  ┌──────┴─────────────────┴────────────────────────┴───────────┐ │
-//	│  │                  RouterOS API Client                         │ │
-//	│  │            (REST + RouterOS protocol)                        │ │
-//	│  └─────────────────────────┬───────────────────────────────────┘ │
-//	│                            │                                     │
-//	│  ┌─────────────────────────┴───────────────────────────────────┐ │
-//	│  │  Systemd Manager (boot ordering, health watchdog)           │ │
-//	│  └─────────────────────────────────────────────────────────────┘ │
-//	│                                                                  │
-//	│  ┌─────────────────────────────────────────────────────────────┐ │
-//	│  │  Embedded Zot Registry (optional, :5000)                    │ │
-//	│  └─────────────────────────────────────────────────────────────┘ │
-//	└──────────────────────────────────────────────────────────────────┘
-//	         │
-//	         ▼  RouterOS REST API (/rest/container/*)
-//	┌──────────────────────────────────────────────────────────────────┐
-//	│  MikroTik RouterOS Container Runtime                             │
-//	│  ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐                               │
-//	│  │ C1  │ │ C2  │ │ C3  │ │ C4  │  ...                          │
-//	│  └─────┘ └─────┘ └─────┘ └─────┘                               │
-//	└──────────────────────────────────────────────────────────────────┘
+// mkube: A single-binary Virtual Kubelet provider for heterogeneous clusters.
+// Supports MikroTik RouterOS (REST API) and StormBase (gRPC) backends.
 
 package main
 
@@ -61,6 +26,8 @@ import (
 	"github.com/glennswest/mkube/pkg/provider"
 	"github.com/glennswest/mkube/pkg/registry"
 	"github.com/glennswest/mkube/pkg/routeros"
+	"github.com/glennswest/mkube/pkg/runtime"
+	"github.com/glennswest/mkube/pkg/stormbase"
 	"github.com/glennswest/mkube/pkg/storage"
 )
 
@@ -72,7 +39,7 @@ var (
 func main() {
 	rootCmd := &cobra.Command{
 		Use:     "mkube",
-		Short:   "Virtual Kubelet provider for MikroTik RouterOS containers",
+		Short:   "Virtual Kubelet provider for heterogeneous clusters (RouterOS + StormBase)",
 		Version: fmt.Sprintf("%s (%s)", version, commit),
 		RunE:    run,
 	}
@@ -84,6 +51,7 @@ func main() {
 	f.String("node-name", "mkube-node", "Kubernetes node name for this device")
 	f.Bool("standalone", false, "Run without a Kubernetes API server (local reconciler only)")
 	f.Bool("enable-registry", true, "Enable embedded Zot OCI registry")
+	f.String("backend", "", "Backend type: routeros (default) or stormbase")
 
 	// RouterOS connection
 	f.String("routeros-address", "192.168.200.1:8728", "RouterOS API address")
@@ -123,6 +91,14 @@ func run(cmd *cobra.Command, args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	if cfg.IsStormBase() {
+		return runStormBase(ctx, cfg, log)
+	}
+	return runRouterOS(ctx, cfg, log)
+}
+
+// runRouterOS is the original RouterOS backend initialization path.
+func runRouterOS(ctx context.Context, cfg *config.Config, log *zap.SugaredLogger) error {
 	// ── RouterOS API Client ─────────────────────────────────────────
 	rosClient, err := routeros.NewClient(cfg.RouterOS)
 	if err != nil {
@@ -131,15 +107,13 @@ func run(cmd *cobra.Command, args []string) error {
 	defer rosClient.Close()
 	log.Info("connected to RouterOS")
 
+	rt := runtime.NewRouterOSRuntime(rosClient)
+
 	// ── DNS Client ──────────────────────────────────────────────────
 	dnsClient := dns.NewClient(log)
 	defer dnsClient.Close()
 
 	// ── Device Discovery ────────────────────────────────────────────
-	// Scan RouterOS for existing containers, networks, and MicroDNS
-	// instances. Enrich the network config with discovered DNS servers
-	// and auto-create network definitions for discovered subnets.
-	// Retry a few times since the veth network may not be ready immediately.
 	var inv *discovery.Inventory
 	for attempt := 1; attempt <= 3; attempt++ {
 		inv, err = discovery.Discover(ctx, rosClient, log)
@@ -183,9 +157,8 @@ func run(cmd *cobra.Command, args []string) error {
 	log.Info("storage manager ready, GC started")
 
 	// ── Lifecycle Manager (boot ordering + probes + keepalive) ──────
-	lcMgr := lifecycle.NewManager(cfg.Lifecycle, rosClient, log)
+	lcMgr := lifecycle.NewManager(cfg.Lifecycle, rt, log)
 
-	// Register all discovered start-on-boot containers for keepalive + auto-probes
 	if inv != nil {
 		units := discovery.BuildLifecycleUnits(inv)
 		lcMgr.SyncDiscoveredContainers(units)
@@ -194,7 +167,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	go lcMgr.RunWatchdog(ctx)
 
-	// Periodic re-discovery to pick up new containers
+	// Periodic re-discovery
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
@@ -216,20 +189,101 @@ func run(cmd *cobra.Command, args []string) error {
 
 	log.Info("lifecycle manager ready")
 
-	// ── HTTP API mux (shared across DZO, namespace, network, pod APIs) ──
+	return runSharedServices(ctx, cfg, rt, netMgr, storageMgr, lcMgr, dnsClient, rosClient, log)
+}
+
+// runStormBase initializes the StormBase gRPC backend.
+func runStormBase(ctx context.Context, cfg *config.Config, log *zap.SugaredLogger) error {
+	// ── StormBase gRPC Client ───────────────────────────────────────
+	sbClient, err := stormbase.NewClient(stormbase.ClientConfig{
+		Address:    cfg.StormBase.Address,
+		CACert:     cfg.StormBase.CACert,
+		ClientCert: cfg.StormBase.ClientCert,
+		ClientKey:  cfg.StormBase.ClientKey,
+		Insecure:   cfg.StormBase.Insecure,
+	})
+	if err != nil {
+		return fmt.Errorf("connecting to stormd: %w", err)
+	}
+	defer sbClient.Close()
+	log.Infow("connected to stormd", "address", cfg.StormBase.Address)
+
+	// ── DNS Client ──────────────────────────────────────────────────
+	dnsClient := dns.NewClient(log)
+	defer dnsClient.Close()
+
+	// ── StormBase Discovery ─────────────────────────────────────────
+	inv, err := discovery.DiscoverStormBase(ctx, sbClient, log)
+	if err != nil {
+		log.Warnw("stormbase discovery failed, continuing with static config", "error", err)
+	} else {
+		log.Infow("stormbase discovery complete",
+			"workloads", len(inv.Containers),
+		)
+	}
+
+	// ── Network Driver ──────────────────────────────────────────────
+	sbDriver := netdriver.NewStormBase(sbClient, cfg.NodeName, log)
+
+	// ── Network Manager (IPAM + veth + DNS) ─────────────────────────
+	netMgr, err := network.NewManager(cfg.Networks, sbDriver, dnsClient, log)
+	if err != nil {
+		return fmt.Errorf("initializing network manager: %w", err)
+	}
+	netMgr.InitDNSZones(ctx)
+	for _, n := range cfg.Networks {
+		log.Infow("network ready", "name", n.Name, "cidr", n.CIDR, "dns_zone", n.DNS.Zone)
+	}
+
+	// ── Storage Manager ─────────────────────────────────────────────
+	// StormBase manages images via gRPC; pass nil for rosClient.
+	storageMgr, err := storage.NewManager(cfg.Storage, cfg.Registry, nil, log)
+	if err != nil {
+		return fmt.Errorf("initializing storage manager: %w", err)
+	}
+	go storageMgr.RunGarbageCollector(ctx)
+
+	// ── Lifecycle Manager ───────────────────────────────────────────
+	// StormBase lifecycle uses gRPC health checks instead of RouterOS polling.
+	// Pass nil for rosClient — stormd handles keepalive internally.
+	lcMgr := lifecycle.NewManager(cfg.Lifecycle, nil, log)
+
+	if inv != nil {
+		units := discovery.BuildLifecycleUnitsFromStormBase(inv)
+		lcMgr.SyncDiscoveredContainers(units)
+		log.Infow("registered stormbase workloads for lifecycle", "count", len(units))
+	}
+
+	go lcMgr.RunWatchdog(ctx)
+	log.Info("lifecycle manager ready (stormbase)")
+
+	return runSharedServices(ctx, cfg, sbClient, netMgr, storageMgr, lcMgr, dnsClient, nil, log)
+}
+
+// runSharedServices starts services common to both backends (DZO, registry,
+// provider, HTTP API, etc.).
+func runSharedServices(
+	ctx context.Context,
+	cfg *config.Config,
+	rt runtime.ContainerRuntime,
+	netMgr *network.Manager,
+	storageMgr *storage.Manager,
+	lcMgr *lifecycle.Manager,
+	dnsClient *dns.Client,
+	rosClient *routeros.Client, // nil for stormbase
+	log *zap.SugaredLogger,
+) error {
+	// ── HTTP API mux ────────────────────────────────────────────────
 	mux := http.NewServeMux()
 	listenAddr := ":8082"
 
 	// ── Domain Zone Operator + Namespace Manager (optional) ─────────
-	var dzoOp *dzo.Operator
 	var nsMgr *namespace.Manager
-	if cfg.DZO.Enabled {
-		dzoOp = dzo.NewOperator(cfg.DZO, cfg.Networks, dnsClient, rosClient, netMgr, lcMgr, log)
+	if cfg.DZO.Enabled && rosClient != nil {
+		dzoOp := dzo.NewOperator(cfg.DZO, cfg.Networks, dnsClient, rosClient, netMgr, lcMgr, log)
 		if err := dzoOp.Bootstrap(ctx); err != nil {
 			log.Warnw("DZO bootstrap failed, continuing without DZO", "error", err)
-			dzoOp = nil
 		} else {
-			// Create namespace manager using DZO as ZoneResolver
 			nsMgr = namespace.NewManager(cfg.Namespace, cfg.DZO, cfg.Networks, dzoOp, log)
 			if err := nsMgr.Bootstrap(ctx); err != nil {
 				log.Warnw("namespace bootstrap failed", "error", err)
@@ -250,6 +304,7 @@ func run(cmd *cobra.Command, args []string) error {
 	// ── Embedded Registry (optional) ────────────────────────────────
 	var reg *registry.Registry
 	if cfg.Registry.Enabled {
+		var err error
 		reg, err = registry.Start(ctx, cfg.Registry, log)
 		if err != nil {
 			return fmt.Errorf("starting embedded registry: %w", err)
@@ -258,10 +313,10 @@ func run(cmd *cobra.Command, args []string) error {
 		log.Infow("embedded registry started", "addr", cfg.Registry.ListenAddr)
 	}
 
-	// ── Provider + Virtual Kubelet ──────────────────────────────────
+	// ── Provider ────────────────────────────────────────────────────
 	p, err := provider.NewMicroKubeProvider(provider.Deps{
 		Config:       cfg,
-		ROS:          rosClient,
+		Runtime:      rt,
 		NetworkMgr:   netMgr,
 		StorageMgr:   storageMgr,
 		LifecycleMgr: lcMgr,
@@ -272,7 +327,7 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("creating provider: %w", err)
 	}
 
-	// ── Register provider Pod API routes and start HTTP server ──────
+	// ── Register routes and start HTTP server ───────────────────────
 	p.RegisterRoutes(mux)
 	go func() {
 		srv := &http.Server{Addr: listenAddr, Handler: mux}
@@ -288,14 +343,14 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// ── Image Watcher (mirrors GHCR → local registry) ──────────────
+	// ── Image Watcher ───────────────────────────────────────────────
 	if reg != nil && len(cfg.Registry.WatchImages) > 0 {
 		watcher := registry.NewImageWatcher(cfg.Registry, reg.Store(), reg.PushEvents, log)
 		go watcher.Run(ctx)
 		log.Infow("image watcher started", "images", len(cfg.Registry.WatchImages))
 	}
 
-	// ── Update API (internal, for mkube-update self-replacement) ────
+	// ── Update API ──────────────────────────────────────────────────
 	go p.RunUpdateAPI(ctx, ":8080")
 
 	if cfg.Standalone {
@@ -303,7 +358,6 @@ func run(cmd *cobra.Command, args []string) error {
 		return p.RunStandaloneReconciler(ctx)
 	}
 
-	// Full Virtual Kubelet mode — registers as a node in a K8s cluster
-	log.Infow("starting Virtual Kubelet", "node", cfg.NodeName)
+	log.Infow("starting Virtual Kubelet", "node", cfg.NodeName, "backend", rt.Backend())
 	return p.RunVirtualKubelet(ctx)
 }

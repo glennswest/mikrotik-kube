@@ -184,10 +184,19 @@ func (m *Manager) pullAndUpload(ctx context.Context, imageRef, tarballPath strin
 		if err := os.WriteFile(tarballPath, dockerSave.Bytes(), 0o644); err != nil {
 			return fmt.Errorf("writing tarball %s: %w", tarballPath, err)
 		}
-	} else {
+	} else if m.ros != nil {
 		m.log.Infow("uploading tarball to RouterOS", "ref", imageRef, "path", tarballPath, "size", dockerSave.Len())
 		if err := m.ros.UploadFile(ctx, tarballPath, bytes.NewReader(dockerSave.Bytes())); err != nil {
 			return fmt.Errorf("uploading %s to RouterOS: %w", tarballPath, err)
+		}
+	} else {
+		// No RouterOS client (stormbase) — write to local disk only
+		m.log.Infow("writing tarball to local disk (no RouterOS)", "ref", imageRef, "path", tarballPath, "size", dockerSave.Len())
+		if err := os.MkdirAll(filepath.Dir(tarballPath), 0o755); err != nil {
+			return fmt.Errorf("creating cache dir for %s: %w", tarballPath, err)
+		}
+		if err := os.WriteFile(tarballPath, dockerSave.Bytes(), 0o644); err != nil {
+			return fmt.Errorf("writing tarball %s: %w", tarballPath, err)
 		}
 	}
 
@@ -318,9 +327,13 @@ func (m *Manager) runGC(ctx context.Context) {
 				continue
 			}
 
-			if err := m.ros.RemoveFile(ctx, img.TarballPath); err != nil {
-				m.log.Warnw("GC: failed to remove image", "ref", img.Ref, "error", err)
-				continue
+			if m.ros != nil {
+				if err := m.ros.RemoveFile(ctx, img.TarballPath); err != nil {
+					m.log.Warnw("GC: failed to remove image", "ref", img.Ref, "error", err)
+					continue
+				}
+			} else {
+				_ = os.Remove(img.TarballPath)
 			}
 
 			delete(m.images, img.Ref)
@@ -329,6 +342,14 @@ func (m *Manager) runGC(ctx context.Context) {
 	}
 
 	// 2. Find orphaned volumes (volumes whose container no longer exists)
+	if m.ros == nil {
+		// StormBase: stormd manages volume cleanup internally
+		if removed > 0 {
+			m.log.Infow("GC completed (images only, no routeros)", "imagesRemoved", removed)
+		}
+		return
+	}
+
 	containers, err := m.ros.ListContainers(ctx)
 	if err != nil {
 		m.log.Warnw("GC: failed to list containers", "error", err)
