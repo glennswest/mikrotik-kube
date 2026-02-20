@@ -62,18 +62,27 @@ type MicroKubeProvider struct {
 	deps            Deps
 	nodeName        string
 	startTime       time.Time
-	pods            map[string]*corev1.Pod // namespace/name -> pod
-	notifyPodStatus func(*corev1.Pod)      // callback for pod status updates
+	pods            map[string]*corev1.Pod       // namespace/name -> pod
+	configMaps      map[string]*corev1.ConfigMap // namespace/name -> configmap
+	notifyPodStatus func(*corev1.Pod)            // callback for pod status updates
 }
 
 // NewMicroKubeProvider creates a new provider instance.
 func NewMicroKubeProvider(deps Deps) (*MicroKubeProvider, error) {
-	return &MicroKubeProvider{
-		deps:      deps,
-		nodeName:  deps.Config.NodeName,
-		startTime: time.Now(),
-		pods:      make(map[string]*corev1.Pod),
-	}, nil
+	p := &MicroKubeProvider{
+		deps:       deps,
+		nodeName:   deps.Config.NodeName,
+		startTime:  time.Now(),
+		pods:       make(map[string]*corev1.Pod),
+		configMaps: make(map[string]*corev1.ConfigMap),
+	}
+
+	// Load built-in default ConfigMaps derived from mkube config
+	for _, cm := range generateDefaultConfigMaps(deps.Config) {
+		p.configMaps[cm.Namespace+"/"+cm.Name] = cm
+	}
+
+	return p, nil
 }
 
 // ─── PodLifecycleHandler Interface ──────────────────────────────────────────
@@ -139,10 +148,28 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 			}
 		}
 
-		// 3. Provision volumes (mount lists are managed via RouterOS mounts API)
+		// 3. Provision volumes, write ConfigMap data, and create mount entries
+		mountListName := ""
 		for _, vm := range container.VolumeMounts {
-			if _, err := p.deps.StorageMgr.ProvisionVolume(ctx, name, vm.Name, vm.MountPath); err != nil {
+			hostPath, err := p.deps.StorageMgr.ProvisionVolume(ctx, name, vm.Name, vm.MountPath)
+			if err != nil {
 				return fmt.Errorf("provisioning volume %s: %w", vm.Name, err)
+			}
+
+			// Write ConfigMap data files if this volume references a ConfigMap
+			if data := p.resolveConfigMapVolume(pod, vm.Name); data != nil {
+				for filename, content := range data {
+					filePath := hostPath + "/" + filename
+					if err := p.deps.Runtime.UploadFile(ctx, filePath, strings.NewReader(content)); err != nil {
+						log.Warnw("failed to write configmap file", "path", filePath, "error", err)
+					}
+				}
+			}
+
+			// Create mount entry on the runtime
+			mountListName = name
+			if err := p.deps.Runtime.CreateMount(ctx, mountListName, hostPath, vm.MountPath); err != nil {
+				log.Warnw("failed to create mount", "volume", vm.Name, "error", err)
 			}
 		}
 
@@ -158,6 +185,7 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 			Image:       tarballPath,
 			Interface:   vethName,
 			RootDir:     fmt.Sprintf("%s/%s", p.deps.Config.Storage.BasePath, name),
+			MountLists:  mountListName,
 			Cmd:         strings.Join(container.Command, " "),
 			Command:     container.Command,
 			Hostname:    pod.Name,
@@ -290,6 +318,11 @@ func (p *MicroKubeProvider) DeletePod(ctx context.Context, pod *corev1.Pod) erro
 
 		if err := p.deps.Runtime.RemoveContainer(ctx, ct.ID); err != nil {
 			log.Warnw("error removing container", "name", name, "error", err)
+		}
+
+		// Remove mount entries for this container
+		if err := p.deps.Runtime.RemoveMountsByList(ctx, name); err != nil {
+			log.Warnw("error removing mounts", "name", name, "error", err)
 		}
 
 		// ReleaseInterface deregisters the container subdomain record (containerName.podName)
@@ -494,10 +527,15 @@ func (p *MicroKubeProvider) RunStandaloneReconciler(ctx context.Context) error {
 func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 	log := p.deps.Logger
 
-	// 1. Load desired pods from boot manifest
-	desiredPods, err := loadPodManifests(p.deps.Config.Lifecycle.BootManifestPath)
+	// 1. Load desired pods and configmaps from boot manifest
+	desiredPods, manifestCMs, err := loadManifests(p.deps.Config.Lifecycle.BootManifestPath)
 	if err != nil {
-		return fmt.Errorf("loading pod manifests: %w", err)
+		return fmt.Errorf("loading manifests: %w", err)
+	}
+
+	// Store ConfigMaps from manifest (overrides defaults)
+	for _, cm := range manifestCMs {
+		p.configMaps[cm.Namespace+"/"+cm.Name] = cm
 	}
 
 	// 2. List actual containers on RouterOS
@@ -541,14 +579,15 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 	return nil
 }
 
-// loadPodManifests reads a multi-document YAML file containing Pod specs.
-func loadPodManifests(path string) ([]*corev1.Pod, error) {
+// loadManifests reads a multi-document YAML file containing Pod and ConfigMap specs.
+func loadManifests(path string) ([]*corev1.Pod, []*corev1.ConfigMap, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading manifest %s: %w", path, err)
+		return nil, nil, fmt.Errorf("reading manifest %s: %w", path, err)
 	}
 
 	var pods []*corev1.Pod
+	var configMaps []*corev1.ConfigMap
 	reader := yaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(data)))
 	for {
 		doc, err := reader.Read()
@@ -556,7 +595,7 @@ func loadPodManifests(path string) ([]*corev1.Pod, error) {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("reading YAML document: %w", err)
+			return nil, nil, fmt.Errorf("reading YAML document: %w", err)
 		}
 
 		doc = bytes.TrimSpace(doc)
@@ -564,24 +603,44 @@ func loadPodManifests(path string) ([]*corev1.Pod, error) {
 			continue
 		}
 
-		var pod corev1.Pod
-		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(doc), 4096).Decode(&pod); err != nil {
-			return nil, fmt.Errorf("decoding pod: %w", err)
+		// Peek at document kind to route decoding
+		var meta metav1.TypeMeta
+		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(doc), 4096).Decode(&meta); err != nil {
+			continue
 		}
 
-		if pod.Kind != "" && pod.Kind != "Pod" {
-			continue
+		switch meta.Kind {
+		case "ConfigMap":
+			var cm corev1.ConfigMap
+			if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(doc), 4096).Decode(&cm); err != nil {
+				return nil, nil, fmt.Errorf("decoding configmap: %w", err)
+			}
+			if cm.Name == "" {
+				continue
+			}
+			if cm.Namespace == "" {
+				cm.Namespace = "default"
+			}
+			configMaps = append(configMaps, &cm)
+		default:
+			var pod corev1.Pod
+			if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(doc), 4096).Decode(&pod); err != nil {
+				return nil, nil, fmt.Errorf("decoding pod: %w", err)
+			}
+			if pod.Kind != "" && pod.Kind != "Pod" {
+				continue
+			}
+			if pod.Name == "" {
+				continue
+			}
+			if pod.Namespace == "" {
+				pod.Namespace = "default"
+			}
+			pods = append(pods, &pod)
 		}
-		if pod.Name == "" {
-			continue
-		}
-		if pod.Namespace == "" {
-			pod.Namespace = "default"
-		}
-		pods = append(pods, &pod)
 	}
 
-	return pods, nil
+	return pods, configMaps, nil
 }
 
 // NotifyPods is called by the Virtual Kubelet framework to set up a callback

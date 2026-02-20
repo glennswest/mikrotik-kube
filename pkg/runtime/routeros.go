@@ -108,6 +108,14 @@ func (r *RouterOSRuntime) RemoveFile(ctx context.Context, path string) error {
 	return r.client.RemoveFile(ctx, path)
 }
 
+func (r *RouterOSRuntime) CreateMount(ctx context.Context, name, src, dst string) error {
+	return r.client.CreateMount(ctx, name, src, dst)
+}
+
+func (r *RouterOSRuntime) RemoveMountsByList(ctx context.Context, listName string) error {
+	return r.client.RemoveMountsByList(ctx, listName)
+}
+
 func (r *RouterOSRuntime) Backend() string {
 	return "routeros"
 }

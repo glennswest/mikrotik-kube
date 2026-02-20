@@ -237,6 +237,14 @@ func (c *Client) RemoveFile(_ context.Context, _ string) error {
 	return nil
 }
 
+func (c *Client) CreateMount(_ context.Context, _, _, _ string) error {
+	return nil // volumes are passed inline via CreateContainer spec
+}
+
+func (c *Client) RemoveMountsByList(_ context.Context, _ string) error {
+	return nil // stormd manages volume cleanup
+}
+
 func (c *Client) Backend() string {
 	return "stormbase"
 }

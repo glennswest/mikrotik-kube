@@ -208,7 +208,7 @@ spec:
 		t.Fatal(err)
 	}
 
-	pods, err := loadPodManifests(path)
+	pods, _, err := loadManifests(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -233,7 +233,7 @@ spec:
 }
 
 func TestLoadPodManifestsNotFound(t *testing.T) {
-	_, err := loadPodManifests("/nonexistent/path.yaml")
+	_, _, err := loadManifests("/nonexistent/path.yaml")
 	if err == nil {
 		t.Error("expected error for nonexistent file")
 	}

@@ -29,6 +29,12 @@ func (p *MicroKubeProvider) RegisterRoutes(mux *http.ServeMux) {
 	// Logs
 	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/pods/{name}/log", p.handleGetPodLog)
 
+	// ConfigMaps
+	mux.HandleFunc("POST /api/v1/namespaces/{namespace}/configmaps", p.handleCreateConfigMap)
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/configmaps", p.handleListConfigMaps)
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/configmaps/{name}", p.handleGetConfigMap)
+	mux.HandleFunc("DELETE /api/v1/namespaces/{namespace}/configmaps/{name}", p.handleDeleteConfigMap)
+
 	// Nodes
 	mux.HandleFunc("GET /api/v1/nodes", p.handleListNodes)
 	mux.HandleFunc("GET /api/v1/nodes/{name}", p.handleGetNode)
@@ -350,6 +356,12 @@ func (p *MicroKubeProvider) handleAPIResources(w http.ResponseWriter, r *http.Re
 				Namespaced: true,
 				Kind:       "Pod",
 				Verbs:      metav1.Verbs{"get"},
+			},
+			{
+				Name:       "configmaps",
+				Namespaced: true,
+				Kind:       "ConfigMap",
+				Verbs:      metav1.Verbs{"get", "list", "create", "delete"},
 			},
 			{
 				Name:       "namespaces",

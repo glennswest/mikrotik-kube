@@ -29,6 +29,10 @@ type ContainerRuntime interface {
 	UploadFile(ctx context.Context, path string, data io.Reader) error
 	RemoveFile(ctx context.Context, path string) error
 
+	// Mount operations (RouterOS-specific, no-op on other backends)
+	CreateMount(ctx context.Context, name, src, dst string) error
+	RemoveMountsByList(ctx context.Context, listName string) error
+
 	// Backend identification
 	Backend() string // "routeros" or "stormbase"
 

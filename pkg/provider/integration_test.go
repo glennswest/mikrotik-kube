@@ -96,10 +96,12 @@ func (m *mockRuntime) ListContainers(_ context.Context) ([]runtime.Container, er
 
 func (m *mockRuntime) GetLogs(context.Context, string) ([]runtime.LogEntry, error)      { return nil, nil }
 func (m *mockRuntime) GetSystemResource(context.Context) (*runtime.SystemResource, error) { return nil, nil }
-func (m *mockRuntime) UploadFile(context.Context, string, io.Reader) error                { return nil }
-func (m *mockRuntime) RemoveFile(context.Context, string) error                           { return nil }
-func (m *mockRuntime) Backend() string                                                    { return "stormbase" }
-func (m *mockRuntime) Close() error                                                       { return nil }
+func (m *mockRuntime) UploadFile(context.Context, string, io.Reader) error    { return nil }
+func (m *mockRuntime) RemoveFile(context.Context, string) error               { return nil }
+func (m *mockRuntime) CreateMount(context.Context, string, string, string) error { return nil }
+func (m *mockRuntime) RemoveMountsByList(context.Context, string) error       { return nil }
+func (m *mockRuntime) Backend() string                                        { return "stormbase" }
+func (m *mockRuntime) Close() error                                           { return nil }
 
 // ─── Mock Network Driver ─────────────────────────────────────────────────────
 

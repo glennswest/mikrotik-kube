@@ -146,6 +146,48 @@ func (c *Client) StopContainer(ctx context.Context, id string) error {
 	return c.restPOST(ctx, "/container/stop", map[string]string{".id": id}, nil)
 }
 
+// ─── Mount Operations ────────────────────────────────────────────────────
+
+// MountEntry represents a container mount point on RouterOS.
+type MountEntry struct {
+	ID   string `json:".id"`
+	Name string `json:"name"` // list name
+	Src  string `json:"src"`  // host path
+	Dst  string `json:"dst"`  // container path
+}
+
+// CreateMount creates a container mount entry.
+func (c *Client) CreateMount(ctx context.Context, name, src, dst string) error {
+	return c.restPOST(ctx, "/container/mounts/add", map[string]string{
+		"name": name,
+		"src":  src,
+		"dst":  dst,
+	}, nil)
+}
+
+// ListMounts returns all container mount entries.
+func (c *Client) ListMounts(ctx context.Context) ([]MountEntry, error) {
+	var mounts []MountEntry
+	err := c.restGET(ctx, "/container/mounts", &mounts)
+	return mounts, err
+}
+
+// RemoveMountsByList removes all mount entries with the given list name.
+func (c *Client) RemoveMountsByList(ctx context.Context, listName string) error {
+	mounts, err := c.ListMounts(ctx)
+	if err != nil {
+		return err
+	}
+	for _, m := range mounts {
+		if m.Name == listName {
+			if err := c.restPOST(ctx, "/container/mounts/remove", map[string]string{".id": m.ID}, nil); err != nil {
+				return fmt.Errorf("removing mount %s: %w", m.ID, err)
+			}
+		}
+	}
+	return nil
+}
+
 // ─── Network Operations ─────────────────────────────────────────────────────
 
 // CreateVeth creates a virtual ethernet interface for a container.
