@@ -44,6 +44,12 @@ const (
 	annotationAliases = "vkube.io/aliases"
 	// annotationStaticIP requests a specific IP address for the pod's containers.
 	annotationStaticIP = "vkube.io/static-ip"
+
+	// Device passthrough annotations (StormBase only)
+	annotationDeviceClass = "stormbase.io/device-class"
+	annotationDeviceCount = "stormbase.io/device-count"
+	annotationDeviceProfile = "stormbase.io/device-profile"
+	annotationDeviceAllocation = "stormbase.io/device-allocation"
 )
 
 // Deps holds injected dependencies for the provider.
@@ -107,6 +113,33 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 	namespaceName := pod.Annotations[annotationNamespace]
 
 	containerIPs := make(map[string]string) // container name → bare IP
+
+	// Device passthrough: allocate devices if annotations are present (StormBase only)
+	if sb, ok := p.deps.Runtime.(*stormbase.Client); ok {
+		if deviceClass := pod.Annotations[annotationDeviceClass]; deviceClass != "" {
+			count := uint32(1)
+			if countStr := pod.Annotations[annotationDeviceCount]; countStr != "" {
+				if n, err := strconv.ParseUint(countStr, 10, 32); err == nil {
+					count = uint32(n)
+				}
+			}
+			log.Infow("allocating devices", "class", deviceClass, "count", count)
+			alloc, err := sb.AllocateDevices(ctx, podKey(pod), deviceClass, count)
+			if err != nil {
+				return fmt.Errorf("allocating devices: %w", err)
+			}
+			if pod.Annotations == nil {
+				pod.Annotations = make(map[string]string)
+			}
+			pod.Annotations[annotationDeviceAllocation] = alloc.AllocationID
+			log.Infow("devices allocated",
+				"allocation", alloc.AllocationID,
+				"devices", len(alloc.Devices),
+				"paths", alloc.DevicePaths,
+				"caps", alloc.Capabilities,
+			)
+		}
+	}
 
 	for i, container := range pod.Spec.Containers {
 		name := sanitizeName(pod, container.Name)
@@ -314,6 +347,16 @@ func (p *MicroKubeProvider) DeletePod(ctx context.Context, pod *corev1.Pod) erro
 
 	networkName := pod.Annotations[annotationNetwork]
 	namespaceName := pod.Annotations[annotationNamespace]
+
+	// Release device allocation if present (StormBase only)
+	if sb, ok := p.deps.Runtime.(*stormbase.Client); ok {
+		if allocID := pod.Annotations[annotationDeviceAllocation]; allocID != "" {
+			log.Infow("releasing device allocation", "allocation", allocID)
+			if err := sb.ReleaseDevices(ctx, allocID); err != nil {
+				log.Warnw("failed to release device allocation", "allocation", allocID, "error", err)
+			}
+		}
+	}
 
 	// Collect container IPs before releasing anything (needed for alias cleanup)
 	containerIPs := make(map[string]string)

@@ -44,9 +44,10 @@ type Network struct {
 
 // Inventory holds the complete discovered state of the RouterOS device.
 type Inventory struct {
-	Containers []Container
-	Networks   []Network
-	System     *routeros.SystemResource
+	Containers   []Container
+	Networks     []Network
+	System       *routeros.SystemResource
+	DeviceLabels map[string]string // e.g. "nvme.stormblock.io/count" → "4"
 }
 
 // Discover queries a RouterOS device and builds a full inventory of containers,

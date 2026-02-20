@@ -42,6 +42,16 @@ const (
 	StormDaemon_WorkloadRestore_FullMethodName     = "/stormd.StormDaemon/WorkloadRestore"
 	StormDaemon_VmMigrate_FullMethodName           = "/stormd.StormDaemon/VmMigrate"
 	StormDaemon_VmSnapshot_FullMethodName          = "/stormd.StormDaemon/VmSnapshot"
+	StormDaemon_DeviceList_FullMethodName          = "/stormd.StormDaemon/DeviceList"
+	StormDaemon_DeviceGet_FullMethodName           = "/stormd.StormDaemon/DeviceGet"
+	StormDaemon_DeviceDiscover_FullMethodName      = "/stormd.StormDaemon/DeviceDiscover"
+	StormDaemon_DeviceBind_FullMethodName          = "/stormd.StormDaemon/DeviceBind"
+	StormDaemon_DeviceUnbind_FullMethodName        = "/stormd.StormDaemon/DeviceUnbind"
+	StormDaemon_DeviceClassList_FullMethodName     = "/stormd.StormDaemon/DeviceClassList"
+	StormDaemon_DeviceClassCreate_FullMethodName   = "/stormd.StormDaemon/DeviceClassCreate"
+	StormDaemon_DeviceClassDelete_FullMethodName   = "/stormd.StormDaemon/DeviceClassDelete"
+	StormDaemon_DeviceAllocate_FullMethodName      = "/stormd.StormDaemon/DeviceAllocate"
+	StormDaemon_DeviceRelease_FullMethodName       = "/stormd.StormDaemon/DeviceRelease"
 )
 
 // StormDaemonClient is the client API for StormDaemon service.
@@ -78,6 +88,17 @@ type StormDaemonClient interface {
 	// VM operations (Cloud Hypervisor)
 	VmMigrate(ctx context.Context, in *VmMigrateRequest, opts ...grpc.CallOption) (*VmMigrateResponse, error)
 	VmSnapshot(ctx context.Context, in *VmSnapshotRequest, opts ...grpc.CallOption) (*VmSnapshotResponse, error)
+	// Device passthrough operations
+	DeviceList(ctx context.Context, in *DeviceListRequest, opts ...grpc.CallOption) (*DeviceListResponse, error)
+	DeviceGet(ctx context.Context, in *DeviceGetRequest, opts ...grpc.CallOption) (*DeviceGetResponse, error)
+	DeviceDiscover(ctx context.Context, in *DeviceDiscoverRequest, opts ...grpc.CallOption) (*DeviceDiscoverResponse, error)
+	DeviceBind(ctx context.Context, in *DeviceBindRequest, opts ...grpc.CallOption) (*DeviceBindResponse, error)
+	DeviceUnbind(ctx context.Context, in *DeviceUnbindRequest, opts ...grpc.CallOption) (*DeviceUnbindResponse, error)
+	DeviceClassList(ctx context.Context, in *DeviceClassListRequest, opts ...grpc.CallOption) (*DeviceClassListResponse, error)
+	DeviceClassCreate(ctx context.Context, in *DeviceClassCreateRequest, opts ...grpc.CallOption) (*DeviceClassCreateResponse, error)
+	DeviceClassDelete(ctx context.Context, in *DeviceClassDeleteRequest, opts ...grpc.CallOption) (*DeviceClassDeleteResponse, error)
+	DeviceAllocate(ctx context.Context, in *DeviceAllocateRequest, opts ...grpc.CallOption) (*DeviceAllocateResponse, error)
+	DeviceRelease(ctx context.Context, in *DeviceReleaseRequest, opts ...grpc.CallOption) (*DeviceReleaseResponse, error)
 }
 
 type stormDaemonClient struct {
@@ -327,6 +348,106 @@ func (c *stormDaemonClient) VmSnapshot(ctx context.Context, in *VmSnapshotReques
 	return out, nil
 }
 
+func (c *stormDaemonClient) DeviceList(ctx context.Context, in *DeviceListRequest, opts ...grpc.CallOption) (*DeviceListResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceListResponse)
+	err := c.cc.Invoke(ctx, StormDaemon_DeviceList_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stormDaemonClient) DeviceGet(ctx context.Context, in *DeviceGetRequest, opts ...grpc.CallOption) (*DeviceGetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceGetResponse)
+	err := c.cc.Invoke(ctx, StormDaemon_DeviceGet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stormDaemonClient) DeviceDiscover(ctx context.Context, in *DeviceDiscoverRequest, opts ...grpc.CallOption) (*DeviceDiscoverResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceDiscoverResponse)
+	err := c.cc.Invoke(ctx, StormDaemon_DeviceDiscover_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stormDaemonClient) DeviceBind(ctx context.Context, in *DeviceBindRequest, opts ...grpc.CallOption) (*DeviceBindResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceBindResponse)
+	err := c.cc.Invoke(ctx, StormDaemon_DeviceBind_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stormDaemonClient) DeviceUnbind(ctx context.Context, in *DeviceUnbindRequest, opts ...grpc.CallOption) (*DeviceUnbindResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceUnbindResponse)
+	err := c.cc.Invoke(ctx, StormDaemon_DeviceUnbind_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stormDaemonClient) DeviceClassList(ctx context.Context, in *DeviceClassListRequest, opts ...grpc.CallOption) (*DeviceClassListResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceClassListResponse)
+	err := c.cc.Invoke(ctx, StormDaemon_DeviceClassList_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stormDaemonClient) DeviceClassCreate(ctx context.Context, in *DeviceClassCreateRequest, opts ...grpc.CallOption) (*DeviceClassCreateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceClassCreateResponse)
+	err := c.cc.Invoke(ctx, StormDaemon_DeviceClassCreate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stormDaemonClient) DeviceClassDelete(ctx context.Context, in *DeviceClassDeleteRequest, opts ...grpc.CallOption) (*DeviceClassDeleteResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceClassDeleteResponse)
+	err := c.cc.Invoke(ctx, StormDaemon_DeviceClassDelete_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stormDaemonClient) DeviceAllocate(ctx context.Context, in *DeviceAllocateRequest, opts ...grpc.CallOption) (*DeviceAllocateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceAllocateResponse)
+	err := c.cc.Invoke(ctx, StormDaemon_DeviceAllocate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stormDaemonClient) DeviceRelease(ctx context.Context, in *DeviceReleaseRequest, opts ...grpc.CallOption) (*DeviceReleaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeviceReleaseResponse)
+	err := c.cc.Invoke(ctx, StormDaemon_DeviceRelease_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StormDaemonServer is the server API for StormDaemon service.
 // All implementations must embed UnimplementedStormDaemonServer
 // for forward compatibility.
@@ -361,6 +482,17 @@ type StormDaemonServer interface {
 	// VM operations (Cloud Hypervisor)
 	VmMigrate(context.Context, *VmMigrateRequest) (*VmMigrateResponse, error)
 	VmSnapshot(context.Context, *VmSnapshotRequest) (*VmSnapshotResponse, error)
+	// Device passthrough operations
+	DeviceList(context.Context, *DeviceListRequest) (*DeviceListResponse, error)
+	DeviceGet(context.Context, *DeviceGetRequest) (*DeviceGetResponse, error)
+	DeviceDiscover(context.Context, *DeviceDiscoverRequest) (*DeviceDiscoverResponse, error)
+	DeviceBind(context.Context, *DeviceBindRequest) (*DeviceBindResponse, error)
+	DeviceUnbind(context.Context, *DeviceUnbindRequest) (*DeviceUnbindResponse, error)
+	DeviceClassList(context.Context, *DeviceClassListRequest) (*DeviceClassListResponse, error)
+	DeviceClassCreate(context.Context, *DeviceClassCreateRequest) (*DeviceClassCreateResponse, error)
+	DeviceClassDelete(context.Context, *DeviceClassDeleteRequest) (*DeviceClassDeleteResponse, error)
+	DeviceAllocate(context.Context, *DeviceAllocateRequest) (*DeviceAllocateResponse, error)
+	DeviceRelease(context.Context, *DeviceReleaseRequest) (*DeviceReleaseResponse, error)
 	mustEmbedUnimplementedStormDaemonServer()
 }
 
@@ -439,6 +571,36 @@ func (UnimplementedStormDaemonServer) VmMigrate(context.Context, *VmMigrateReque
 }
 func (UnimplementedStormDaemonServer) VmSnapshot(context.Context, *VmSnapshotRequest) (*VmSnapshotResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method VmSnapshot not implemented")
+}
+func (UnimplementedStormDaemonServer) DeviceList(context.Context, *DeviceListRequest) (*DeviceListResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeviceList not implemented")
+}
+func (UnimplementedStormDaemonServer) DeviceGet(context.Context, *DeviceGetRequest) (*DeviceGetResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeviceGet not implemented")
+}
+func (UnimplementedStormDaemonServer) DeviceDiscover(context.Context, *DeviceDiscoverRequest) (*DeviceDiscoverResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeviceDiscover not implemented")
+}
+func (UnimplementedStormDaemonServer) DeviceBind(context.Context, *DeviceBindRequest) (*DeviceBindResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeviceBind not implemented")
+}
+func (UnimplementedStormDaemonServer) DeviceUnbind(context.Context, *DeviceUnbindRequest) (*DeviceUnbindResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeviceUnbind not implemented")
+}
+func (UnimplementedStormDaemonServer) DeviceClassList(context.Context, *DeviceClassListRequest) (*DeviceClassListResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeviceClassList not implemented")
+}
+func (UnimplementedStormDaemonServer) DeviceClassCreate(context.Context, *DeviceClassCreateRequest) (*DeviceClassCreateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeviceClassCreate not implemented")
+}
+func (UnimplementedStormDaemonServer) DeviceClassDelete(context.Context, *DeviceClassDeleteRequest) (*DeviceClassDeleteResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeviceClassDelete not implemented")
+}
+func (UnimplementedStormDaemonServer) DeviceAllocate(context.Context, *DeviceAllocateRequest) (*DeviceAllocateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeviceAllocate not implemented")
+}
+func (UnimplementedStormDaemonServer) DeviceRelease(context.Context, *DeviceReleaseRequest) (*DeviceReleaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeviceRelease not implemented")
 }
 func (UnimplementedStormDaemonServer) mustEmbedUnimplementedStormDaemonServer() {}
 func (UnimplementedStormDaemonServer) testEmbeddedByValue()                     {}
@@ -868,6 +1030,186 @@ func _StormDaemon_VmSnapshot_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StormDaemon_DeviceList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeviceListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StormDaemonServer).DeviceList(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StormDaemon_DeviceList_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StormDaemonServer).DeviceList(ctx, req.(*DeviceListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StormDaemon_DeviceGet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeviceGetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StormDaemonServer).DeviceGet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StormDaemon_DeviceGet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StormDaemonServer).DeviceGet(ctx, req.(*DeviceGetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StormDaemon_DeviceDiscover_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeviceDiscoverRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StormDaemonServer).DeviceDiscover(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StormDaemon_DeviceDiscover_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StormDaemonServer).DeviceDiscover(ctx, req.(*DeviceDiscoverRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StormDaemon_DeviceBind_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeviceBindRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StormDaemonServer).DeviceBind(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StormDaemon_DeviceBind_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StormDaemonServer).DeviceBind(ctx, req.(*DeviceBindRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StormDaemon_DeviceUnbind_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeviceUnbindRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StormDaemonServer).DeviceUnbind(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StormDaemon_DeviceUnbind_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StormDaemonServer).DeviceUnbind(ctx, req.(*DeviceUnbindRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StormDaemon_DeviceClassList_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeviceClassListRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StormDaemonServer).DeviceClassList(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StormDaemon_DeviceClassList_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StormDaemonServer).DeviceClassList(ctx, req.(*DeviceClassListRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StormDaemon_DeviceClassCreate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeviceClassCreateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StormDaemonServer).DeviceClassCreate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StormDaemon_DeviceClassCreate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StormDaemonServer).DeviceClassCreate(ctx, req.(*DeviceClassCreateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StormDaemon_DeviceClassDelete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeviceClassDeleteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StormDaemonServer).DeviceClassDelete(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StormDaemon_DeviceClassDelete_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StormDaemonServer).DeviceClassDelete(ctx, req.(*DeviceClassDeleteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StormDaemon_DeviceAllocate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeviceAllocateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StormDaemonServer).DeviceAllocate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StormDaemon_DeviceAllocate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StormDaemonServer).DeviceAllocate(ctx, req.(*DeviceAllocateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StormDaemon_DeviceRelease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeviceReleaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StormDaemonServer).DeviceRelease(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StormDaemon_DeviceRelease_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StormDaemonServer).DeviceRelease(ctx, req.(*DeviceReleaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // StormDaemon_ServiceDesc is the grpc.ServiceDesc for StormDaemon service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -962,6 +1304,46 @@ var StormDaemon_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VmSnapshot",
 			Handler:    _StormDaemon_VmSnapshot_Handler,
+		},
+		{
+			MethodName: "DeviceList",
+			Handler:    _StormDaemon_DeviceList_Handler,
+		},
+		{
+			MethodName: "DeviceGet",
+			Handler:    _StormDaemon_DeviceGet_Handler,
+		},
+		{
+			MethodName: "DeviceDiscover",
+			Handler:    _StormDaemon_DeviceDiscover_Handler,
+		},
+		{
+			MethodName: "DeviceBind",
+			Handler:    _StormDaemon_DeviceBind_Handler,
+		},
+		{
+			MethodName: "DeviceUnbind",
+			Handler:    _StormDaemon_DeviceUnbind_Handler,
+		},
+		{
+			MethodName: "DeviceClassList",
+			Handler:    _StormDaemon_DeviceClassList_Handler,
+		},
+		{
+			MethodName: "DeviceClassCreate",
+			Handler:    _StormDaemon_DeviceClassCreate_Handler,
+		},
+		{
+			MethodName: "DeviceClassDelete",
+			Handler:    _StormDaemon_DeviceClassDelete_Handler,
+		},
+		{
+			MethodName: "DeviceAllocate",
+			Handler:    _StormDaemon_DeviceAllocate_Handler,
+		},
+		{
+			MethodName: "DeviceRelease",
+			Handler:    _StormDaemon_DeviceRelease_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

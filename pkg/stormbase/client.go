@@ -285,5 +285,126 @@ func boolStr(b bool) string {
 	return "false"
 }
 
+// ── Device passthrough operations ────────────────────────────────────────────
+
+// DeviceInfo represents a discovered device.
+type DeviceInfo struct {
+	ID            string
+	Address       string
+	Class         string
+	Vendor        string
+	Device        string
+	IommuGroup    string
+	Driver        string
+	State         string
+	BoundTo       string
+	Attributes    map[string]string
+}
+
+// DeviceAllocResult holds the result of a device allocation.
+type DeviceAllocResult struct {
+	AllocationID string
+	Devices      []DeviceInfo
+	DevicePaths  []string
+	Capabilities []string
+	Env          map[string]string
+}
+
+// ListDevices returns all discovered devices on the node.
+func (c *Client) ListDevices(ctx context.Context) ([]DeviceInfo, error) {
+	resp, err := c.daemon.DeviceList(ctx, &stormdpb.DeviceListRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("DeviceList: %w", err)
+	}
+	var devices []DeviceInfo
+	for _, d := range resp.Devices {
+		devices = append(devices, DeviceInfo{
+			ID:         d.Id,
+			Address:    d.Address,
+			Class:      d.PciClass,
+			Vendor:     d.Vendor,
+			Device:     d.Device,
+			IommuGroup: d.IommuGroup,
+			Driver:     d.CurrentDriver,
+			State:      d.State,
+			BoundTo:    d.BoundTo,
+			Attributes: d.Attributes,
+		})
+	}
+	return devices, nil
+}
+
+// DiscoverDevices triggers a device re-scan on the node.
+func (c *Client) DiscoverDevices(ctx context.Context) (uint32, error) {
+	resp, err := c.daemon.DeviceDiscover(ctx, &stormdpb.DeviceDiscoverRequest{})
+	if err != nil {
+		return 0, fmt.Errorf("DeviceDiscover: %w", err)
+	}
+	return resp.DiscoveredCount, nil
+}
+
+// BindDevice binds a device to a specific driver.
+func (c *Client) BindDevice(ctx context.Context, id, driver string) error {
+	resp, err := c.daemon.DeviceBind(ctx, &stormdpb.DeviceBindRequest{
+		Id:     id,
+		Driver: driver,
+	})
+	if err != nil {
+		return fmt.Errorf("DeviceBind: %w", err)
+	}
+	if !resp.Success {
+		return fmt.Errorf("DeviceBind failed: %s", resp.Message)
+	}
+	return nil
+}
+
+// AllocateDevices allocates devices for a pod from a device class.
+func (c *Client) AllocateDevices(ctx context.Context, podID, deviceClass string, count uint32) (*DeviceAllocResult, error) {
+	resp, err := c.daemon.DeviceAllocate(ctx, &stormdpb.DeviceAllocateRequest{
+		PodId: podID,
+		Requests: []*stormdpb.DeviceRequestEntry{
+			{
+				Name:        "request",
+				DeviceClass: deviceClass,
+				Count:       count,
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("DeviceAllocate: %w", err)
+	}
+
+	result := &DeviceAllocResult{
+		AllocationID: resp.AllocationId,
+	}
+	for _, d := range resp.Devices {
+		result.Devices = append(result.Devices, DeviceInfo{
+			ID:      d.Id,
+			Address: d.Address,
+			Driver:  d.Driver,
+		})
+	}
+	if resp.Runtime != nil {
+		result.DevicePaths = resp.Runtime.DevicePaths
+		result.Capabilities = resp.Runtime.Capabilities
+		result.Env = resp.Runtime.Env
+	}
+	return result, nil
+}
+
+// ReleaseDevices releases a device allocation.
+func (c *Client) ReleaseDevices(ctx context.Context, allocationID string) error {
+	resp, err := c.daemon.DeviceRelease(ctx, &stormdpb.DeviceReleaseRequest{
+		AllocationId: allocationID,
+	})
+	if err != nil {
+		return fmt.Errorf("DeviceRelease: %w", err)
+	}
+	if !resp.Success {
+		return fmt.Errorf("DeviceRelease failed: %s", resp.Message)
+	}
+	return nil
+}
+
 // Ensure Client implements ContainerRuntime at compile time.
 var _ runtime.ContainerRuntime = (*Client)(nil)

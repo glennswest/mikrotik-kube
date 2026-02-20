@@ -317,6 +317,9 @@ type WorkloadCreateRequest struct {
 	Env           []string               `protobuf:"bytes,8,rep,name=env,proto3" json:"env,omitempty"`
 	Ports         []*PortMapping         `protobuf:"bytes,9,rep,name=ports,proto3" json:"ports,omitempty"`
 	Volumes       []*VolumeMount         `protobuf:"bytes,10,rep,name=volumes,proto3" json:"volumes,omitempty"`
+	Privileged    bool                   `protobuf:"varint,11,opt,name=privileged,proto3" json:"privileged,omitempty"`
+	Devices       []string               `protobuf:"bytes,12,rep,name=devices,proto3" json:"devices,omitempty"`           // host device paths (e.g. "/dev/vfio/vfio")
+	Capabilities  []string               `protobuf:"bytes,13,rep,name=capabilities,proto3" json:"capabilities,omitempty"` // Linux capabilities (e.g. "SYS_RAWIO")
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -417,6 +420,27 @@ func (x *WorkloadCreateRequest) GetPorts() []*PortMapping {
 func (x *WorkloadCreateRequest) GetVolumes() []*VolumeMount {
 	if x != nil {
 		return x.Volumes
+	}
+	return nil
+}
+
+func (x *WorkloadCreateRequest) GetPrivileged() bool {
+	if x != nil {
+		return x.Privileged
+	}
+	return false
+}
+
+func (x *WorkloadCreateRequest) GetDevices() []string {
+	if x != nil {
+		return x.Devices
+	}
+	return nil
+}
+
+func (x *WorkloadCreateRequest) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
 	}
 	return nil
 }
@@ -2738,6 +2762,1534 @@ func (x *NetworkPolicyListResponse) GetPolicies() []*NetworkPolicy {
 	return nil
 }
 
+type DeviceInfo struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                                   // PCI address e.g. "0000:03:00.0"
+	Bus           string                 `protobuf:"bytes,2,opt,name=bus,proto3" json:"bus,omitempty"`                                 // "pci", "usb", etc.
+	Address       string                 `protobuf:"bytes,3,opt,name=address,proto3" json:"address,omitempty"`                         // bus-specific address
+	PciClass      string                 `protobuf:"bytes,4,opt,name=pci_class,json=pciClass,proto3" json:"pci_class,omitempty"`       // PCI class code e.g. "0108" (NVMe)
+	Vendor        string                 `protobuf:"bytes,5,opt,name=vendor,proto3" json:"vendor,omitempty"`                           // vendor ID e.g. "8086"
+	Device        string                 `protobuf:"bytes,6,opt,name=device,proto3" json:"device,omitempty"`                           // device ID
+	IommuGroup    string                 `protobuf:"bytes,7,opt,name=iommu_group,json=iommuGroup,proto3" json:"iommu_group,omitempty"` // IOMMU group number
+	NumaNode      uint32                 `protobuf:"varint,8,opt,name=numa_node,json=numaNode,proto3" json:"numa_node,omitempty"`
+	CurrentDriver string                 `protobuf:"bytes,9,opt,name=current_driver,json=currentDriver,proto3" json:"current_driver,omitempty"`                                                 // currently bound driver
+	State         string                 `protobuf:"bytes,10,opt,name=state,proto3" json:"state,omitempty"`                                                                                     // "available", "bound", "unhealthy", "reserved"
+	BoundTo       string                 `protobuf:"bytes,11,opt,name=bound_to,json=boundTo,proto3" json:"bound_to,omitempty"`                                                                  // pod/allocation ID if bound
+	Attributes    map[string]string      `protobuf:"bytes,12,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // model, serial, firmware, capacity, etc.
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceInfo) Reset() {
+	*x = DeviceInfo{}
+	mi := &file_stormd_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceInfo) ProtoMessage() {}
+
+func (x *DeviceInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceInfo.ProtoReflect.Descriptor instead.
+func (*DeviceInfo) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *DeviceInfo) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DeviceInfo) GetBus() string {
+	if x != nil {
+		return x.Bus
+	}
+	return ""
+}
+
+func (x *DeviceInfo) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *DeviceInfo) GetPciClass() string {
+	if x != nil {
+		return x.PciClass
+	}
+	return ""
+}
+
+func (x *DeviceInfo) GetVendor() string {
+	if x != nil {
+		return x.Vendor
+	}
+	return ""
+}
+
+func (x *DeviceInfo) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+func (x *DeviceInfo) GetIommuGroup() string {
+	if x != nil {
+		return x.IommuGroup
+	}
+	return ""
+}
+
+func (x *DeviceInfo) GetNumaNode() uint32 {
+	if x != nil {
+		return x.NumaNode
+	}
+	return 0
+}
+
+func (x *DeviceInfo) GetCurrentDriver() string {
+	if x != nil {
+		return x.CurrentDriver
+	}
+	return ""
+}
+
+func (x *DeviceInfo) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *DeviceInfo) GetBoundTo() string {
+	if x != nil {
+		return x.BoundTo
+	}
+	return ""
+}
+
+func (x *DeviceInfo) GetAttributes() map[string]string {
+	if x != nil {
+		return x.Attributes
+	}
+	return nil
+}
+
+type DeviceSelector struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Bus           string                 `protobuf:"bytes,1,opt,name=bus,proto3" json:"bus,omitempty"`                           // match bus type (optional)
+	PciClass      string                 `protobuf:"bytes,2,opt,name=pci_class,json=pciClass,proto3" json:"pci_class,omitempty"` // match PCI class (optional)
+	Vendor        string                 `protobuf:"bytes,3,opt,name=vendor,proto3" json:"vendor,omitempty"`                     // match vendor ID (optional)
+	Device        string                 `protobuf:"bytes,4,opt,name=device,proto3" json:"device,omitempty"`                     // match device ID (optional)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceSelector) Reset() {
+	*x = DeviceSelector{}
+	mi := &file_stormd_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceSelector) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceSelector) ProtoMessage() {}
+
+func (x *DeviceSelector) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceSelector.ProtoReflect.Descriptor instead.
+func (*DeviceSelector) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *DeviceSelector) GetBus() string {
+	if x != nil {
+		return x.Bus
+	}
+	return ""
+}
+
+func (x *DeviceSelector) GetPciClass() string {
+	if x != nil {
+		return x.PciClass
+	}
+	return ""
+}
+
+func (x *DeviceSelector) GetVendor() string {
+	if x != nil {
+		return x.Vendor
+	}
+	return ""
+}
+
+func (x *DeviceSelector) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+type DeviceVolume struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	HostPath      string                 `protobuf:"bytes,1,opt,name=host_path,json=hostPath,proto3" json:"host_path,omitempty"`
+	ContainerPath string                 `protobuf:"bytes,2,opt,name=container_path,json=containerPath,proto3" json:"container_path,omitempty"`
+	Readonly      bool                   `protobuf:"varint,3,opt,name=readonly,proto3" json:"readonly,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceVolume) Reset() {
+	*x = DeviceVolume{}
+	mi := &file_stormd_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceVolume) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceVolume) ProtoMessage() {}
+
+func (x *DeviceVolume) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceVolume.ProtoReflect.Descriptor instead.
+func (*DeviceVolume) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *DeviceVolume) GetHostPath() string {
+	if x != nil {
+		return x.HostPath
+	}
+	return ""
+}
+
+func (x *DeviceVolume) GetContainerPath() string {
+	if x != nil {
+		return x.ContainerPath
+	}
+	return ""
+}
+
+func (x *DeviceVolume) GetReadonly() bool {
+	if x != nil {
+		return x.Readonly
+	}
+	return false
+}
+
+type DeviceClassInfo struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Selectors      []*DeviceSelector      `protobuf:"bytes,2,rep,name=selectors,proto3" json:"selectors,omitempty"`
+	DriverOverride string                 `protobuf:"bytes,3,opt,name=driver_override,json=driverOverride,proto3" json:"driver_override,omitempty"` // e.g. "vfio-pci"
+	Capabilities   []string               `protobuf:"bytes,4,rep,name=capabilities,proto3" json:"capabilities,omitempty"`                           // Linux caps needed
+	Volumes        []*DeviceVolume        `protobuf:"bytes,5,rep,name=volumes,proto3" json:"volumes,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *DeviceClassInfo) Reset() {
+	*x = DeviceClassInfo{}
+	mi := &file_stormd_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceClassInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceClassInfo) ProtoMessage() {}
+
+func (x *DeviceClassInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceClassInfo.ProtoReflect.Descriptor instead.
+func (*DeviceClassInfo) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *DeviceClassInfo) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DeviceClassInfo) GetSelectors() []*DeviceSelector {
+	if x != nil {
+		return x.Selectors
+	}
+	return nil
+}
+
+func (x *DeviceClassInfo) GetDriverOverride() string {
+	if x != nil {
+		return x.DriverOverride
+	}
+	return ""
+}
+
+func (x *DeviceClassInfo) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *DeviceClassInfo) GetVolumes() []*DeviceVolume {
+	if x != nil {
+		return x.Volumes
+	}
+	return nil
+}
+
+type DeviceRequestEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`                                  // request name
+	DeviceClass   string                 `protobuf:"bytes,2,opt,name=device_class,json=deviceClass,proto3" json:"device_class,omitempty"` // device class to allocate from
+	Count         uint32                 `protobuf:"varint,3,opt,name=count,proto3" json:"count,omitempty"`                               // number of devices requested
+	Selectors     []*DeviceSelector      `protobuf:"bytes,4,rep,name=selectors,proto3" json:"selectors,omitempty"`                        // additional selectors
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceRequestEntry) Reset() {
+	*x = DeviceRequestEntry{}
+	mi := &file_stormd_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceRequestEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceRequestEntry) ProtoMessage() {}
+
+func (x *DeviceRequestEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceRequestEntry.ProtoReflect.Descriptor instead.
+func (*DeviceRequestEntry) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *DeviceRequestEntry) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DeviceRequestEntry) GetDeviceClass() string {
+	if x != nil {
+		return x.DeviceClass
+	}
+	return ""
+}
+
+func (x *DeviceRequestEntry) GetCount() uint32 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
+}
+
+func (x *DeviceRequestEntry) GetSelectors() []*DeviceSelector {
+	if x != nil {
+		return x.Selectors
+	}
+	return nil
+}
+
+type HugepagesConfig struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Size          string                 `protobuf:"bytes,1,opt,name=size,proto3" json:"size,omitempty"`   // e.g. "1G", "2M"
+	Limit         string                 `protobuf:"bytes,2,opt,name=limit,proto3" json:"limit,omitempty"` // e.g. "32Gi"
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HugepagesConfig) Reset() {
+	*x = HugepagesConfig{}
+	mi := &file_stormd_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HugepagesConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HugepagesConfig) ProtoMessage() {}
+
+func (x *HugepagesConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HugepagesConfig.ProtoReflect.Descriptor instead.
+func (*HugepagesConfig) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *HugepagesConfig) GetSize() string {
+	if x != nil {
+		return x.Size
+	}
+	return ""
+}
+
+func (x *HugepagesConfig) GetLimit() string {
+	if x != nil {
+		return x.Limit
+	}
+	return ""
+}
+
+type DeviceRuntimeConfig struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DevicePaths   []string               `protobuf:"bytes,1,rep,name=device_paths,json=devicePaths,proto3" json:"device_paths,omitempty"` // /dev/vfio/N paths
+	Mounts        []*DeviceVolume        `protobuf:"bytes,2,rep,name=mounts,proto3" json:"mounts,omitempty"`
+	Capabilities  []string               `protobuf:"bytes,3,rep,name=capabilities,proto3" json:"capabilities,omitempty"`                                                         // Linux caps
+	Env           map[string]string      `protobuf:"bytes,4,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // environment variables
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceRuntimeConfig) Reset() {
+	*x = DeviceRuntimeConfig{}
+	mi := &file_stormd_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceRuntimeConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceRuntimeConfig) ProtoMessage() {}
+
+func (x *DeviceRuntimeConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceRuntimeConfig.ProtoReflect.Descriptor instead.
+func (*DeviceRuntimeConfig) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *DeviceRuntimeConfig) GetDevicePaths() []string {
+	if x != nil {
+		return x.DevicePaths
+	}
+	return nil
+}
+
+func (x *DeviceRuntimeConfig) GetMounts() []*DeviceVolume {
+	if x != nil {
+		return x.Mounts
+	}
+	return nil
+}
+
+func (x *DeviceRuntimeConfig) GetCapabilities() []string {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
+func (x *DeviceRuntimeConfig) GetEnv() map[string]string {
+	if x != nil {
+		return x.Env
+	}
+	return nil
+}
+
+type AllocatedDevice struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Address       string                 `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
+	Driver        string                 `protobuf:"bytes,3,opt,name=driver,proto3" json:"driver,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AllocatedDevice) Reset() {
+	*x = AllocatedDevice{}
+	mi := &file_stormd_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AllocatedDevice) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AllocatedDevice) ProtoMessage() {}
+
+func (x *AllocatedDevice) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AllocatedDevice.ProtoReflect.Descriptor instead.
+func (*AllocatedDevice) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *AllocatedDevice) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *AllocatedDevice) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
+}
+
+func (x *AllocatedDevice) GetDriver() string {
+	if x != nil {
+		return x.Driver
+	}
+	return ""
+}
+
+type DeviceListRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceListRequest) Reset() {
+	*x = DeviceListRequest{}
+	mi := &file_stormd_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceListRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceListRequest) ProtoMessage() {}
+
+func (x *DeviceListRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceListRequest.ProtoReflect.Descriptor instead.
+func (*DeviceListRequest) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{55}
+}
+
+type DeviceListResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Devices       []*DeviceInfo          `protobuf:"bytes,1,rep,name=devices,proto3" json:"devices,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceListResponse) Reset() {
+	*x = DeviceListResponse{}
+	mi := &file_stormd_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceListResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceListResponse) ProtoMessage() {}
+
+func (x *DeviceListResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceListResponse.ProtoReflect.Descriptor instead.
+func (*DeviceListResponse) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *DeviceListResponse) GetDevices() []*DeviceInfo {
+	if x != nil {
+		return x.Devices
+	}
+	return nil
+}
+
+type DeviceGetRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceGetRequest) Reset() {
+	*x = DeviceGetRequest{}
+	mi := &file_stormd_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceGetRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceGetRequest) ProtoMessage() {}
+
+func (x *DeviceGetRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceGetRequest.ProtoReflect.Descriptor instead.
+func (*DeviceGetRequest) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *DeviceGetRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type DeviceGetResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Device        *DeviceInfo            `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceGetResponse) Reset() {
+	*x = DeviceGetResponse{}
+	mi := &file_stormd_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceGetResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceGetResponse) ProtoMessage() {}
+
+func (x *DeviceGetResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceGetResponse.ProtoReflect.Descriptor instead.
+func (*DeviceGetResponse) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *DeviceGetResponse) GetDevice() *DeviceInfo {
+	if x != nil {
+		return x.Device
+	}
+	return nil
+}
+
+type DeviceDiscoverRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceDiscoverRequest) Reset() {
+	*x = DeviceDiscoverRequest{}
+	mi := &file_stormd_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceDiscoverRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceDiscoverRequest) ProtoMessage() {}
+
+func (x *DeviceDiscoverRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceDiscoverRequest.ProtoReflect.Descriptor instead.
+func (*DeviceDiscoverRequest) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{59}
+}
+
+type DeviceDiscoverResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	DiscoveredCount uint32                 `protobuf:"varint,1,opt,name=discovered_count,json=discoveredCount,proto3" json:"discovered_count,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *DeviceDiscoverResponse) Reset() {
+	*x = DeviceDiscoverResponse{}
+	mi := &file_stormd_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceDiscoverResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceDiscoverResponse) ProtoMessage() {}
+
+func (x *DeviceDiscoverResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceDiscoverResponse.ProtoReflect.Descriptor instead.
+func (*DeviceDiscoverResponse) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *DeviceDiscoverResponse) GetDiscoveredCount() uint32 {
+	if x != nil {
+		return x.DiscoveredCount
+	}
+	return 0
+}
+
+type DeviceBindRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`         // device ID
+	Driver        string                 `protobuf:"bytes,2,opt,name=driver,proto3" json:"driver,omitempty"` // target driver e.g. "vfio-pci"
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceBindRequest) Reset() {
+	*x = DeviceBindRequest{}
+	mi := &file_stormd_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceBindRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceBindRequest) ProtoMessage() {}
+
+func (x *DeviceBindRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceBindRequest.ProtoReflect.Descriptor instead.
+func (*DeviceBindRequest) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *DeviceBindRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *DeviceBindRequest) GetDriver() string {
+	if x != nil {
+		return x.Driver
+	}
+	return ""
+}
+
+type DeviceBindResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceBindResponse) Reset() {
+	*x = DeviceBindResponse{}
+	mi := &file_stormd_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceBindResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceBindResponse) ProtoMessage() {}
+
+func (x *DeviceBindResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceBindResponse.ProtoReflect.Descriptor instead.
+func (*DeviceBindResponse) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *DeviceBindResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *DeviceBindResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type DeviceUnbindRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceUnbindRequest) Reset() {
+	*x = DeviceUnbindRequest{}
+	mi := &file_stormd_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceUnbindRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceUnbindRequest) ProtoMessage() {}
+
+func (x *DeviceUnbindRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceUnbindRequest.ProtoReflect.Descriptor instead.
+func (*DeviceUnbindRequest) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *DeviceUnbindRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type DeviceUnbindResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceUnbindResponse) Reset() {
+	*x = DeviceUnbindResponse{}
+	mi := &file_stormd_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceUnbindResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceUnbindResponse) ProtoMessage() {}
+
+func (x *DeviceUnbindResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceUnbindResponse.ProtoReflect.Descriptor instead.
+func (*DeviceUnbindResponse) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *DeviceUnbindResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *DeviceUnbindResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type DeviceClassListRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceClassListRequest) Reset() {
+	*x = DeviceClassListRequest{}
+	mi := &file_stormd_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceClassListRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceClassListRequest) ProtoMessage() {}
+
+func (x *DeviceClassListRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceClassListRequest.ProtoReflect.Descriptor instead.
+func (*DeviceClassListRequest) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{65}
+}
+
+type DeviceClassListResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Classes       []*DeviceClassInfo     `protobuf:"bytes,1,rep,name=classes,proto3" json:"classes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceClassListResponse) Reset() {
+	*x = DeviceClassListResponse{}
+	mi := &file_stormd_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceClassListResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceClassListResponse) ProtoMessage() {}
+
+func (x *DeviceClassListResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceClassListResponse.ProtoReflect.Descriptor instead.
+func (*DeviceClassListResponse) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *DeviceClassListResponse) GetClasses() []*DeviceClassInfo {
+	if x != nil {
+		return x.Classes
+	}
+	return nil
+}
+
+type DeviceClassCreateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DeviceClass   *DeviceClassInfo       `protobuf:"bytes,1,opt,name=device_class,json=deviceClass,proto3" json:"device_class,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceClassCreateRequest) Reset() {
+	*x = DeviceClassCreateRequest{}
+	mi := &file_stormd_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceClassCreateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceClassCreateRequest) ProtoMessage() {}
+
+func (x *DeviceClassCreateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceClassCreateRequest.ProtoReflect.Descriptor instead.
+func (*DeviceClassCreateRequest) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *DeviceClassCreateRequest) GetDeviceClass() *DeviceClassInfo {
+	if x != nil {
+		return x.DeviceClass
+	}
+	return nil
+}
+
+type DeviceClassCreateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceClassCreateResponse) Reset() {
+	*x = DeviceClassCreateResponse{}
+	mi := &file_stormd_proto_msgTypes[68]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceClassCreateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceClassCreateResponse) ProtoMessage() {}
+
+func (x *DeviceClassCreateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[68]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceClassCreateResponse.ProtoReflect.Descriptor instead.
+func (*DeviceClassCreateResponse) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{68}
+}
+
+func (x *DeviceClassCreateResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *DeviceClassCreateResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type DeviceClassDeleteRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceClassDeleteRequest) Reset() {
+	*x = DeviceClassDeleteRequest{}
+	mi := &file_stormd_proto_msgTypes[69]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceClassDeleteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceClassDeleteRequest) ProtoMessage() {}
+
+func (x *DeviceClassDeleteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[69]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceClassDeleteRequest.ProtoReflect.Descriptor instead.
+func (*DeviceClassDeleteRequest) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{69}
+}
+
+func (x *DeviceClassDeleteRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type DeviceClassDeleteResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceClassDeleteResponse) Reset() {
+	*x = DeviceClassDeleteResponse{}
+	mi := &file_stormd_proto_msgTypes[70]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceClassDeleteResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceClassDeleteResponse) ProtoMessage() {}
+
+func (x *DeviceClassDeleteResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[70]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceClassDeleteResponse.ProtoReflect.Descriptor instead.
+func (*DeviceClassDeleteResponse) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{70}
+}
+
+func (x *DeviceClassDeleteResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *DeviceClassDeleteResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+type DeviceAllocateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	PodId         string                 `protobuf:"bytes,1,opt,name=pod_id,json=podId,proto3" json:"pod_id,omitempty"`
+	Profile       string                 `protobuf:"bytes,2,opt,name=profile,proto3" json:"profile,omitempty"` // named profile (optional)
+	Requests      []*DeviceRequestEntry  `protobuf:"bytes,3,rep,name=requests,proto3" json:"requests,omitempty"`
+	Hugepages     *HugepagesConfig       `protobuf:"bytes,4,opt,name=hugepages,proto3" json:"hugepages,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceAllocateRequest) Reset() {
+	*x = DeviceAllocateRequest{}
+	mi := &file_stormd_proto_msgTypes[71]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceAllocateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceAllocateRequest) ProtoMessage() {}
+
+func (x *DeviceAllocateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[71]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceAllocateRequest.ProtoReflect.Descriptor instead.
+func (*DeviceAllocateRequest) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{71}
+}
+
+func (x *DeviceAllocateRequest) GetPodId() string {
+	if x != nil {
+		return x.PodId
+	}
+	return ""
+}
+
+func (x *DeviceAllocateRequest) GetProfile() string {
+	if x != nil {
+		return x.Profile
+	}
+	return ""
+}
+
+func (x *DeviceAllocateRequest) GetRequests() []*DeviceRequestEntry {
+	if x != nil {
+		return x.Requests
+	}
+	return nil
+}
+
+func (x *DeviceAllocateRequest) GetHugepages() *HugepagesConfig {
+	if x != nil {
+		return x.Hugepages
+	}
+	return nil
+}
+
+type DeviceAllocateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AllocationId  string                 `protobuf:"bytes,1,opt,name=allocation_id,json=allocationId,proto3" json:"allocation_id,omitempty"`
+	Devices       []*AllocatedDevice     `protobuf:"bytes,2,rep,name=devices,proto3" json:"devices,omitempty"`
+	Runtime       *DeviceRuntimeConfig   `protobuf:"bytes,3,opt,name=runtime,proto3" json:"runtime,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceAllocateResponse) Reset() {
+	*x = DeviceAllocateResponse{}
+	mi := &file_stormd_proto_msgTypes[72]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceAllocateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceAllocateResponse) ProtoMessage() {}
+
+func (x *DeviceAllocateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[72]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceAllocateResponse.ProtoReflect.Descriptor instead.
+func (*DeviceAllocateResponse) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{72}
+}
+
+func (x *DeviceAllocateResponse) GetAllocationId() string {
+	if x != nil {
+		return x.AllocationId
+	}
+	return ""
+}
+
+func (x *DeviceAllocateResponse) GetDevices() []*AllocatedDevice {
+	if x != nil {
+		return x.Devices
+	}
+	return nil
+}
+
+func (x *DeviceAllocateResponse) GetRuntime() *DeviceRuntimeConfig {
+	if x != nil {
+		return x.Runtime
+	}
+	return nil
+}
+
+type DeviceReleaseRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AllocationId  string                 `protobuf:"bytes,1,opt,name=allocation_id,json=allocationId,proto3" json:"allocation_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceReleaseRequest) Reset() {
+	*x = DeviceReleaseRequest{}
+	mi := &file_stormd_proto_msgTypes[73]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceReleaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceReleaseRequest) ProtoMessage() {}
+
+func (x *DeviceReleaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[73]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceReleaseRequest.ProtoReflect.Descriptor instead.
+func (*DeviceReleaseRequest) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{73}
+}
+
+func (x *DeviceReleaseRequest) GetAllocationId() string {
+	if x != nil {
+		return x.AllocationId
+	}
+	return ""
+}
+
+type DeviceReleaseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeviceReleaseResponse) Reset() {
+	*x = DeviceReleaseResponse{}
+	mi := &file_stormd_proto_msgTypes[74]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceReleaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceReleaseResponse) ProtoMessage() {}
+
+func (x *DeviceReleaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_stormd_proto_msgTypes[74]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceReleaseResponse.ProtoReflect.Descriptor instead.
+func (*DeviceReleaseResponse) Descriptor() ([]byte, []int) {
+	return file_stormd_proto_rawDescGZIP(), []int{74}
+}
+
+func (x *DeviceReleaseResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *DeviceReleaseResponse) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
 var File_stormd_proto protoreflect.FileDescriptor
 
 const file_stormd_proto_rawDesc = "" +
@@ -2760,7 +4312,7 @@ const file_stormd_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"L\n" +
 	"\x16WorkloadActionResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
-	"\amessage\x18\x02 \x01(\tR\amessage\"\xc2\x02\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xa0\x03\n" +
 	"\x15WorkloadCreateRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x14\n" +
@@ -2772,7 +4324,12 @@ const file_stormd_proto_rawDesc = "" +
 	"\x03env\x18\b \x03(\tR\x03env\x12)\n" +
 	"\x05ports\x18\t \x03(\v2\x13.stormd.PortMappingR\x05ports\x12-\n" +
 	"\avolumes\x18\n" +
-	" \x03(\v2\x13.stormd.VolumeMountR\avolumes\"m\n" +
+	" \x03(\v2\x13.stormd.VolumeMountR\avolumes\x12\x1e\n" +
+	"\n" +
+	"privileged\x18\v \x01(\bR\n" +
+	"privileged\x12\x18\n" +
+	"\adevices\x18\f \x03(\tR\adevices\x12\"\n" +
+	"\fcapabilities\x18\r \x03(\tR\fcapabilities\"m\n" +
 	"\vPortMapping\x12\x1b\n" +
 	"\thost_port\x18\x01 \x01(\rR\bhostPort\x12%\n" +
 	"\x0econtainer_port\x18\x02 \x01(\rR\rcontainerPort\x12\x1a\n" +
@@ -2924,7 +4481,111 @@ const file_stormd_proto_rawDesc = "" +
 	"\x18NetworkPolicyListRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\"N\n" +
 	"\x19NetworkPolicyListResponse\x121\n" +
-	"\bpolicies\x18\x01 \x03(\v2\x15.stormd.NetworkPolicyR\bpolicies2\xe9\r\n" +
+	"\bpolicies\x18\x01 \x03(\v2\x15.stormd.NetworkPolicyR\bpolicies\"\xae\x03\n" +
+	"\n" +
+	"DeviceInfo\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
+	"\x03bus\x18\x02 \x01(\tR\x03bus\x12\x18\n" +
+	"\aaddress\x18\x03 \x01(\tR\aaddress\x12\x1b\n" +
+	"\tpci_class\x18\x04 \x01(\tR\bpciClass\x12\x16\n" +
+	"\x06vendor\x18\x05 \x01(\tR\x06vendor\x12\x16\n" +
+	"\x06device\x18\x06 \x01(\tR\x06device\x12\x1f\n" +
+	"\viommu_group\x18\a \x01(\tR\n" +
+	"iommuGroup\x12\x1b\n" +
+	"\tnuma_node\x18\b \x01(\rR\bnumaNode\x12%\n" +
+	"\x0ecurrent_driver\x18\t \x01(\tR\rcurrentDriver\x12\x14\n" +
+	"\x05state\x18\n" +
+	" \x01(\tR\x05state\x12\x19\n" +
+	"\bbound_to\x18\v \x01(\tR\aboundTo\x12B\n" +
+	"\n" +
+	"attributes\x18\f \x03(\v2\".stormd.DeviceInfo.AttributesEntryR\n" +
+	"attributes\x1a=\n" +
+	"\x0fAttributesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"o\n" +
+	"\x0eDeviceSelector\x12\x10\n" +
+	"\x03bus\x18\x01 \x01(\tR\x03bus\x12\x1b\n" +
+	"\tpci_class\x18\x02 \x01(\tR\bpciClass\x12\x16\n" +
+	"\x06vendor\x18\x03 \x01(\tR\x06vendor\x12\x16\n" +
+	"\x06device\x18\x04 \x01(\tR\x06device\"n\n" +
+	"\fDeviceVolume\x12\x1b\n" +
+	"\thost_path\x18\x01 \x01(\tR\bhostPath\x12%\n" +
+	"\x0econtainer_path\x18\x02 \x01(\tR\rcontainerPath\x12\x1a\n" +
+	"\breadonly\x18\x03 \x01(\bR\breadonly\"\xd8\x01\n" +
+	"\x0fDeviceClassInfo\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x124\n" +
+	"\tselectors\x18\x02 \x03(\v2\x16.stormd.DeviceSelectorR\tselectors\x12'\n" +
+	"\x0fdriver_override\x18\x03 \x01(\tR\x0edriverOverride\x12\"\n" +
+	"\fcapabilities\x18\x04 \x03(\tR\fcapabilities\x12.\n" +
+	"\avolumes\x18\x05 \x03(\v2\x14.stormd.DeviceVolumeR\avolumes\"\x97\x01\n" +
+	"\x12DeviceRequestEntry\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12!\n" +
+	"\fdevice_class\x18\x02 \x01(\tR\vdeviceClass\x12\x14\n" +
+	"\x05count\x18\x03 \x01(\rR\x05count\x124\n" +
+	"\tselectors\x18\x04 \x03(\v2\x16.stormd.DeviceSelectorR\tselectors\";\n" +
+	"\x0fHugepagesConfig\x12\x12\n" +
+	"\x04size\x18\x01 \x01(\tR\x04size\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\tR\x05limit\"\xfa\x01\n" +
+	"\x13DeviceRuntimeConfig\x12!\n" +
+	"\fdevice_paths\x18\x01 \x03(\tR\vdevicePaths\x12,\n" +
+	"\x06mounts\x18\x02 \x03(\v2\x14.stormd.DeviceVolumeR\x06mounts\x12\"\n" +
+	"\fcapabilities\x18\x03 \x03(\tR\fcapabilities\x126\n" +
+	"\x03env\x18\x04 \x03(\v2$.stormd.DeviceRuntimeConfig.EnvEntryR\x03env\x1a6\n" +
+	"\bEnvEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"S\n" +
+	"\x0fAllocatedDevice\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
+	"\aaddress\x18\x02 \x01(\tR\aaddress\x12\x16\n" +
+	"\x06driver\x18\x03 \x01(\tR\x06driver\"\x13\n" +
+	"\x11DeviceListRequest\"B\n" +
+	"\x12DeviceListResponse\x12,\n" +
+	"\adevices\x18\x01 \x03(\v2\x12.stormd.DeviceInfoR\adevices\"\"\n" +
+	"\x10DeviceGetRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"?\n" +
+	"\x11DeviceGetResponse\x12*\n" +
+	"\x06device\x18\x01 \x01(\v2\x12.stormd.DeviceInfoR\x06device\"\x17\n" +
+	"\x15DeviceDiscoverRequest\"C\n" +
+	"\x16DeviceDiscoverResponse\x12)\n" +
+	"\x10discovered_count\x18\x01 \x01(\rR\x0fdiscoveredCount\";\n" +
+	"\x11DeviceBindRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x16\n" +
+	"\x06driver\x18\x02 \x01(\tR\x06driver\"H\n" +
+	"\x12DeviceBindResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"%\n" +
+	"\x13DeviceUnbindRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"J\n" +
+	"\x14DeviceUnbindResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\x18\n" +
+	"\x16DeviceClassListRequest\"L\n" +
+	"\x17DeviceClassListResponse\x121\n" +
+	"\aclasses\x18\x01 \x03(\v2\x17.stormd.DeviceClassInfoR\aclasses\"V\n" +
+	"\x18DeviceClassCreateRequest\x12:\n" +
+	"\fdevice_class\x18\x01 \x01(\v2\x17.stormd.DeviceClassInfoR\vdeviceClass\"O\n" +
+	"\x19DeviceClassCreateResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\".\n" +
+	"\x18DeviceClassDeleteRequest\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"O\n" +
+	"\x19DeviceClassDeleteResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage\"\xb7\x01\n" +
+	"\x15DeviceAllocateRequest\x12\x15\n" +
+	"\x06pod_id\x18\x01 \x01(\tR\x05podId\x12\x18\n" +
+	"\aprofile\x18\x02 \x01(\tR\aprofile\x126\n" +
+	"\brequests\x18\x03 \x03(\v2\x1a.stormd.DeviceRequestEntryR\brequests\x125\n" +
+	"\thugepages\x18\x04 \x01(\v2\x17.stormd.HugepagesConfigR\thugepages\"\xa7\x01\n" +
+	"\x16DeviceAllocateResponse\x12#\n" +
+	"\rallocation_id\x18\x01 \x01(\tR\fallocationId\x121\n" +
+	"\adevices\x18\x02 \x03(\v2\x17.stormd.AllocatedDeviceR\adevices\x125\n" +
+	"\aruntime\x18\x03 \x01(\v2\x1b.stormd.DeviceRuntimeConfigR\aruntime\";\n" +
+	"\x14DeviceReleaseRequest\x12#\n" +
+	"\rallocation_id\x18\x01 \x01(\tR\fallocationId\"K\n" +
+	"\x15DeviceReleaseResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
+	"\amessage\x18\x02 \x01(\tR\amessage2\xf8\x13\n" +
 	"\vStormDaemon\x12I\n" +
 	"\fWorkloadList\x12\x1b.stormd.WorkloadListRequest\x1a\x1c.stormd.WorkloadListResponse\x12N\n" +
 	"\rWorkloadStart\x12\x1d.stormd.WorkloadActionRequest\x1a\x1e.stormd.WorkloadActionResponse\x12M\n" +
@@ -2952,7 +4613,19 @@ const file_stormd_proto_rawDesc = "" +
 	"\x0fWorkloadRestore\x12\x1e.stormd.WorkloadRestoreRequest\x1a\x1f.stormd.WorkloadRestoreResponse\x12@\n" +
 	"\tVmMigrate\x12\x18.stormd.VmMigrateRequest\x1a\x19.stormd.VmMigrateResponse\x12C\n" +
 	"\n" +
-	"VmSnapshot\x12\x19.stormd.VmSnapshotRequest\x1a\x1a.stormd.VmSnapshotResponseB:Z8github.com/glennswest/mkube/pkg/stormbase/proto;stormdpbb\x06proto3"
+	"VmSnapshot\x12\x19.stormd.VmSnapshotRequest\x1a\x1a.stormd.VmSnapshotResponse\x12C\n" +
+	"\n" +
+	"DeviceList\x12\x19.stormd.DeviceListRequest\x1a\x1a.stormd.DeviceListResponse\x12@\n" +
+	"\tDeviceGet\x12\x18.stormd.DeviceGetRequest\x1a\x19.stormd.DeviceGetResponse\x12O\n" +
+	"\x0eDeviceDiscover\x12\x1d.stormd.DeviceDiscoverRequest\x1a\x1e.stormd.DeviceDiscoverResponse\x12C\n" +
+	"\n" +
+	"DeviceBind\x12\x19.stormd.DeviceBindRequest\x1a\x1a.stormd.DeviceBindResponse\x12I\n" +
+	"\fDeviceUnbind\x12\x1b.stormd.DeviceUnbindRequest\x1a\x1c.stormd.DeviceUnbindResponse\x12R\n" +
+	"\x0fDeviceClassList\x12\x1e.stormd.DeviceClassListRequest\x1a\x1f.stormd.DeviceClassListResponse\x12X\n" +
+	"\x11DeviceClassCreate\x12 .stormd.DeviceClassCreateRequest\x1a!.stormd.DeviceClassCreateResponse\x12X\n" +
+	"\x11DeviceClassDelete\x12 .stormd.DeviceClassDeleteRequest\x1a!.stormd.DeviceClassDeleteResponse\x12O\n" +
+	"\x0eDeviceAllocate\x12\x1d.stormd.DeviceAllocateRequest\x1a\x1e.stormd.DeviceAllocateResponse\x12L\n" +
+	"\rDeviceRelease\x12\x1c.stormd.DeviceReleaseRequest\x1a\x1d.stormd.DeviceReleaseResponseB:Z8github.com/glennswest/mkube/pkg/stormbase/proto;stormdpbb\x06proto3"
 
 var (
 	file_stormd_proto_rawDescOnce sync.Once
@@ -2966,7 +4639,7 @@ func file_stormd_proto_rawDescGZIP() []byte {
 	return file_stormd_proto_rawDescData
 }
 
-var file_stormd_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
+var file_stormd_proto_msgTypes = make([]protoimpl.MessageInfo, 77)
 var file_stormd_proto_goTypes = []any{
 	(*WorkloadListRequest)(nil),         // 0: stormd.WorkloadListRequest
 	(*WorkloadListResponse)(nil),        // 1: stormd.WorkloadListResponse
@@ -3015,6 +4688,36 @@ var file_stormd_proto_goTypes = []any{
 	(*NetworkPolicyDeleteResponse)(nil), // 44: stormd.NetworkPolicyDeleteResponse
 	(*NetworkPolicyListRequest)(nil),    // 45: stormd.NetworkPolicyListRequest
 	(*NetworkPolicyListResponse)(nil),   // 46: stormd.NetworkPolicyListResponse
+	(*DeviceInfo)(nil),                  // 47: stormd.DeviceInfo
+	(*DeviceSelector)(nil),              // 48: stormd.DeviceSelector
+	(*DeviceVolume)(nil),                // 49: stormd.DeviceVolume
+	(*DeviceClassInfo)(nil),             // 50: stormd.DeviceClassInfo
+	(*DeviceRequestEntry)(nil),          // 51: stormd.DeviceRequestEntry
+	(*HugepagesConfig)(nil),             // 52: stormd.HugepagesConfig
+	(*DeviceRuntimeConfig)(nil),         // 53: stormd.DeviceRuntimeConfig
+	(*AllocatedDevice)(nil),             // 54: stormd.AllocatedDevice
+	(*DeviceListRequest)(nil),           // 55: stormd.DeviceListRequest
+	(*DeviceListResponse)(nil),          // 56: stormd.DeviceListResponse
+	(*DeviceGetRequest)(nil),            // 57: stormd.DeviceGetRequest
+	(*DeviceGetResponse)(nil),           // 58: stormd.DeviceGetResponse
+	(*DeviceDiscoverRequest)(nil),       // 59: stormd.DeviceDiscoverRequest
+	(*DeviceDiscoverResponse)(nil),      // 60: stormd.DeviceDiscoverResponse
+	(*DeviceBindRequest)(nil),           // 61: stormd.DeviceBindRequest
+	(*DeviceBindResponse)(nil),          // 62: stormd.DeviceBindResponse
+	(*DeviceUnbindRequest)(nil),         // 63: stormd.DeviceUnbindRequest
+	(*DeviceUnbindResponse)(nil),        // 64: stormd.DeviceUnbindResponse
+	(*DeviceClassListRequest)(nil),      // 65: stormd.DeviceClassListRequest
+	(*DeviceClassListResponse)(nil),     // 66: stormd.DeviceClassListResponse
+	(*DeviceClassCreateRequest)(nil),    // 67: stormd.DeviceClassCreateRequest
+	(*DeviceClassCreateResponse)(nil),   // 68: stormd.DeviceClassCreateResponse
+	(*DeviceClassDeleteRequest)(nil),    // 69: stormd.DeviceClassDeleteRequest
+	(*DeviceClassDeleteResponse)(nil),   // 70: stormd.DeviceClassDeleteResponse
+	(*DeviceAllocateRequest)(nil),       // 71: stormd.DeviceAllocateRequest
+	(*DeviceAllocateResponse)(nil),      // 72: stormd.DeviceAllocateResponse
+	(*DeviceReleaseRequest)(nil),        // 73: stormd.DeviceReleaseRequest
+	(*DeviceReleaseResponse)(nil),       // 74: stormd.DeviceReleaseResponse
+	nil,                                 // 75: stormd.DeviceInfo.AttributesEntry
+	nil,                                 // 76: stormd.DeviceRuntimeConfig.EnvEntry
 }
 var file_stormd_proto_depIdxs = []int32{
 	2,  // 0: stormd.WorkloadListResponse.workloads:type_name -> stormd.WorkloadInfo
@@ -3028,57 +4731,91 @@ var file_stormd_proto_depIdxs = []int32{
 	40, // 8: stormd.NetworkPolicy.egress_rules:type_name -> stormd.NetworkPolicyRule
 	39, // 9: stormd.NetworkPolicyApplyRequest.policy:type_name -> stormd.NetworkPolicy
 	39, // 10: stormd.NetworkPolicyListResponse.policies:type_name -> stormd.NetworkPolicy
-	0,  // 11: stormd.StormDaemon.WorkloadList:input_type -> stormd.WorkloadListRequest
-	3,  // 12: stormd.StormDaemon.WorkloadStart:input_type -> stormd.WorkloadActionRequest
-	3,  // 13: stormd.StormDaemon.WorkloadStop:input_type -> stormd.WorkloadActionRequest
-	3,  // 14: stormd.StormDaemon.WorkloadRemove:input_type -> stormd.WorkloadActionRequest
-	8,  // 15: stormd.StormDaemon.WorkloadLogs:input_type -> stormd.WorkloadLogsRequest
-	10, // 16: stormd.StormDaemon.NodeStatus:input_type -> stormd.NodeStatusRequest
-	12, // 17: stormd.StormDaemon.ImagePull:input_type -> stormd.ImagePullRequest
-	14, // 18: stormd.StormDaemon.ImageList:input_type -> stormd.ImageListRequest
-	5,  // 19: stormd.StormDaemon.WorkloadCreate:input_type -> stormd.WorkloadCreateRequest
-	18, // 20: stormd.StormDaemon.NodeDrain:input_type -> stormd.NodeDrainRequest
-	20, // 21: stormd.StormDaemon.NodeCordon:input_type -> stormd.NodeCordonRequest
-	20, // 22: stormd.StormDaemon.NodeUncordon:input_type -> stormd.NodeCordonRequest
-	16, // 23: stormd.StormDaemon.ImageEnsure:input_type -> stormd.ImageEnsureRequest
-	22, // 24: stormd.StormDaemon.MeshUpdate:input_type -> stormd.MeshUpdateRequest
-	25, // 25: stormd.StormDaemon.ServiceUpdate:input_type -> stormd.ServiceUpdateRequest
-	29, // 26: stormd.StormDaemon.ClusterStatus:input_type -> stormd.ClusterStatusRequest
-	41, // 27: stormd.StormDaemon.NetworkPolicyApply:input_type -> stormd.NetworkPolicyApplyRequest
-	43, // 28: stormd.StormDaemon.NetworkPolicyDelete:input_type -> stormd.NetworkPolicyDeleteRequest
-	45, // 29: stormd.StormDaemon.NetworkPolicyList:input_type -> stormd.NetworkPolicyListRequest
-	31, // 30: stormd.StormDaemon.WorkloadCheckpoint:input_type -> stormd.WorkloadCheckpointRequest
-	33, // 31: stormd.StormDaemon.WorkloadRestore:input_type -> stormd.WorkloadRestoreRequest
-	35, // 32: stormd.StormDaemon.VmMigrate:input_type -> stormd.VmMigrateRequest
-	37, // 33: stormd.StormDaemon.VmSnapshot:input_type -> stormd.VmSnapshotRequest
-	1,  // 34: stormd.StormDaemon.WorkloadList:output_type -> stormd.WorkloadListResponse
-	4,  // 35: stormd.StormDaemon.WorkloadStart:output_type -> stormd.WorkloadActionResponse
-	4,  // 36: stormd.StormDaemon.WorkloadStop:output_type -> stormd.WorkloadActionResponse
-	4,  // 37: stormd.StormDaemon.WorkloadRemove:output_type -> stormd.WorkloadActionResponse
-	9,  // 38: stormd.StormDaemon.WorkloadLogs:output_type -> stormd.LogEntry
-	11, // 39: stormd.StormDaemon.NodeStatus:output_type -> stormd.NodeStatusResponse
-	13, // 40: stormd.StormDaemon.ImagePull:output_type -> stormd.ImagePullResponse
-	15, // 41: stormd.StormDaemon.ImageList:output_type -> stormd.ImageListResponse
-	4,  // 42: stormd.StormDaemon.WorkloadCreate:output_type -> stormd.WorkloadActionResponse
-	19, // 43: stormd.StormDaemon.NodeDrain:output_type -> stormd.NodeDrainResponse
-	21, // 44: stormd.StormDaemon.NodeCordon:output_type -> stormd.NodeCordonResponse
-	21, // 45: stormd.StormDaemon.NodeUncordon:output_type -> stormd.NodeCordonResponse
-	17, // 46: stormd.StormDaemon.ImageEnsure:output_type -> stormd.ImageEnsureResponse
-	24, // 47: stormd.StormDaemon.MeshUpdate:output_type -> stormd.MeshUpdateResponse
-	28, // 48: stormd.StormDaemon.ServiceUpdate:output_type -> stormd.ServiceUpdateResponse
-	30, // 49: stormd.StormDaemon.ClusterStatus:output_type -> stormd.ClusterStatusResponse
-	42, // 50: stormd.StormDaemon.NetworkPolicyApply:output_type -> stormd.NetworkPolicyApplyResponse
-	44, // 51: stormd.StormDaemon.NetworkPolicyDelete:output_type -> stormd.NetworkPolicyDeleteResponse
-	46, // 52: stormd.StormDaemon.NetworkPolicyList:output_type -> stormd.NetworkPolicyListResponse
-	32, // 53: stormd.StormDaemon.WorkloadCheckpoint:output_type -> stormd.WorkloadCheckpointResponse
-	34, // 54: stormd.StormDaemon.WorkloadRestore:output_type -> stormd.WorkloadRestoreResponse
-	36, // 55: stormd.StormDaemon.VmMigrate:output_type -> stormd.VmMigrateResponse
-	38, // 56: stormd.StormDaemon.VmSnapshot:output_type -> stormd.VmSnapshotResponse
-	34, // [34:57] is the sub-list for method output_type
-	11, // [11:34] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	75, // 11: stormd.DeviceInfo.attributes:type_name -> stormd.DeviceInfo.AttributesEntry
+	48, // 12: stormd.DeviceClassInfo.selectors:type_name -> stormd.DeviceSelector
+	49, // 13: stormd.DeviceClassInfo.volumes:type_name -> stormd.DeviceVolume
+	48, // 14: stormd.DeviceRequestEntry.selectors:type_name -> stormd.DeviceSelector
+	49, // 15: stormd.DeviceRuntimeConfig.mounts:type_name -> stormd.DeviceVolume
+	76, // 16: stormd.DeviceRuntimeConfig.env:type_name -> stormd.DeviceRuntimeConfig.EnvEntry
+	47, // 17: stormd.DeviceListResponse.devices:type_name -> stormd.DeviceInfo
+	47, // 18: stormd.DeviceGetResponse.device:type_name -> stormd.DeviceInfo
+	50, // 19: stormd.DeviceClassListResponse.classes:type_name -> stormd.DeviceClassInfo
+	50, // 20: stormd.DeviceClassCreateRequest.device_class:type_name -> stormd.DeviceClassInfo
+	51, // 21: stormd.DeviceAllocateRequest.requests:type_name -> stormd.DeviceRequestEntry
+	52, // 22: stormd.DeviceAllocateRequest.hugepages:type_name -> stormd.HugepagesConfig
+	54, // 23: stormd.DeviceAllocateResponse.devices:type_name -> stormd.AllocatedDevice
+	53, // 24: stormd.DeviceAllocateResponse.runtime:type_name -> stormd.DeviceRuntimeConfig
+	0,  // 25: stormd.StormDaemon.WorkloadList:input_type -> stormd.WorkloadListRequest
+	3,  // 26: stormd.StormDaemon.WorkloadStart:input_type -> stormd.WorkloadActionRequest
+	3,  // 27: stormd.StormDaemon.WorkloadStop:input_type -> stormd.WorkloadActionRequest
+	3,  // 28: stormd.StormDaemon.WorkloadRemove:input_type -> stormd.WorkloadActionRequest
+	8,  // 29: stormd.StormDaemon.WorkloadLogs:input_type -> stormd.WorkloadLogsRequest
+	10, // 30: stormd.StormDaemon.NodeStatus:input_type -> stormd.NodeStatusRequest
+	12, // 31: stormd.StormDaemon.ImagePull:input_type -> stormd.ImagePullRequest
+	14, // 32: stormd.StormDaemon.ImageList:input_type -> stormd.ImageListRequest
+	5,  // 33: stormd.StormDaemon.WorkloadCreate:input_type -> stormd.WorkloadCreateRequest
+	18, // 34: stormd.StormDaemon.NodeDrain:input_type -> stormd.NodeDrainRequest
+	20, // 35: stormd.StormDaemon.NodeCordon:input_type -> stormd.NodeCordonRequest
+	20, // 36: stormd.StormDaemon.NodeUncordon:input_type -> stormd.NodeCordonRequest
+	16, // 37: stormd.StormDaemon.ImageEnsure:input_type -> stormd.ImageEnsureRequest
+	22, // 38: stormd.StormDaemon.MeshUpdate:input_type -> stormd.MeshUpdateRequest
+	25, // 39: stormd.StormDaemon.ServiceUpdate:input_type -> stormd.ServiceUpdateRequest
+	29, // 40: stormd.StormDaemon.ClusterStatus:input_type -> stormd.ClusterStatusRequest
+	41, // 41: stormd.StormDaemon.NetworkPolicyApply:input_type -> stormd.NetworkPolicyApplyRequest
+	43, // 42: stormd.StormDaemon.NetworkPolicyDelete:input_type -> stormd.NetworkPolicyDeleteRequest
+	45, // 43: stormd.StormDaemon.NetworkPolicyList:input_type -> stormd.NetworkPolicyListRequest
+	31, // 44: stormd.StormDaemon.WorkloadCheckpoint:input_type -> stormd.WorkloadCheckpointRequest
+	33, // 45: stormd.StormDaemon.WorkloadRestore:input_type -> stormd.WorkloadRestoreRequest
+	35, // 46: stormd.StormDaemon.VmMigrate:input_type -> stormd.VmMigrateRequest
+	37, // 47: stormd.StormDaemon.VmSnapshot:input_type -> stormd.VmSnapshotRequest
+	55, // 48: stormd.StormDaemon.DeviceList:input_type -> stormd.DeviceListRequest
+	57, // 49: stormd.StormDaemon.DeviceGet:input_type -> stormd.DeviceGetRequest
+	59, // 50: stormd.StormDaemon.DeviceDiscover:input_type -> stormd.DeviceDiscoverRequest
+	61, // 51: stormd.StormDaemon.DeviceBind:input_type -> stormd.DeviceBindRequest
+	63, // 52: stormd.StormDaemon.DeviceUnbind:input_type -> stormd.DeviceUnbindRequest
+	65, // 53: stormd.StormDaemon.DeviceClassList:input_type -> stormd.DeviceClassListRequest
+	67, // 54: stormd.StormDaemon.DeviceClassCreate:input_type -> stormd.DeviceClassCreateRequest
+	69, // 55: stormd.StormDaemon.DeviceClassDelete:input_type -> stormd.DeviceClassDeleteRequest
+	71, // 56: stormd.StormDaemon.DeviceAllocate:input_type -> stormd.DeviceAllocateRequest
+	73, // 57: stormd.StormDaemon.DeviceRelease:input_type -> stormd.DeviceReleaseRequest
+	1,  // 58: stormd.StormDaemon.WorkloadList:output_type -> stormd.WorkloadListResponse
+	4,  // 59: stormd.StormDaemon.WorkloadStart:output_type -> stormd.WorkloadActionResponse
+	4,  // 60: stormd.StormDaemon.WorkloadStop:output_type -> stormd.WorkloadActionResponse
+	4,  // 61: stormd.StormDaemon.WorkloadRemove:output_type -> stormd.WorkloadActionResponse
+	9,  // 62: stormd.StormDaemon.WorkloadLogs:output_type -> stormd.LogEntry
+	11, // 63: stormd.StormDaemon.NodeStatus:output_type -> stormd.NodeStatusResponse
+	13, // 64: stormd.StormDaemon.ImagePull:output_type -> stormd.ImagePullResponse
+	15, // 65: stormd.StormDaemon.ImageList:output_type -> stormd.ImageListResponse
+	4,  // 66: stormd.StormDaemon.WorkloadCreate:output_type -> stormd.WorkloadActionResponse
+	19, // 67: stormd.StormDaemon.NodeDrain:output_type -> stormd.NodeDrainResponse
+	21, // 68: stormd.StormDaemon.NodeCordon:output_type -> stormd.NodeCordonResponse
+	21, // 69: stormd.StormDaemon.NodeUncordon:output_type -> stormd.NodeCordonResponse
+	17, // 70: stormd.StormDaemon.ImageEnsure:output_type -> stormd.ImageEnsureResponse
+	24, // 71: stormd.StormDaemon.MeshUpdate:output_type -> stormd.MeshUpdateResponse
+	28, // 72: stormd.StormDaemon.ServiceUpdate:output_type -> stormd.ServiceUpdateResponse
+	30, // 73: stormd.StormDaemon.ClusterStatus:output_type -> stormd.ClusterStatusResponse
+	42, // 74: stormd.StormDaemon.NetworkPolicyApply:output_type -> stormd.NetworkPolicyApplyResponse
+	44, // 75: stormd.StormDaemon.NetworkPolicyDelete:output_type -> stormd.NetworkPolicyDeleteResponse
+	46, // 76: stormd.StormDaemon.NetworkPolicyList:output_type -> stormd.NetworkPolicyListResponse
+	32, // 77: stormd.StormDaemon.WorkloadCheckpoint:output_type -> stormd.WorkloadCheckpointResponse
+	34, // 78: stormd.StormDaemon.WorkloadRestore:output_type -> stormd.WorkloadRestoreResponse
+	36, // 79: stormd.StormDaemon.VmMigrate:output_type -> stormd.VmMigrateResponse
+	38, // 80: stormd.StormDaemon.VmSnapshot:output_type -> stormd.VmSnapshotResponse
+	56, // 81: stormd.StormDaemon.DeviceList:output_type -> stormd.DeviceListResponse
+	58, // 82: stormd.StormDaemon.DeviceGet:output_type -> stormd.DeviceGetResponse
+	60, // 83: stormd.StormDaemon.DeviceDiscover:output_type -> stormd.DeviceDiscoverResponse
+	62, // 84: stormd.StormDaemon.DeviceBind:output_type -> stormd.DeviceBindResponse
+	64, // 85: stormd.StormDaemon.DeviceUnbind:output_type -> stormd.DeviceUnbindResponse
+	66, // 86: stormd.StormDaemon.DeviceClassList:output_type -> stormd.DeviceClassListResponse
+	68, // 87: stormd.StormDaemon.DeviceClassCreate:output_type -> stormd.DeviceClassCreateResponse
+	70, // 88: stormd.StormDaemon.DeviceClassDelete:output_type -> stormd.DeviceClassDeleteResponse
+	72, // 89: stormd.StormDaemon.DeviceAllocate:output_type -> stormd.DeviceAllocateResponse
+	74, // 90: stormd.StormDaemon.DeviceRelease:output_type -> stormd.DeviceReleaseResponse
+	58, // [58:91] is the sub-list for method output_type
+	25, // [25:58] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_stormd_proto_init() }
@@ -3092,7 +4829,7 @@ func file_stormd_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_stormd_proto_rawDesc), len(file_stormd_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   47,
+			NumMessages:   77,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
