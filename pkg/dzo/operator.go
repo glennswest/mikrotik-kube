@@ -342,8 +342,11 @@ func (o *Operator) createMicroDNSInstance(ctx context.Context, zoneName, network
 	containerName := fmt.Sprintf("mdns-%s", safeName)
 	vethName := fmt.Sprintf("veth-mdns-%s", truncate(safeName, 10))
 
-	// Allocate IP via network manager
-	ip, _, _, err := o.netMgr.AllocateInterface(ctx, vethName, containerName, networkName, "")
+	// Use the computed DNS server IP (broadcast - 3) as a static allocation
+	// so every MicroDNS instance gets a well-known, predictable address.
+	staticIP := netDef.ComputedDNSServerIP()
+
+	ip, _, _, err := o.netMgr.AllocateInterface(ctx, vethName, containerName, networkName, staticIP)
 	if err != nil {
 		return nil, fmt.Errorf("allocating interface: %w", err)
 	}

@@ -65,6 +65,51 @@ registry:
 			fmt.Fprintf(&fwdZones, "    %q = [\"%s:53\"]\n", peer.DNS.Zone, peer.DNS.Server)
 		}
 
+		var dhcpSection strings.Builder
+		if net.DNS.DHCP.Enabled {
+			leaseTime := net.DNS.DHCP.LeaseTime
+			if leaseTime == 0 {
+				leaseTime = 3600
+			}
+			fmt.Fprintf(&dhcpSection, "\n[dhcp.v4]\nenabled = true\ninterface = \"eth0\"\n\n")
+			fmt.Fprintf(&dhcpSection, "[[dhcp.v4.pools]]\n")
+			fmt.Fprintf(&dhcpSection, "range_start = %q\n", net.DNS.DHCP.RangeStart)
+			fmt.Fprintf(&dhcpSection, "range_end = %q\n", net.DNS.DHCP.RangeEnd)
+			fmt.Fprintf(&dhcpSection, "subnet = %q\n", net.CIDR)
+			fmt.Fprintf(&dhcpSection, "gateway = %q\n", net.Gateway)
+			fmt.Fprintf(&dhcpSection, "dns = [%q]\n", net.DNS.Server)
+			fmt.Fprintf(&dhcpSection, "domain = %q\n", net.DNS.Zone)
+			fmt.Fprintf(&dhcpSection, "lease_time_secs = %d\n", leaseTime)
+			if net.DNS.DHCP.NextServer != "" {
+				fmt.Fprintf(&dhcpSection, "next_server = %q\n", net.DNS.DHCP.NextServer)
+			}
+			if net.DNS.DHCP.BootFile != "" {
+				fmt.Fprintf(&dhcpSection, "boot_file = %q\n", net.DNS.DHCP.BootFile)
+			}
+			for _, r := range net.DNS.DHCP.Reservations {
+				fmt.Fprintf(&dhcpSection, "\n[[dhcp.v4.reservations]]\n")
+				fmt.Fprintf(&dhcpSection, "mac = %q\n", r.MAC)
+				fmt.Fprintf(&dhcpSection, "ip = %q\n", r.IP)
+				if r.Hostname != "" {
+					fmt.Fprintf(&dhcpSection, "hostname = %q\n", r.Hostname)
+				}
+			}
+			// Build reverse zone from CIDR: 192.168.11.0/24 -> 11.168.192.in-addr.arpa
+			reverseZone := ""
+			if cidrParts := strings.Split(net.CIDR, "/"); len(cidrParts) == 2 {
+				octets := strings.Split(cidrParts[0], ".")
+				if len(octets) == 4 {
+					reverseZone = fmt.Sprintf("%s.%s.%s.in-addr.arpa", octets[2], octets[1], octets[0])
+				}
+			}
+			fmt.Fprintf(&dhcpSection, "\n[dhcp.dns_registration]\n")
+			fmt.Fprintf(&dhcpSection, "enabled = true\n")
+			fmt.Fprintf(&dhcpSection, "forward_zone = %q\n", net.DNS.Zone)
+			fmt.Fprintf(&dhcpSection, "reverse_zone_v4 = %q\n", reverseZone)
+			fmt.Fprintf(&dhcpSection, "reverse_zone_v6 = \"\"\n")
+			fmt.Fprintf(&dhcpSection, "default_ttl = 300\n")
+		}
+
 		toml := fmt.Sprintf(`[instance]
 id = "microdns-%s"
 mode = "standalone"
@@ -90,7 +135,7 @@ path = "./data/microdns.redb"
 [logging]
 level = "info"
 format = "text"
-`, net.Name, net.DNS.Zone, fwdZones.String())
+%s`, net.Name, net.DNS.Zone, fwdZones.String(), dhcpSection.String())
 
 		cms = append(cms, &corev1.ConfigMap{
 			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"},

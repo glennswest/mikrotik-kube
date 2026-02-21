@@ -256,3 +256,42 @@ func TestAllocateStaticUnknownPool(t *testing.T) {
 		t.Error("expected error for unknown pool")
 	}
 }
+
+func TestMaxUsableIP(t *testing.T) {
+	tests := []struct {
+		cidr string
+		want string
+	}{
+		{"192.168.11.0/24", "192.168.11.254"},
+		{"192.168.200.0/24", "192.168.200.254"},
+		{"10.0.0.0/24", "10.0.0.254"},
+		{"172.20.0.0/30", "172.20.0.2"},   // 4 IPs: .0 net, .1, .2, .3 bcast → max usable = .2
+		{"10.0.0.0/16", "10.0.255.254"},
+	}
+	for _, tt := range tests {
+		_, subnet, _ := net.ParseCIDR(tt.cidr)
+		got := MaxUsableIP(subnet).String()
+		if got != tt.want {
+			t.Errorf("MaxUsableIP(%s) = %s, want %s", tt.cidr, got, tt.want)
+		}
+	}
+}
+
+func TestDNSServerIP(t *testing.T) {
+	tests := []struct {
+		cidr string
+		want string
+	}{
+		{"192.168.11.0/24", "192.168.11.252"},  // .255 bcast, .254 max, .252 = max-2
+		{"192.168.200.0/24", "192.168.200.252"},
+		{"192.168.1.0/24", "192.168.1.252"},
+		{"10.0.0.0/16", "10.0.255.252"},
+	}
+	for _, tt := range tests {
+		_, subnet, _ := net.ParseCIDR(tt.cidr)
+		got := DNSServerIP(subnet).String()
+		if got != tt.want {
+			t.Errorf("DNSServerIP(%s) = %s, want %s", tt.cidr, got, tt.want)
+		}
+	}
+}

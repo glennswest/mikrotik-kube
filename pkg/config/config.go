@@ -2,10 +2,13 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 
 	"github.com/spf13/pflag"
 	"gopkg.in/yaml.v3"
+
+	"github.com/glennswest/mkube/pkg/network/ipam"
 )
 
 // Config is the top-level configuration for mkube.
@@ -24,6 +27,7 @@ type Config struct {
 	Namespace  NamespaceConfig `yaml:"namespace"`
 	Logging    LoggingConfig   `yaml:"logging"`
 	NATS       NATSConfig      `yaml:"nats"`
+	BMH        BMHConfig       `yaml:"bmh"`
 
 	// Deprecated: single-network config for backward compatibility.
 	// If present and Networks is empty, it is migrated into Networks.
@@ -56,6 +60,13 @@ type NATSConfig struct {
 	Replicas int    `yaml:"replicas"` // 1 for single-node, 3 for cluster
 }
 
+// BMHConfig configures BareMetalHost management.
+type BMHConfig struct {
+	PXEManagerURL string `yaml:"pxeManagerURL"` // default: http://pxe.g10.lo:8080
+	DHCPLeaseURL  string `yaml:"dhcpLeaseURL"`  // default: http://dns.g11.lo:8080
+	WatchInterval int    `yaml:"watchInterval"`  // seconds, default: 30
+}
+
 // NamespaceConfig configures the namespace manager.
 type NamespaceConfig struct {
 	StatePath   string `yaml:"statePath"`   // e.g. "/etc/mkube/namespace-state.yaml"
@@ -74,9 +85,42 @@ type NetworkDef struct {
 
 // DNSConfig specifies the MicroDNS instance for a network.
 type DNSConfig struct {
-	Endpoint string `yaml:"endpoint"` // e.g. "http://192.168.200.199:8080"
-	Zone     string `yaml:"zone"`     // e.g. "gt.lo"
-	Server   string `yaml:"server"`   // DNS server IP for containers, e.g. "192.168.200.199"
+	Endpoint string     `yaml:"endpoint"` // e.g. "http://192.168.200.199:8080"
+	Zone     string     `yaml:"zone"`     // e.g. "gt.lo"
+	Server   string     `yaml:"server"`   // DNS server IP for containers, e.g. "192.168.200.199"
+	DHCP     DHCPConfig `yaml:"dhcp"`     // DHCP server config for this network
+}
+
+// DHCPConfig specifies DHCP settings for a MicroDNS instance.
+type DHCPConfig struct {
+	Enabled      bool              `yaml:"enabled"`
+	RangeStart   string            `yaml:"rangeStart"`   // e.g. "192.168.11.10"
+	RangeEnd     string            `yaml:"rangeEnd"`     // e.g. "192.168.11.200"
+	LeaseTime    int               `yaml:"leaseTime"`    // seconds, default 3600
+	NextServer   string            `yaml:"nextServer"`   // PXE server IP
+	BootFile     string            `yaml:"bootFile"`     // PXE boot file
+	Reservations []DHCPReservation `yaml:"reservations"`
+}
+
+// DHCPReservation is a static DHCP lease for a known MAC address.
+type DHCPReservation struct {
+	MAC      string `yaml:"mac"`
+	IP       string `yaml:"ip"`
+	Hostname string `yaml:"hostname"`
+}
+
+// ComputedDNSServerIP derives the MicroDNS static IP from the network CIDR.
+// It returns broadcast - 3 (max usable - 2), leaving room for routers.
+// If the CIDR cannot be parsed, it falls back to the configured Server field.
+func (n *NetworkDef) ComputedDNSServerIP() string {
+	if n.CIDR == "" {
+		return n.DNS.Server
+	}
+	_, subnet, err := net.ParseCIDR(n.CIDR)
+	if err != nil {
+		return n.DNS.Server
+	}
+	return ipam.DNSServerIP(subnet).String()
 }
 
 // legacyNetworkConfig is the old single-network format, kept for backward compat.
@@ -215,6 +259,11 @@ func Load(flags *pflag.FlagSet) (*Config, error) {
 			Enabled:    true,
 			ListenAddr: ":5000",
 			StorePath:  "/raid1/registry",
+		},
+		BMH: BMHConfig{
+			PXEManagerURL: "http://pxe.g10.lo:8080",
+			DHCPLeaseURL:  "http://dns.g11.lo:8080",
+			WatchInterval: 30,
 		},
 	}
 

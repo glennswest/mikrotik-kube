@@ -40,6 +40,15 @@ func (p *MicroKubeProvider) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/v1/namespaces/{namespace}/configmaps/{name}", p.handlePatchConfigMap)
 	mux.HandleFunc("DELETE /api/v1/namespaces/{namespace}/configmaps/{name}", p.handleDeleteConfigMap)
 
+	// BareMetalHosts
+	mux.HandleFunc("GET /api/v1/baremetalhosts", p.handleListAllBMH)
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/baremetalhosts", p.handleListNamespacedBMH)
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/baremetalhosts/{name}", p.handleGetBMH)
+	mux.HandleFunc("POST /api/v1/namespaces/{namespace}/baremetalhosts", p.handleCreateBMH)
+	mux.HandleFunc("PUT /api/v1/namespaces/{namespace}/baremetalhosts/{name}", p.handleUpdateBMH)
+	mux.HandleFunc("PATCH /api/v1/namespaces/{namespace}/baremetalhosts/{name}", p.handlePatchBMH)
+	mux.HandleFunc("DELETE /api/v1/namespaces/{namespace}/baremetalhosts/{name}", p.handleDeleteBMH)
+
 	// Namespaces — registered by namespace.Manager.RegisterRoutes()
 
 	// Nodes
@@ -474,6 +483,13 @@ func (p *MicroKubeProvider) handleAPIResources(w http.ResponseWriter, r *http.Re
 				Kind:       "Service",
 				Verbs:      metav1.Verbs{"get", "list"},
 			},
+			{
+				Name:       "baremetalhosts",
+				Namespaced: true,
+				Kind:       "BareMetalHost",
+				ShortNames: []string{"bmh"},
+				Verbs:      metav1.Verbs{"get", "list", "create", "update", "patch", "delete"},
+			},
 		},
 	})
 }
@@ -653,6 +669,9 @@ func (p *MicroKubeProvider) handleListNamespaces(w http.ResponseWriter, r *http.
 	}
 	for _, cm := range p.configMaps {
 		nsSet[cm.Namespace] = true
+	}
+	for _, bmh := range p.bareMetalHosts {
+		nsSet[bmh.Namespace] = true
 	}
 	// Always include "default"
 	nsSet["default"] = true

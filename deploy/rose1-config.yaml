@@ -30,17 +30,105 @@ networks:
     cidr: "192.168.10.0/24"
     gateway: "192.168.10.1"
     dns:
-      endpoint: "http://192.168.10.199:8080"
+      endpoint: "http://192.168.10.252:8080"
       zone: "g10.lo"
-      server: "192.168.10.199"
+      server: "192.168.10.252"
+      dhcp:
+        enabled: true
+        rangeStart: "192.168.10.10"
+        rangeEnd: "192.168.10.210"
+        leaseTime: 600
+        nextServer: "192.168.10.9"
+        bootFile: "undionly.kpxe"
+        reservations:
+          - mac: "AC:1F:6B:8A:A7:9C"
+            ip: "192.168.10.10"
+            hostname: "server1"
+          - mac: "F4:52:14:84:B7:E0"
+            ip: "192.168.10.20"
+            hostname: "server1b"
+          - mac: "AC:1F:6B:8B:11:5D"
+            ip: "192.168.10.11"
+            hostname: "server2"
+          - mac: "F4:52:14:84:BC:C0"
+            ip: "192.168.10.21"
+            hostname: "server2b"
+          - mac: "AC:1F:6B:8A:A4:5C"
+            ip: "192.168.10.12"
+            hostname: "server3"
+          - mac: "F4:52:14:84:86:F0"
+            ip: "192.168.10.22"
+            hostname: "server3b"
+          - mac: "AC:1F:6B:8A:9B:E2"
+            ip: "192.168.10.13"
+            hostname: "server4"
+          - mac: "F4:52:14:84:5F:A0"
+            ip: "192.168.10.23"
+            hostname: "server4b"
+          - mac: "AC:1F:6B:8A:A3:1A"
+            ip: "192.168.10.14"
+            hostname: "server5"
+          - mac: "F4:52:14:84:6F:F0"
+            ip: "192.168.10.24"
+            hostname: "server5b"
+          - mac: "AC:1F:6B:8D:90:13"
+            ip: "192.168.10.15"
+            hostname: "server6"
+          - mac: "F4:52:14:84:B7:D0"
+            ip: "192.168.10.25"
+            hostname: "server6b"
+          - mac: "00:00:00:00:00:00"
+            ip: "192.168.10.16"
+            hostname: "server7"
+          - mac: "00:00:00:00:00:01"
+            ip: "192.168.10.26"
+            hostname: "server7b"
+          - mac: "AC:1F:6B:8A:A3:96"
+            ip: "192.168.10.17"
+            hostname: "server8"
+          - mac: "F4:52:14:84:AE:30"
+            ip: "192.168.10.27"
+            hostname: "server8b"
   - name: g11
     bridge: bridge-boot
     cidr: "192.168.11.0/24"
     gateway: "192.168.11.1"
     dns:
-      endpoint: "http://192.168.11.199:8080"
+      endpoint: "http://192.168.11.252:8080"
       zone: "g11.lo"
-      server: "192.168.11.199"
+      server: "192.168.11.252"
+      dhcp:
+        enabled: true
+        rangeStart: "192.168.11.10"
+        rangeEnd: "192.168.11.200"
+        leaseTime: 600
+        nextServer: "192.168.10.9"
+        bootFile: "pxelinux.0"
+        reservations:
+          - mac: "0C:C4:7A:02:6B:90"
+            ip: "192.168.11.10"
+            hostname: "server1"
+          - mac: "0C:C4:7A:02:6B:2A"
+            ip: "192.168.11.11"
+            hostname: "server2"
+          - mac: "0C:C4:7A:02:6B:37"
+            ip: "192.168.11.12"
+            hostname: "server3"
+          - mac: "0C:C4:7A:02:6B:C0"
+            ip: "192.168.11.13"
+            hostname: "server4"
+          - mac: "0C:C4:7A:02:6B:1E"
+            ip: "192.168.11.14"
+            hostname: "server5"
+          - mac: "0C:C4:7A:02:6C:A6"
+            ip: "192.168.11.15"
+            hostname: "server6"
+          - mac: "00:00:00:00:00:00"
+            ip: "192.168.11.16"
+            hostname: "server7"
+          - mac: "0C:C4:7A:02:6B:2E"
+            ip: "192.168.11.17"
+            hostname: "server8"
   - name: gw
     bridge: bridge-lan
     cidr: "192.168.1.0/24"
@@ -82,6 +170,11 @@ logging:
 nats:
   url: "nats://192.168.200.10:4222"
   replicas: 1
+
+bmh:
+  pxeManagerURL: "http://pxe.g10.lo:8080"
+  dhcpLeaseURL: "http://dns.g11.lo:8080"
+  watchInterval: 30
 
 registry:
   enabled: true

@@ -74,6 +74,7 @@ type MicroKubeProvider struct {
 	startTime       time.Time
 	pods            map[string]*corev1.Pod       // namespace/name -> pod
 	configMaps      map[string]*corev1.ConfigMap // namespace/name -> configmap
+	bareMetalHosts  map[string]*BareMetalHost   // namespace/name -> BMH
 	events          []corev1.Event               // recent events (ring buffer, max 256)
 	notifyPodStatus func(*corev1.Pod)            // callback for pod status updates
 }
@@ -82,6 +83,7 @@ type MicroKubeProvider struct {
 func (p *MicroKubeProvider) SetStore(s *store.Store) {
 	p.deps.Store = s
 	p.deps.Logger.Infow("NATS store attached to provider")
+	p.LoadBMHFromStore(context.Background())
 }
 
 // NewMicroKubeProvider creates a new provider instance.
@@ -90,8 +92,9 @@ func NewMicroKubeProvider(deps Deps) (*MicroKubeProvider, error) {
 		deps:       deps,
 		nodeName:   deps.Config.NodeName,
 		startTime:  time.Now(),
-		pods:       make(map[string]*corev1.Pod),
-		configMaps: make(map[string]*corev1.ConfigMap),
+		pods:           make(map[string]*corev1.Pod),
+		configMaps:     make(map[string]*corev1.ConfigMap),
+		bareMetalHosts: make(map[string]*BareMetalHost),
 	}
 
 	// Load built-in default ConfigMaps derived from mkube config

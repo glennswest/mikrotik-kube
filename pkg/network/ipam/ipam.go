@@ -190,6 +190,24 @@ func allocateFromPool(pool *Pool, key string) (net.IP, error) {
 	return nil, fmt.Errorf("IPAM: no available IPs in %s (all %d addresses allocated)", pool.Subnet.String(), maxHosts)
 }
 
+// MaxUsableIP returns the highest usable host IP in a subnet (broadcast - 1).
+func MaxUsableIP(subnet *net.IPNet) net.IP {
+	ones, bits := subnet.Mask.Size()
+	baseIP := IPToUint32(subnet.IP)
+	broadcast := baseIP | uint32((1<<(bits-ones))-1)
+	return Uint32ToIP(broadcast - 1)
+}
+
+// DNSServerIP returns the IP address a MicroDNS instance should use on a
+// subnet. It is MaxUsableIP - 2, leaving the top two addresses free for
+// routers or other infrastructure.
+func DNSServerIP(subnet *net.IPNet) net.IP {
+	ones, bits := subnet.Mask.Size()
+	baseIP := IPToUint32(subnet.IP)
+	broadcast := baseIP | uint32((1<<(bits-ones))-1)
+	return Uint32ToIP(broadcast - 3)
+}
+
 // IPToUint32 converts a net.IP (IPv4) to a uint32.
 func IPToUint32(ip net.IP) uint32 {
 	ip = ip.To4()

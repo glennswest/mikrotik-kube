@@ -357,6 +357,12 @@ func runSharedServices(
 		log.Infow("image watcher started", "images", len(cfg.Registry.WatchImages))
 	}
 
+	// ── Load BMH from store + start DHCP watcher ────────────────────
+	if kvStore != nil {
+		p.LoadBMHFromStore(ctx)
+	}
+	go p.RunDHCPWatcher(ctx)
+
 	// ── Register routes and start HTTP server ───────────────────────
 	p.RegisterRoutes(mux)
 

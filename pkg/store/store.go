@@ -20,10 +20,11 @@ type Store struct {
 	js   jetstream.JetStream
 	log  *zap.SugaredLogger
 
-	Pods       *Bucket
-	ConfigMaps *Bucket
-	Namespaces *Bucket
-	NodeStatus *Bucket
+	Pods           *Bucket
+	ConfigMaps     *Bucket
+	Namespaces     *Bucket
+	NodeStatus     *Bucket
+	BareMetalHosts *Bucket
 }
 
 // Bucket wraps a NATS JetStream KeyValue store with typed operations.
@@ -94,6 +95,12 @@ func New(ctx context.Context, cfg config.NATSConfig, log *zap.SugaredLogger) (*S
 		return nil, err
 	}
 
+	s.BareMetalHosts, err = s.initBucket(ctx, "BAREMETALHOSTS", replicas, 0)
+	if err != nil {
+		nc.Close()
+		return nil, err
+	}
+
 	s.log.Infow("store initialized", "url", url, "replicas", replicas)
 	return s, nil
 }
@@ -123,6 +130,11 @@ func NewFromConn(ctx context.Context, nc *nats.Conn, replicas int, log *zap.Suga
 	}
 
 	s.NodeStatus, err = s.initBucket(ctx, "NODE_STATUS", replicas, 60*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	s.BareMetalHosts, err = s.initBucket(ctx, "BAREMETALHOSTS", replicas, 0)
 	if err != nil {
 		return nil, err
 	}
