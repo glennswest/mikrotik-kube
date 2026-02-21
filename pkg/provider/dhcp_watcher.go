@@ -122,25 +122,7 @@ func (p *MicroKubeProvider) reconcileDHCPLeases(ctx context.Context) {
 			continue
 		}
 
-		// The g11 lease is the IPMI interface. Look up the boot MAC from
-		// g10 network DHCP reservations in config (NIC-A = primary boot NIC).
-		bootMAC := ""
-		for _, net := range p.deps.Config.Networks {
-			if net.Name != "g10" {
-				continue
-			}
-			for _, r := range net.DNS.DHCP.Reservations {
-				if r.Hostname == hostname {
-					bootMAC = r.MAC
-					break
-				}
-			}
-		}
-		if bootMAC == "" {
-			bootMAC = mac // fallback to IPMI MAC if no g10 reservation found
-		}
-
-		log.Infow("auto-discovered server from DHCP", "name", hostname, "ip", ip, "ipmi_mac", mac, "boot_mac", bootMAC)
+		log.Infow("auto-discovered server from DHCP", "name", hostname, "ip", ip, "ipmi_mac", mac)
 
 		bmh := &BareMetalHost{
 			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "BareMetalHost"},
@@ -150,8 +132,7 @@ func (p *MicroKubeProvider) reconcileDHCPLeases(ctx context.Context) {
 				CreationTimestamp: metav1.Now(),
 			},
 			Spec: BMHSpec{
-				BootMACAddress: bootMAC,
-				Image:          "localboot",
+				Image: "localboot",
 				BMC: BMCDetails{
 					Address:  ip,
 					Username: "ADMIN",
@@ -174,9 +155,9 @@ func (p *MicroKubeProvider) reconcileDHCPLeases(ctx context.Context) {
 			}
 		}
 
-		// Register in pxemanager (skip if already registered from populate script)
-		if err := pxeRegisterHost(ctx, cfg.PXEManagerURL, bootMAC, hostname, "localboot"); err != nil {
-			log.Warnw("failed to register discovered host in pxemanager", "name", hostname, "error", err)
+		// Configure IPMI in pxemanager
+		if err := pxeConfigureIPMI(ctx, cfg.PXEManagerURL, hostname, ip, "ADMIN", "ADMIN"); err != nil {
+			log.Warnw("failed to configure IPMI for discovered host", "name", hostname, "error", err)
 		}
 	}
 }
