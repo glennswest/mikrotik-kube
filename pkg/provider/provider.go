@@ -733,6 +733,9 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 	// 5. Ensure DNS zones exist and records are seeded from config
 	p.deps.NetworkMgr.InitDNSZones(ctx)
 
+	// 6. Re-register DNS aliases for all tracked pods so they survive DNS container restarts
+	p.reregisterPodDNS(ctx)
+
 	return nil
 }
 
@@ -1324,6 +1327,28 @@ func (p *MicroKubeProvider) registerPodAliases(ctx context.Context, pod *corev1.
 			if regErr := dnsClient.RegisterHost(ctx, nsEndpoint, nsZoneID, a.hostname, ip, 60); regErr != nil {
 				log.Warnw("failed to register DNS alias in namespace zone", "alias", a.hostname, "error", regErr)
 			}
+		}
+	}
+}
+
+// reregisterPodDNS re-registers DNS aliases for all tracked pods.
+// This ensures pod DNS records survive DNS container restarts that wipe the zone.
+func (p *MicroKubeProvider) reregisterPodDNS(ctx context.Context) {
+	for _, pod := range p.pods {
+		networkName := pod.Annotations[annotationNetwork]
+		namespaceName := pod.Namespace
+
+		// Rebuild containerIPs from the network manager's allocation records
+		containerIPs := make(map[string]string)
+		for i, c := range pod.Spec.Containers {
+			veth := vethName(pod, i)
+			if ip, _, ok := p.deps.NetworkMgr.GetPortInfo(veth); ok {
+				containerIPs[c.Name] = ip
+			}
+		}
+
+		if len(containerIPs) > 0 {
+			p.registerPodAliases(ctx, pod, networkName, namespaceName, containerIPs, p.deps.Logger)
 		}
 	}
 }

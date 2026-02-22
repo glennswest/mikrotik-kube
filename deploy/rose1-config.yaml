@@ -134,7 +134,7 @@ networks:
           - mac: "0C:C4:7A:02:6B:2E"
             ip: "192.168.11.17"
             hostname: "server8"
-          - mac: "38:1C:88:C8:AD:19"
+          - mac: "14:18:77:62:5D:0C"
             ip: "192.168.11.30"
             hostname: "server30"
   - name: gw
