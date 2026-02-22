@@ -139,12 +139,24 @@ func (m *Manager) InitDNSZones(ctx context.Context) {
 		ns.zoneID = zoneID
 		m.log.Infow("DNS zone ready", "network", name, "zone", ns.def.DNS.Zone, "zoneID", zoneID)
 
-		// Fetch existing records once to avoid creating duplicates on restart.
-		existing := make(map[string]string) // "name:ip" -> record ID
+		// Fetch existing records once to avoid creating duplicates on restart,
+		// and remove any duplicate A records that have accumulated.
+		existing := make(map[string]string) // "name:ip" -> first record ID
 		if records, err := m.dns.ListRecords(ctx, ns.def.DNS.Endpoint, zoneID); err == nil {
 			for _, r := range records {
-				if r.Type == "A" {
-					existing[r.Name+":"+r.Data.Data] = r.ID
+				if r.Type != "A" {
+					continue
+				}
+				key := r.Name + ":" + r.Data.Data
+				if _, seen := existing[key]; seen {
+					// Duplicate — delete it
+					if err := m.dns.DeleteRecord(ctx, ns.def.DNS.Endpoint, zoneID, r.ID); err != nil {
+						m.log.Warnw("failed to delete duplicate DNS record", "network", name, "name", r.Name, "ip", r.Data.Data, "id", r.ID, "error", err)
+					} else {
+						m.log.Infow("deleted duplicate DNS record", "network", name, "name", r.Name, "ip", r.Data.Data, "id", r.ID)
+					}
+				} else {
+					existing[key] = r.ID
 				}
 			}
 		}

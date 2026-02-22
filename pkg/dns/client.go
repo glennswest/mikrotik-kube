@@ -131,7 +131,19 @@ func (c *Client) EnsureZone(ctx context.Context, endpoint, zoneName string) (str
 }
 
 // RegisterHost creates an A record in the specified zone.
+// It is idempotent: if a matching A record (same hostname + IP) already
+// exists, the call is a no-op.
 func (c *Client) RegisterHost(ctx context.Context, endpoint, zoneID, hostname, ip string, ttl int) error {
+	// Check for existing record to avoid creating duplicates.
+	records, err := c.ListRecords(ctx, endpoint, zoneID)
+	if err == nil {
+		for _, r := range records {
+			if r.Type == "A" && r.Name == hostname && r.Data.Data == ip {
+				return nil
+			}
+		}
+	}
+
 	payload, _ := json.Marshal(createRecordRequest{
 		Name: hostname,
 		TTL:  ttl,
@@ -157,6 +169,26 @@ func (c *Client) RegisterHost(ctx context.Context, endpoint, zoneID, hostname, i
 	}
 
 	c.log.Infow("DNS record registered", "hostname", hostname, "ip", ip, "zone", zoneID)
+	return nil
+}
+
+// DeleteRecord removes a single DNS record by its ID.
+func (c *Client) DeleteRecord(ctx context.Context, endpoint, zoneID, recordID string) error {
+	url := fmt.Sprintf("%s/api/v1/zones/%s/records/%s", endpoint, zoneID, recordID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return fmt.Errorf("building delete request: %w", err)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("deleting record %s: %w", recordID, err)
+	}
+	resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("deleting record %s: HTTP %d", recordID, resp.StatusCode)
+	}
 	return nil
 }
 
