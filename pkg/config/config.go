@@ -94,13 +94,14 @@ type DNSConfig struct {
 
 // DHCPConfig specifies DHCP settings for a MicroDNS instance.
 type DHCPConfig struct {
-	Enabled      bool              `yaml:"enabled"`
-	RangeStart   string            `yaml:"rangeStart"`   // e.g. "192.168.11.10"
-	RangeEnd     string            `yaml:"rangeEnd"`     // e.g. "192.168.11.200"
-	LeaseTime    int               `yaml:"leaseTime"`    // seconds, default 3600
-	NextServer   string            `yaml:"nextServer"`   // PXE server IP
-	BootFile     string            `yaml:"bootFile"`     // PXE boot file
-	Reservations []DHCPReservation `yaml:"reservations"`
+	Enabled       bool              `yaml:"enabled"`
+	RangeStart    string            `yaml:"rangeStart"`    // e.g. "192.168.11.10"
+	RangeEnd      string            `yaml:"rangeEnd"`      // e.g. "192.168.11.200"
+	LeaseTime     int               `yaml:"leaseTime"`     // seconds, default 3600
+	NextServer    string            `yaml:"nextServer"`    // PXE server IP
+	BootFile      string            `yaml:"bootFile"`      // PXE boot file
+	ServerNetwork string            `yaml:"serverNetwork"` // serve DHCP from this network's DNS container (relay topology)
+	Reservations  []DHCPReservation `yaml:"reservations"`
 }
 
 // StaticRecord is a DNS record registered in microdns at startup.

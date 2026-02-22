@@ -68,7 +68,7 @@ metadata:
     vkube.io/network: gw
     vkube.io/boot-priority: "10"
     vkube.io/image-policy: auto
-    vkube.io/file: "raid1/tarballs/microdns-arm64.tar"
+
     vkube.io/static-ip: "192.168.1.199"
 spec:
   restartPolicy: Always
@@ -112,7 +112,7 @@ metadata:
     vkube.io/network: g10
     vkube.io/boot-priority: "11"
     vkube.io/image-policy: auto
-    vkube.io/file: "raid1/tarballs/microdns-arm64.tar"
+
     vkube.io/static-ip: "192.168.10.252"
 spec:
   restartPolicy: Always
@@ -156,7 +156,7 @@ metadata:
     vkube.io/network: g11
     vkube.io/boot-priority: "12"
     vkube.io/image-policy: auto
-    vkube.io/file: "raid1/tarballs/microdns-arm64.tar"
+
     vkube.io/static-ip: "192.168.11.252"
 spec:
   restartPolicy: Always
@@ -200,7 +200,7 @@ metadata:
     vkube.io/network: gt
     vkube.io/boot-priority: "13"
     vkube.io/image-policy: auto
-    vkube.io/file: "raid1/tarballs/microdns-arm64.tar"
+
     vkube.io/static-ip: "192.168.200.199"
 spec:
   restartPolicy: Always

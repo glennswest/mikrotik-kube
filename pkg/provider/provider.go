@@ -268,6 +268,13 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 			StartOnBoot: startOnBoot,
 		}
 
+		// Set root user for containers that need privileged port binding
+		// (e.g. DHCP on port 67). Check if this network serves DHCP
+		// either locally or via serverNetwork targeting it.
+		if p.networkHasDHCP(networkName) {
+			spec.User = "0:0"
+		}
+
 		if err := p.deps.Runtime.CreateContainer(ctx, spec); err != nil {
 			return fmt.Errorf("creating container %s: %w", name, err)
 		}

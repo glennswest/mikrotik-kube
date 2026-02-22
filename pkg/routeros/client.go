@@ -39,6 +39,7 @@ type Container struct {
 	WorkDir     string `json:"workdir,omitempty"`
 	Hostname    string `json:"hostname,omitempty"`
 	DNS         string `json:"dns,omitempty"`
+	User        string `json:"user,omitempty"`
 	StartOnBoot string `json:"start-on-boot"`
 }
 
@@ -65,6 +66,7 @@ type ContainerSpec struct {
 	WorkDir     string `json:"workdir,omitempty"`
 	Hostname    string `json:"hostname,omitempty"`
 	DNS         string `json:"dns,omitempty"`
+	User        string `json:"user,omitempty"`
 	Logging     string `json:"logging"`
 	StartOnBoot string `json:"start-on-boot"`
 }

@@ -30,6 +30,7 @@ func (r *RouterOSRuntime) CreateContainer(ctx context.Context, spec ContainerSpe
 		WorkDir:     spec.WorkDir,
 		Hostname:    spec.Hostname,
 		DNS:         spec.DNS,
+		User:        spec.User,
 		Logging:     spec.Logging,
 		StartOnBoot: spec.StartOnBoot,
 	})

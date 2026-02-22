@@ -42,8 +42,8 @@ networks:
           ip: "192.168.10.200"
       dhcp:
         enabled: true
-        rangeStart: "192.168.10.10"
-        rangeEnd: "192.168.10.210"
+        rangeStart: "192.168.10.100"
+        rangeEnd: "192.168.10.199"
         leaseTime: 600
         nextServer: "192.168.10.200"
         bootFile: "undionly.kpxe"
@@ -96,6 +96,9 @@ networks:
           - mac: "F4:52:14:84:AE:30"
             ip: "192.168.10.27"
             hostname: "server8b"
+          - mac: "D0:11:E5:A0:1A:A4"
+            ip: "192.168.10.190"
+            hostname: "macmini"
   - name: g11
     bridge: bridge-boot
     cidr: "192.168.11.0/24"

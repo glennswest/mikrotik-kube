@@ -85,6 +85,7 @@ type ContainerSpec struct {
 	DNS         string
 	Logging     string
 	StartOnBoot string
+	User        string // container user, e.g. "0:0" for root (needed for privileged ports)
 
 	// StormBase-specific fields
 	RestartPolicy string
