@@ -38,6 +38,9 @@ func (p *MicroKubeProvider) handleCreateConfigMap(w http.ResponseWriter, r *http
 
 	p.configMaps[key] = &cm
 
+	// Sync to disk and trigger pod updates if content changed
+	p.syncConfigMapsToDisk(r.Context())
+
 	podWriteJSON(w, http.StatusCreated, &cm)
 }
 

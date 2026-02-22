@@ -94,10 +94,10 @@ func NewMicroKubeProvider(deps Deps) (*MicroKubeProvider, error) {
 		deps:       deps,
 		nodeName:   deps.Config.NodeName,
 		startTime:  time.Now(),
-		pods:           make(map[string]*corev1.Pod),
-		configMaps:     make(map[string]*corev1.ConfigMap),
-		bareMetalHosts: make(map[string]*BareMetalHost),
-		dhcpIndex:      buildDHCPIndex(deps.Config.Networks),
+		pods:            make(map[string]*corev1.Pod),
+		configMaps:      make(map[string]*corev1.ConfigMap),
+		bareMetalHosts:  make(map[string]*BareMetalHost),
+		dhcpIndex:       buildDHCPIndex(deps.Config.Networks),
 	}
 
 	// Load built-in default ConfigMaps derived from mkube config
@@ -727,8 +727,70 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 		}
 	}
 
+	// 4. Sync ConfigMap data to disk and recreate pods whose ConfigMaps changed
+	p.syncConfigMapsToDisk(ctx)
+
 	return nil
 }
+
+// syncConfigMapsToDisk writes all ConfigMap-backed volume data to disk for
+// every tracked pod. It compares ConfigMap content against what is on disk
+// and triggers a rolling update (delete + create) for pods whose ConfigMap
+// files are stale or missing.
+func (p *MicroKubeProvider) syncConfigMapsToDisk(ctx context.Context) {
+	log := p.deps.Logger
+
+	// Track which pods need recreation due to ConfigMap changes
+	podsToRecreate := make(map[string]*corev1.Pod)
+
+	for _, pod := range p.pods {
+		for _, container := range pod.Spec.Containers {
+			name := sanitizeName(pod, container.Name)
+			for _, vm := range container.VolumeMounts {
+				data := p.resolveConfigMapVolume(pod, vm.Name)
+				if data == nil {
+					continue
+				}
+
+				localDir := fmt.Sprintf("/data/configmaps/%s/%s", name, vm.Name)
+				if mkErr := os.MkdirAll(localDir, 0o755); mkErr != nil {
+					log.Warnw("failed to create configmap dir", "path", localDir, "error", mkErr)
+					continue
+				}
+
+				// Compare each file with what's on disk
+				for filename, content := range data {
+					filePath := localDir + "/" + filename
+					existing, readErr := os.ReadFile(filePath)
+					if readErr != nil || string(existing) != content {
+						if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+							log.Warnw("failed to write configmap file", "path", filePath, "error", err)
+							continue
+						}
+						key := podKey(pod)
+						if _, already := podsToRecreate[key]; !already {
+							log.Infow("ConfigMap file updated on disk",
+								"pod", key,
+								"file", filePath,
+								"new", readErr != nil,
+							)
+							podsToRecreate[key] = pod
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Trigger rolling updates for pods whose ConfigMap files changed
+	for key, pod := range podsToRecreate {
+		log.Infow("recreating pod for ConfigMap update", "pod", key)
+		if err := p.UpdatePod(ctx, pod); err != nil {
+			log.Errorw("failed to recreate pod after ConfigMap change", "pod", key, "error", err)
+		}
+	}
+}
+
 
 // loadFromStore reads desired pods and configmaps from the NATS KV store.
 func (p *MicroKubeProvider) loadFromStore(ctx context.Context) ([]*corev1.Pod, []*corev1.ConfigMap) {
