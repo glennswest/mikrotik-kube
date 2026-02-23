@@ -30,6 +30,8 @@ networks:
           ip: "192.168.200.1"
         - name: dns
           ip: "192.168.200.199"
+        - name: dnsx
+          ip: "192.168.1.51"
         - name: nats
           ip: "192.168.200.10"
         - name: mkube
@@ -47,6 +49,8 @@ networks:
           ip: "192.168.10.1"
         - name: dns
           ip: "192.168.10.252"
+        - name: dnsx
+          ip: "192.168.1.51"
         - name: pxe
           ip: "192.168.10.200"
       dhcp:
@@ -127,6 +131,8 @@ networks:
           ip: "192.168.11.1"
         - name: dns
           ip: "192.168.11.252"
+        - name: dnsx
+          ip: "192.168.1.51"
       dhcp:
         enabled: true
         rangeStart: "192.168.11.150"

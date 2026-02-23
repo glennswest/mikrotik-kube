@@ -16,9 +16,10 @@ import (
 
 // Store provides persistent key-value storage backed by NATS JetStream.
 type Store struct {
-	conn *nats.Conn
-	js   jetstream.JetStream
-	log  *zap.SugaredLogger
+	conn     *nats.Conn
+	js       jetstream.JetStream
+	log      *zap.SugaredLogger
+	replicas int
 
 	Pods           *Bucket
 	ConfigMaps     *Bucket
@@ -40,6 +41,11 @@ func New(ctx context.Context, cfg config.NATSConfig, log *zap.SugaredLogger) (*S
 		url = nats.DefaultURL
 	}
 
+	s := &Store{log: log.Named("store"), replicas: cfg.Replicas}
+	if s.replicas < 1 {
+		s.replicas = 1
+	}
+
 	nc, err := nats.Connect(url,
 		nats.MaxReconnects(-1),
 		nats.ReconnectBufSize(8*1024*1024),
@@ -51,7 +57,12 @@ func New(ctx context.Context, cfg config.NATSConfig, log *zap.SugaredLogger) (*S
 			}
 		}),
 		nats.ReconnectHandler(func(_ *nats.Conn) {
-			log.Info("NATS reconnected")
+			log.Infow("NATS reconnected, reinitializing KV buckets")
+			if reinitErr := s.reinitBuckets(); reinitErr != nil {
+				log.Errorw("failed to reinitialize KV buckets after reconnect", "error", reinitErr)
+			} else {
+				log.Infow("KV buckets reinitialized after reconnect")
+			}
 		}),
 	)
 	if err != nil {
@@ -64,44 +75,15 @@ func New(ctx context.Context, cfg config.NATSConfig, log *zap.SugaredLogger) (*S
 		return nil, fmt.Errorf("creating JetStream context: %w", err)
 	}
 
-	replicas := cfg.Replicas
-	if replicas < 1 {
-		replicas = 1
-	}
+	s.conn = nc
+	s.js = js
 
-	s := &Store{conn: nc, js: js, log: log.Named("store")}
-
-	s.Pods, err = s.initBucket(ctx, "PODS", replicas, 0)
-	if err != nil {
+	if err := s.initAllBuckets(ctx); err != nil {
 		nc.Close()
 		return nil, err
 	}
 
-	s.ConfigMaps, err = s.initBucket(ctx, "CONFIGMAPS", replicas, 0)
-	if err != nil {
-		nc.Close()
-		return nil, err
-	}
-
-	s.Namespaces, err = s.initBucket(ctx, "NAMESPACES", replicas, 0)
-	if err != nil {
-		nc.Close()
-		return nil, err
-	}
-
-	s.NodeStatus, err = s.initBucket(ctx, "NODE_STATUS", replicas, 60*time.Second)
-	if err != nil {
-		nc.Close()
-		return nil, err
-	}
-
-	s.BareMetalHosts, err = s.initBucket(ctx, "BAREMETALHOSTS", replicas, 0)
-	if err != nil {
-		nc.Close()
-		return nil, err
-	}
-
-	s.log.Infow("store initialized", "url", url, "replicas", replicas)
+	s.log.Infow("store initialized", "url", url, "replicas", s.replicas)
 	return s, nil
 }
 
@@ -112,34 +94,56 @@ func NewFromConn(ctx context.Context, nc *nats.Conn, replicas int, log *zap.Suga
 		return nil, fmt.Errorf("creating JetStream context: %w", err)
 	}
 
-	s := &Store{conn: nc, js: js, log: log.Named("store")}
+	s := &Store{conn: nc, js: js, log: log.Named("store"), replicas: replicas}
 
-	s.Pods, err = s.initBucket(ctx, "PODS", replicas, 0)
-	if err != nil {
-		return nil, err
-	}
-
-	s.ConfigMaps, err = s.initBucket(ctx, "CONFIGMAPS", replicas, 0)
-	if err != nil {
-		return nil, err
-	}
-
-	s.Namespaces, err = s.initBucket(ctx, "NAMESPACES", replicas, 0)
-	if err != nil {
-		return nil, err
-	}
-
-	s.NodeStatus, err = s.initBucket(ctx, "NODE_STATUS", replicas, 60*time.Second)
-	if err != nil {
-		return nil, err
-	}
-
-	s.BareMetalHosts, err = s.initBucket(ctx, "BAREMETALHOSTS", replicas, 0)
-	if err != nil {
+	if err := s.initAllBuckets(ctx); err != nil {
 		return nil, err
 	}
 
 	return s, nil
+}
+
+// initAllBuckets creates all KV buckets. Used at startup and after reconnect.
+func (s *Store) initAllBuckets(ctx context.Context) error {
+	var err error
+	s.Pods, err = s.initBucket(ctx, "PODS", s.replicas, 0)
+	if err != nil {
+		return err
+	}
+	s.ConfigMaps, err = s.initBucket(ctx, "CONFIGMAPS", s.replicas, 0)
+	if err != nil {
+		return err
+	}
+	s.Namespaces, err = s.initBucket(ctx, "NAMESPACES", s.replicas, 0)
+	if err != nil {
+		return err
+	}
+	s.NodeStatus, err = s.initBucket(ctx, "NODE_STATUS", s.replicas, 60*time.Second)
+	if err != nil {
+		return err
+	}
+	s.BareMetalHosts, err = s.initBucket(ctx, "BAREMETALHOSTS", s.replicas, 0)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// reinitBuckets re-creates KV bucket handles after a NATS reconnection.
+// The NATS server may have restarted with empty JetStream, so the old
+// bucket handles would point to non-existent streams.
+func (s *Store) reinitBuckets() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Re-create the JetStream context for the reconnected connection
+	js, err := jetstream.New(s.conn)
+	if err != nil {
+		return fmt.Errorf("creating JetStream context: %w", err)
+	}
+	s.js = js
+
+	return s.initAllBuckets(ctx)
 }
 
 func (s *Store) initBucket(ctx context.Context, name string, replicas int, ttl time.Duration) (*Bucket, error) {
