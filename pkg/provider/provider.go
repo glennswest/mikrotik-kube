@@ -85,6 +85,7 @@ type MicroKubeProvider struct {
 	events          []corev1.Event               // recent events (ring buffer, max 256)
 	notifyPodStatus func(*corev1.Pod)            // callback for pod status updates
 	pushNotify      chan registry.PushEvent       // internal channel for API push notifications
+	redeploying     map[string]bool              // pod keys currently being redeployed (skip in reconciler)
 }
 
 // SetStore sets the NATS store on the provider (used for deferred NATS connection).
@@ -106,6 +107,7 @@ func NewMicroKubeProvider(deps Deps) (*MicroKubeProvider, error) {
 		bareMetalHosts:  make(map[string]*BareMetalHost),
 		dhcpIndex:       buildDHCPIndex(deps.Config.Networks),
 		pushNotify:      make(chan registry.PushEvent, 16),
+		redeploying:     make(map[string]bool),
 	}
 
 	// Load built-in default ConfigMaps derived from mkube config
@@ -787,6 +789,11 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 		if _, tracked := p.pods[key]; tracked {
 			continue
 		}
+		// Skip pods currently being redeployed by the redeploy API
+		if p.redeploying[key] {
+			log.Debugw("skipping pod during redeploy", "pod", key)
+			continue
+		}
 
 		// Check if all containers for this pod exist on RouterOS
 		allExist := true
@@ -832,7 +839,11 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 
 	// 3b. Check tracked pods for missing containers (orphan detection).
 	// If a container was manually removed or orphaned, untrack and recreate.
+	// Skip pods currently being redeployed to avoid racing with the redeploy goroutine.
 	for key, pod := range p.pods {
+		if p.redeploying[key] {
+			continue
+		}
 		for _, c := range pod.Spec.Containers {
 			name := sanitizeName(pod, c.Name)
 			if _, exists := actualByName[name]; !exists {
@@ -854,6 +865,9 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 	// every running pod with image-policy=auto against the current
 	// registry digest to detect updates from podman push.
 	for key, pod := range p.pods {
+		if p.redeploying[key] {
+			continue
+		}
 		if pod.Annotations[annotationImagePolicy] != "auto" || pod.Annotations[annotationFile] != "" {
 			continue
 		}

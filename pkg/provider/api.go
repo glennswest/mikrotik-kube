@@ -589,8 +589,11 @@ func (p *MicroKubeProvider) handleImageRedeploy(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	// Clear cached digests and kick off redeployment asynchronously
+	// Clear cached digests and mark pods as redeploying so the
+	// reconciler skips them (prevents race with orphan detection).
 	for _, pod := range targets {
+		key := pod.Namespace + "/" + pod.Name
+		p.redeploying[key] = true
 		for _, c := range pod.Spec.Containers {
 			if imageMatches(c.Image, req.Image) {
 				p.deps.StorageMgr.ClearImageDigest(c.Image)
@@ -607,6 +610,7 @@ func (p *MicroKubeProvider) handleImageRedeploy(w http.ResponseWriter, r *http.R
 			} else {
 				log.Infow("redeploy complete", "pod", key, "image", req.Image)
 			}
+			delete(p.redeploying, key)
 		}
 	}()
 
