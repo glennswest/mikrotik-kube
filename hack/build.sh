@@ -25,13 +25,12 @@ echo "════════════════════════�
 # ── Step 1: Build the container image ────────────────────────────────────────
 echo ""
 echo "▸ Building container image..."
-docker buildx build \
+podman build \
     --platform "linux/${ARCH}" \
     --build-arg VERSION="${VERSION}" \
     --build-arg COMMIT="${COMMIT}" \
     --build-arg TARGETARCH="${ARCH}" \
     -t "${IMAGE_NAME}:${IMAGE_TAG}" \
-    --load \
     .
 
 # ── Step 2: Export as a flat rootfs tarball ──────────────────────────────────
@@ -41,9 +40,9 @@ echo ""
 echo "▸ Exporting rootfs tarball..."
 
 mkdir -p dist
-CONTAINER_ID=$(docker create "${IMAGE_NAME}:${IMAGE_TAG}")
-docker export "${CONTAINER_ID}" -o "dist/${TARBALL_NAME}"
-docker rm "${CONTAINER_ID}" > /dev/null
+CONTAINER_ID=$(podman create "${IMAGE_NAME}:${IMAGE_TAG}")
+podman export "${CONTAINER_ID}" -o "dist/${TARBALL_NAME}"
+podman rm "${CONTAINER_ID}" > /dev/null
 
 echo "  → dist/${TARBALL_NAME} ($(du -h "dist/${TARBALL_NAME}" | cut -f1))"
 
