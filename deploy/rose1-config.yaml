@@ -25,6 +25,15 @@ networks:
       endpoint: "http://192.168.200.199:8080"
       zone: "gt.lo"
       server: "192.168.200.199"
+      staticRecords:
+        - name: rose1
+          ip: "192.168.200.1"
+        - name: dns
+          ip: "192.168.200.199"
+        - name: nats
+          ip: "192.168.200.10"
+        - name: mkube
+          ip: "192.168.200.2"
   - name: g10
     bridge: bridge
     cidr: "192.168.10.0/24"
@@ -113,6 +122,11 @@ networks:
       endpoint: "http://192.168.11.252:8080"
       zone: "g11.lo"
       server: "192.168.11.252"
+      staticRecords:
+        - name: rose1
+          ip: "192.168.11.1"
+        - name: dns
+          ip: "192.168.11.252"
       dhcp:
         enabled: true
         rangeStart: "192.168.11.150"
@@ -156,6 +170,13 @@ networks:
       endpoint: "http://192.168.1.199:8080"
       zone: "gw.lo"
       server: "192.168.1.199"
+      staticRecords:
+        - name: rose1
+          ip: "192.168.1.88"
+        - name: dnsx
+          ip: "192.168.1.51"
+        - name: dns
+          ip: "192.168.1.199"
 
 storage:
   basePath: /raid1/images
