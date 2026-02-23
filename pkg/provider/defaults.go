@@ -117,7 +117,7 @@ listen = "0.0.0.0:8080"
 path = "./data/microdns.redb"
 
 [logging]
-level = "debug"
+level = "info"
 format = "text"
 %s`, net.Name, net.DNS.Zone, fwdZones.String(), dhcpSection)
 
