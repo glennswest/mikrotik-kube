@@ -342,6 +342,22 @@ func (m *Manager) isLocalRegistry(imageRef string) bool {
 	return false
 }
 
+// ClearImageDigest removes the cached digest for an image so the next
+// RefreshImage call will detect a change and re-pull.
+func (m *Manager) ClearImageDigest(imageRef string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if cached, ok := m.images[imageRef]; ok {
+		cached.Digest = ""
+	}
+
+	// Also remove the .digest file on disk
+	tarballName := dockersave.SanitizeImageRef(imageRef) + ".tar"
+	digestFile := fmt.Sprintf("%s/%s.digest", m.cfg.TarballCache, tarballName)
+	_ = os.Remove(digestFile)
+}
+
 // ReleaseImage decrements the use count of an image.
 func (m *Manager) ReleaseImage(imageRef string) {
 	m.mu.Lock()

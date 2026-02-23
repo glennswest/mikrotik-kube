@@ -85,6 +85,9 @@ func (p *MicroKubeProvider) RegisterRoutes(mux *http.ServeMux) {
 	// Registry push notification
 	mux.HandleFunc("POST /api/v1/registry/push-notify", p.handlePushNotify)
 
+	// Image redeploy — force immediate redeployment of pods using a given image
+	mux.HandleFunc("POST /api/v1/images/redeploy", p.handleImageRedeploy)
+
 	// Health
 	mux.HandleFunc("GET /healthz", p.handleHealthz)
 }
@@ -545,6 +548,94 @@ func (p *MicroKubeProvider) handlePushNotify(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = fmt.Fprintf(w, `{"status":"ok","image":%q}`+"\n", req.Image)
+}
+
+// redeployRequest is the JSON body for POST /api/v1/images/redeploy.
+type redeployRequest struct {
+	Image string `json:"image"` // e.g. "microdns:edge" or "192.168.200.2:5000/microdns:edge"
+}
+
+// handleImageRedeploy forces immediate redeployment of all pods using a given image.
+// Clears cached digest so RefreshImage detects a change, then recreates each pod.
+// Usage: curl -X POST http://192.168.200.2:8082/api/v1/images/redeploy -d '{"image":"microdns:edge"}'
+func (p *MicroKubeProvider) handleImageRedeploy(w http.ResponseWriter, r *http.Request) {
+	var req redeployRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("invalid JSON: %v", err), http.StatusBadRequest)
+		return
+	}
+	if req.Image == "" {
+		http.Error(w, `"image" is required`, http.StatusBadRequest)
+		return
+	}
+
+	log := p.deps.Logger
+	log.Infow("image redeploy requested", "image", req.Image)
+
+	// Find all tracked pods using this image
+	var redeployed []string
+	var targets []*corev1.Pod
+	for _, pod := range p.pods {
+		if pod.Annotations[annotationImagePolicy] != "auto" {
+			continue
+		}
+		for _, c := range pod.Spec.Containers {
+			if imageMatches(c.Image, req.Image) {
+				targets = append(targets, pod.DeepCopy())
+				break
+			}
+		}
+	}
+
+	for _, pod := range targets {
+		key := pod.Namespace + "/" + pod.Name
+		// Clear cached digest so RefreshImage detects a change
+		for _, c := range pod.Spec.Containers {
+			if imageMatches(c.Image, req.Image) {
+				p.deps.StorageMgr.ClearImageDigest(c.Image)
+			}
+		}
+		log.Infow("redeploying pod", "pod", key, "image", req.Image)
+		if err := p.UpdatePod(r.Context(), pod); err != nil {
+			log.Errorw("redeploy failed", "pod", key, "error", err)
+		} else {
+			redeployed = append(redeployed, key)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	resp, _ := json.Marshal(map[string]interface{}{
+		"status":     "ok",
+		"image":      req.Image,
+		"redeployed": redeployed,
+	})
+	_, _ = w.Write(resp)
+	_, _ = w.Write([]byte("\n"))
+}
+
+// imageMatches checks if a container image ref matches the requested image.
+// Handles both full refs (192.168.200.2:5000/microdns:edge) and short names (microdns:edge).
+func imageMatches(containerImage, requested string) bool {
+	if containerImage == requested {
+		return true
+	}
+	// Extract repo:tag from full ref
+	// e.g. "192.168.200.2:5000/microdns:edge" contains "microdns:edge"
+	if strings.HasSuffix(containerImage, "/"+requested) {
+		return true
+	}
+	// Match just the repo name without tag
+	// "microdns:edge" matches container "192.168.200.2:5000/microdns:edge"
+	reqRepo := requested
+	if idx := strings.LastIndex(requested, ":"); idx > 0 {
+		reqRepo = requested[:idx]
+	}
+	imgParts := strings.Split(containerImage, "/")
+	lastPart := imgParts[len(imgParts)-1]
+	if idx := strings.LastIndex(lastPart, ":"); idx > 0 {
+		lastPart = lastPart[:idx]
+	}
+	return lastPart == reqRepo
 }
 
 // handleExport returns the full state as multi-document YAML.
