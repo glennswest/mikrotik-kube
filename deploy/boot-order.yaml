@@ -37,7 +37,7 @@ spec:
   containers:
     - name: nats
       image: 192.168.200.2:5000/nats:edge
-      command: ["nats-server", "-js", "--store_dir", "/data", "--addr", "0.0.0.0"]
+      command: ["nats-server", "-js", "--store_dir", "/data", "--addr", "0.0.0.0", "-m", "8222"]
       startupProbe:
         tcpSocket:
           port: 4222
