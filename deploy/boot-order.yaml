@@ -63,50 +63,6 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: dns
-  namespace: gw
-  annotations:
-    vkube.io/network: gw
-    vkube.io/boot-priority: "10"
-    vkube.io/image-policy: auto
-
-    vkube.io/static-ip: "192.168.1.199"
-spec:
-  restartPolicy: Always
-  volumes:
-    - name: config
-      configMap:
-        name: dns-config
-  containers:
-    - name: microdns
-      image: 192.168.200.2:5000/microdns:edge
-      startupProbe:
-        httpGet:
-          path: /api/v1/zones
-          port: 8080
-        initialDelaySeconds: 5
-        periodSeconds: 3
-        failureThreshold: 10
-      livenessProbe:
-        httpGet:
-          path: /api/v1/zones
-          port: 8080
-        periodSeconds: 30
-        failureThreshold: 3
-      readinessProbe:
-        tcpSocket:
-          port: 53
-        periodSeconds: 10
-      volumeMounts:
-        - name: config
-          mountPath: /etc/microdns
-        - name: data
-          mountPath: /data
-
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: dns
   namespace: g10
   annotations:
     vkube.io/network: g10

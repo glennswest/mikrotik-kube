@@ -187,7 +187,9 @@ func (p *MicroKubeProvider) checkContainers(ctx context.Context) []CheckItem {
 	return items
 }
 
-// checkDNS verifies DNS records match expected state from the manifest.
+// checkDNS verifies DNS records match expected state from all sources:
+// boot manifest, NATS store, static records, DHCP reservations, and
+// infrastructure records.
 func (p *MicroKubeProvider) checkDNS(ctx context.Context) []CheckItem {
 	var items []CheckItem
 
@@ -200,19 +202,8 @@ func (p *MicroKubeProvider) checkDNS(ctx context.Context) []CheckItem {
 		}}
 	}
 
-	manifestPath := p.deps.Config.Lifecycle.BootManifestPath
-	if manifestPath == "" {
-		return nil
-	}
-
-	pods, _, err := loadManifests(manifestPath)
-	if err != nil {
-		return []CheckItem{{
-			Name:    "manifest-load",
-			Status:  "fail",
-			Message: fmt.Sprintf("failed to load manifest for DNS check: %v", err),
-		}}
-	}
+	// Use ALL desired pods (tracked + NATS + boot-order), not just boot manifest
+	allPods := p.allDesiredPods(ctx)
 
 	// Check each network that has DNS configured
 	for _, netName := range p.deps.NetworkMgr.Networks() {
@@ -249,8 +240,30 @@ func (p *MicroKubeProvider) checkDNS(ctx context.Context) []CheckItem {
 			}
 		}
 
-		// Build expected records from manifest
-		expectedRecords := p.buildExpectedDNSRecords(pods, netName)
+		// Build expected records from all desired pods
+		expectedRecords := p.buildExpectedDNSRecords(allPods, netName)
+
+		// Add static records from config
+		for _, rec := range netDef.DNS.StaticRecords {
+			if rec.Name != "" && rec.IP != "" {
+				expectedRecords[rec.Name] = expectedDNS{ip: rec.IP}
+			}
+		}
+
+		// Add DHCP reservation DNS records
+		for _, res := range netDef.DNS.DHCP.Reservations {
+			if res.Hostname != "" && res.IP != "" {
+				expectedRecords[res.Hostname] = expectedDNS{ip: res.IP}
+			}
+		}
+
+		// Add infrastructure records (gateway + DNS server)
+		if netDef.Gateway != "" {
+			expectedRecords["rose1"] = expectedDNS{ip: netDef.Gateway}
+		}
+		if netDef.DNS.Server != "" {
+			expectedRecords["dns"] = expectedDNS{ip: netDef.DNS.Server}
+		}
 
 		// Check expected vs actual
 		for hostname, expected := range expectedRecords {
@@ -291,12 +304,12 @@ func (p *MicroKubeProvider) checkDNS(ctx context.Context) []CheckItem {
 			delete(actualRecords, hostname)
 		}
 
-		// Any remaining actual records are stale
+		// Any remaining actual records are stale — flag for cleanup
 		for hostname, ips := range actualRecords {
 			items = append(items, CheckItem{
 				Name:    fmt.Sprintf("dns/%s/%s", netName, hostname),
 				Status:  "warn",
-				Message: "stale DNS record (not in manifest)",
+				Message: "stale DNS record",
 				Details: fmt.Sprintf("ips=%v", ips),
 			})
 		}
@@ -588,6 +601,12 @@ func (p *MicroKubeProvider) CheckConsistencyAsync(reason string) {
 		}
 		cleaned += n
 
+		n, err = p.cleanStaleDNSRecords(ctx)
+		if err != nil {
+			p.deps.Logger.Warnw("stale DNS cleanup failed", "error", err)
+		}
+		cleaned += n
+
 		if cleaned > 0 {
 			p.deps.Logger.Infow("consistency check cleaned up resources", "trigger", reason, "cleaned", cleaned)
 		} else {
@@ -755,6 +774,86 @@ func (p *MicroKubeProvider) cleanOrphanedIPAM(ctx context.Context) (int, error) 
 			p.deps.Logger.Warnw("failed to release orphaned IPAM", "veth", veth, "error", err)
 		} else {
 			cleaned++
+		}
+	}
+
+	return cleaned, nil
+}
+
+// cleanStaleDNSRecords removes A records that don't match any expected hostname
+// from all desired pods, static records, DHCP reservations, or infrastructure.
+// Also cleans extra IPs for expected hostnames (e.g. old IPs from pod recreations).
+func (p *MicroKubeProvider) cleanStaleDNSRecords(ctx context.Context) (int, error) {
+	dnsClient := p.deps.NetworkMgr.DNSClient()
+	if dnsClient == nil {
+		return 0, nil
+	}
+
+	allPods := p.allDesiredPods(ctx)
+	cleaned := 0
+
+	for _, netName := range p.deps.NetworkMgr.Networks() {
+		netDef, ok := p.deps.NetworkMgr.NetworkDef(netName)
+		if !ok || netDef.DNS.Endpoint == "" || netDef.DNS.Zone == "" {
+			continue
+		}
+
+		zoneID, ok := p.deps.NetworkMgr.NetworkZoneID(netName)
+		if !ok {
+			continue
+		}
+
+		records, err := dnsClient.ListRecords(ctx, netDef.DNS.Endpoint, zoneID)
+		if err != nil {
+			continue
+		}
+
+		// Build expected: hostname -> expected IP
+		expected := p.buildExpectedDNSRecords(allPods, netName)
+		for _, rec := range netDef.DNS.StaticRecords {
+			if rec.Name != "" && rec.IP != "" {
+				expected[rec.Name] = expectedDNS{ip: rec.IP}
+			}
+		}
+		for _, res := range netDef.DNS.DHCP.Reservations {
+			if res.Hostname != "" && res.IP != "" {
+				expected[res.Hostname] = expectedDNS{ip: res.IP}
+			}
+		}
+		if netDef.Gateway != "" {
+			expected["rose1"] = expectedDNS{ip: netDef.Gateway}
+		}
+		if netDef.DNS.Server != "" {
+			expected["dns"] = expectedDNS{ip: netDef.DNS.Server}
+		}
+
+		for _, r := range records {
+			if r.Type != "A" {
+				continue
+			}
+
+			exp, isExpected := expected[r.Name]
+			if !isExpected {
+				// Hostname not expected at all — delete the record
+				p.deps.Logger.Infow("deleting stale DNS record",
+					"network", netName, "hostname", r.Name, "ip", r.Data.Data, "id", r.ID)
+				if err := dnsClient.DeleteRecord(ctx, netDef.DNS.Endpoint, zoneID, r.ID); err != nil {
+					p.deps.Logger.Warnw("failed to delete stale DNS record",
+						"hostname", r.Name, "ip", r.Data.Data, "error", err)
+				} else {
+					cleaned++
+				}
+			} else if r.Data.Data != exp.ip {
+				// Hostname expected but this record has wrong IP — stale from old allocation
+				p.deps.Logger.Infow("deleting stale DNS record (wrong IP)",
+					"network", netName, "hostname", r.Name, "stale_ip", r.Data.Data, "expected_ip", exp.ip, "id", r.ID)
+				if err := dnsClient.DeleteRecord(ctx, netDef.DNS.Endpoint, zoneID, r.ID); err != nil {
+					p.deps.Logger.Warnw("failed to delete stale DNS record",
+						"hostname", r.Name, "ip", r.Data.Data, "error", err)
+				} else {
+					cleaned++
+				}
+			}
 		}
 	}
 
