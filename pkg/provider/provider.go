@@ -775,14 +775,16 @@ func (p *MicroKubeProvider) RunStandaloneReconciler(ctx context.Context) error {
 			if !ok {
 				continue
 			}
-			log.Infow("registry push event, triggering immediate reconcile",
+			log.Infow("registry push event, clearing digest cache and reconciling",
 				"repo", evt.Repo, "ref", evt.Reference)
+			p.deps.StorageMgr.ClearImageDigestByRepo(evt.Repo)
 			if err := p.reconcile(ctx); err != nil {
 				log.Errorw("reconciliation error (push-triggered)", "error", err)
 			}
 		case evt := <-p.pushNotify:
-			log.Infow("push-notify received, triggering immediate reconcile",
+			log.Infow("push-notify received, clearing digest cache and reconciling",
 				"repo", evt.Repo, "ref", evt.Reference)
+			p.deps.StorageMgr.ClearImageDigestByRepo(evt.Repo)
 			if err := p.reconcile(ctx); err != nil {
 				log.Errorw("reconciliation error (push-notify)", "error", err)
 			}

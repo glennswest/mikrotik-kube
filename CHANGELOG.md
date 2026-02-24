@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### 2026-02-23
+- **fix:** Standalone reconciler missing digest cache clear on push events — the standalone reconciler received registry push events but did NOT call `ClearImageDigestByRepo` before reconciling, so `RefreshImage` compared stale digest vs stale digest and never detected changes. Root cause of ipmiserial (and all auto-update pods) not updating on image push.
+- **feat:** `GET /api/v1/images` endpoint — exposes image cache state (refs, digests, tarball paths, pull times) for debugging auto-update issues.
 - **feat:** Container network health repair — automatically detects and recreates pods with broken networking (missing veth, no IP, static IP mismatch). Tracks consecutive failures with threshold of 3 before triggering recreate to avoid flapping.
 - **feat:** Static IP validation in reconcile — pods tracked via "already exists" path now have their veth IP checked against `vkube.io/static-ip` annotation. Mismatches trigger immediate delete+recreate.
 - **feat:** Lifecycle failure recovery — containers that exceed max restarts are now automatically recreated with fresh veth allocation via new `OnFailed` callback from lifecycle manager.

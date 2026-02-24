@@ -85,7 +85,8 @@ func (p *MicroKubeProvider) RegisterRoutes(mux *http.ServeMux) {
 	// Registry push notification
 	mux.HandleFunc("POST /api/v1/registry/push-notify", p.handlePushNotify)
 
-	// Image redeploy — force immediate redeployment of pods using a given image
+	// Image cache and redeploy
+	mux.HandleFunc("GET /api/v1/images", p.handleListImages)
 	mux.HandleFunc("POST /api/v1/images/redeploy", p.handleImageRedeploy)
 
 	// Health
@@ -553,6 +554,13 @@ func (p *MicroKubeProvider) handlePushNotify(w http.ResponseWriter, r *http.Requ
 // redeployRequest is the JSON body for POST /api/v1/images/redeploy.
 type redeployRequest struct {
 	Image string `json:"image"` // e.g. "microdns:edge" or "192.168.200.2:5000/microdns:edge"
+}
+
+// handleListImages returns the current state of the image cache including
+// digests, tarball paths, and pull times for debugging auto-update issues.
+func (p *MicroKubeProvider) handleListImages(w http.ResponseWriter, r *http.Request) {
+	entries := p.deps.StorageMgr.GetImageCache()
+	podWriteJSON(w, http.StatusOK, entries)
 }
 
 // handleImageRedeploy forces immediate redeployment of all pods using a given image.

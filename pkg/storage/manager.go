@@ -227,6 +227,35 @@ func (m *Manager) CheckImageAvailable(ctx context.Context, imageRef string) (str
 	return m.getRegistryDigest(ctx, imageRef)
 }
 
+// ImageCacheEntry is an exported snapshot of a cached image for the API.
+type ImageCacheEntry struct {
+	Ref         string    `json:"ref"`
+	TarballPath string    `json:"tarballPath"`
+	Digest      string    `json:"digest"`
+	PulledAt    time.Time `json:"pulledAt"`
+	Size        int64     `json:"size"`
+	InUse       int       `json:"inUse"`
+}
+
+// GetImageCache returns a snapshot of all cached images.
+func (m *Manager) GetImageCache() []ImageCacheEntry {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	entries := make([]ImageCacheEntry, 0, len(m.images))
+	for _, img := range m.images {
+		entries = append(entries, ImageCacheEntry{
+			Ref:         img.Ref,
+			TarballPath: img.TarballPath,
+			Digest:      img.Digest,
+			PulledAt:    img.PulledAt,
+			Size:        img.Size,
+			InUse:       img.InUse,
+		})
+	}
+	return entries
+}
+
 func truncDigest(d string) string {
 	if len(d) > 19 {
 		return d[:19] + "..."
