@@ -27,6 +27,11 @@ type Manager struct {
 
 	mu    sync.RWMutex
 	units map[string]*ContainerUnit
+
+	// OnFailed is called when a container exceeds max restarts and is marked
+	// as failed. The provider registers this to trigger a full pod recreate
+	// (delete+create with fresh veth allocation).
+	OnFailed func(containerName string)
 }
 
 // ProbeConfig defines a single health probe.
@@ -508,6 +513,9 @@ func (m *Manager) restartUnit(ctx context.Context, unit *ContainerUnit) {
 		m.log.Errorw("container exceeded max restarts, marking as failed",
 			"name", unit.Name, "restarts", unit.RestartCount, "max", maxRestarts)
 		unit.Status = "failed"
+		if m.OnFailed != nil {
+			go m.OnFailed(unit.Name)
+		}
 		return
 	}
 

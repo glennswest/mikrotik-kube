@@ -26,12 +26,13 @@ type CheckSummary struct {
 	Warn int `json:"warn"`
 }
 
-// ConsistencyChecks groups the four check categories.
+// ConsistencyChecks groups the check categories.
 type ConsistencyChecks struct {
 	Containers []CheckItem `json:"containers"`
 	DNS        []CheckItem `json:"dns"`
 	Manifest   []CheckItem `json:"manifest"`
 	IPAM       []CheckItem `json:"ipam"`
+	Network    []CheckItem `json:"network,omitempty"`
 }
 
 // CheckItem is a single check result.
@@ -89,12 +90,14 @@ func (p *MicroKubeProvider) runConsistencyChecks(ctx context.Context) Consistenc
 	report.Checks.DNS = p.checkDNS(ctx)
 	report.Checks.Manifest = p.checkManifest()
 	report.Checks.IPAM = p.checkIPAM(ctx)
+	report.Checks.Network = p.checkNetworkHealth(ctx)
 
 	for _, items := range [][]CheckItem{
 		report.Checks.Containers,
 		report.Checks.DNS,
 		report.Checks.Manifest,
 		report.Checks.IPAM,
+		report.Checks.Network,
 	} {
 		for _, item := range items {
 			switch item.Status {
@@ -579,6 +582,12 @@ func (p *MicroKubeProvider) CheckConsistencyAsync(reason string) {
 		}
 		cleaned += n
 
+		n, err = p.repairNetworkHealth(ctx)
+		if err != nil {
+			p.deps.Logger.Warnw("network health repair failed", "error", err)
+		}
+		cleaned += n
+
 		if cleaned > 0 {
 			p.deps.Logger.Infow("consistency check cleaned up resources", "trigger", reason, "cleaned", cleaned)
 		} else {
@@ -750,5 +759,222 @@ func (p *MicroKubeProvider) cleanOrphanedIPAM(ctx context.Context) (int, error) 
 	}
 
 	return cleaned, nil
+}
+
+// networkHealthThreshold is the number of consecutive failures before a pod's
+// network is considered broken and the pod is recreated.
+const networkHealthThreshold = 3
+
+// checkNetworkHealth produces read-only CheckItems for the /api/v1/consistency
+// endpoint. It verifies each tracked pod has a veth with a valid IP and that
+// static-IP annotations match the actual allocation.
+func (p *MicroKubeProvider) checkNetworkHealth(ctx context.Context) []CheckItem {
+	var items []CheckItem
+
+	actualPorts, err := p.deps.NetworkMgr.ListActualPorts(ctx)
+	if err != nil {
+		return []CheckItem{{
+			Name:    "network-ports",
+			Status:  "fail",
+			Message: fmt.Sprintf("failed to list actual ports: %v", err),
+		}}
+	}
+
+	actualMap := make(map[string]network.PortInfo, len(actualPorts))
+	for _, port := range actualPorts {
+		actualMap[port.Name] = port
+	}
+
+	// Collect all desired pods from all sources
+	allPods := p.allDesiredPods(ctx)
+
+	for _, pod := range allPods {
+		key := podKey(pod)
+		staticIP := pod.Annotations[annotationStaticIP]
+
+		for i := range pod.Spec.Containers {
+			veth := vethName(pod, i)
+			checkName := fmt.Sprintf("network/%s/%s", key, veth)
+
+			actual, exists := actualMap[veth]
+			if !exists {
+				items = append(items, CheckItem{
+					Name:    checkName,
+					Status:  "fail",
+					Message: "veth missing on device",
+				})
+				continue
+			}
+
+			actualIP := strings.Split(actual.Address, "/")[0]
+			if actualIP == "" {
+				items = append(items, CheckItem{
+					Name:    checkName,
+					Status:  "fail",
+					Message: "veth has no IP address",
+					Details: fmt.Sprintf("veth=%s", veth),
+				})
+				continue
+			}
+
+			if staticIP != "" && actualIP != staticIP {
+				items = append(items, CheckItem{
+					Name:    checkName,
+					Status:  "fail",
+					Message: "static IP mismatch",
+					Details: fmt.Sprintf("expected=%s actual=%s", staticIP, actualIP),
+				})
+				continue
+			}
+
+			failCount := p.networkFailures[key]
+			if failCount > 0 {
+				items = append(items, CheckItem{
+					Name:    checkName,
+					Status:  "warn",
+					Message: fmt.Sprintf("recovering (failures=%d/%d)", failCount, networkHealthThreshold),
+					Details: fmt.Sprintf("ip=%s", actualIP),
+				})
+			} else {
+				items = append(items, CheckItem{
+					Name:    checkName,
+					Status:  "pass",
+					Message: "network healthy",
+					Details: fmt.Sprintf("ip=%s", actualIP),
+				})
+			}
+		}
+	}
+
+	return items
+}
+
+// repairNetworkHealth checks all desired pods for broken networking and
+// triggers a full delete+create cycle after networkHealthThreshold consecutive
+// failures. Returns the number of pods repaired.
+func (p *MicroKubeProvider) repairNetworkHealth(ctx context.Context) (int, error) {
+	// Don't repair until we have the full desired state from NATS.
+	if p.deps.Store == nil || !p.deps.Store.Connected() {
+		return 0, nil
+	}
+
+	actualPorts, err := p.deps.NetworkMgr.ListActualPorts(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("listing actual ports: %w", err)
+	}
+
+	actualMap := make(map[string]network.PortInfo, len(actualPorts))
+	for _, port := range actualPorts {
+		actualMap[port.Name] = port
+	}
+
+	allPods := p.allDesiredPods(ctx)
+	repaired := 0
+
+	for _, pod := range allPods {
+		key := podKey(pod)
+
+		// Skip pods currently being redeployed
+		if p.redeploying[key] {
+			continue
+		}
+
+		staticIP := pod.Annotations[annotationStaticIP]
+		broken := false
+
+		for i := range pod.Spec.Containers {
+			veth := vethName(pod, i)
+			actual, exists := actualMap[veth]
+
+			if !exists {
+				broken = true
+				break
+			}
+
+			actualIP := strings.Split(actual.Address, "/")[0]
+			if actualIP == "" {
+				broken = true
+				break
+			}
+
+			if staticIP != "" && actualIP != staticIP {
+				broken = true
+				break
+			}
+		}
+
+		if broken {
+			p.networkFailures[key]++
+			failCount := p.networkFailures[key]
+			p.deps.Logger.Warnw("container has broken network",
+				"pod", key, "failures", failCount, "threshold", networkHealthThreshold)
+
+			if failCount >= networkHealthThreshold {
+				p.deps.Logger.Infow("container network broken beyond threshold, triggering recreate",
+					"pod", key, "failures", failCount)
+
+				if err := p.DeletePod(ctx, pod); err != nil {
+					p.deps.Logger.Errorw("failed to delete pod for network repair",
+						"pod", key, "error", err)
+					continue
+				}
+				if err := p.CreatePod(ctx, pod); err != nil {
+					p.deps.Logger.Errorw("failed to recreate pod for network repair",
+						"pod", key, "error", err)
+					continue
+				}
+
+				delete(p.networkFailures, key)
+				repaired++
+			}
+		} else {
+			// Network is healthy — reset failure counter
+			delete(p.networkFailures, key)
+		}
+	}
+
+	return repaired, nil
+}
+
+// allDesiredPods collects pods from all sources: tracked, NATS store, and boot-order.
+func (p *MicroKubeProvider) allDesiredPods(ctx context.Context) []*corev1.Pod {
+	seen := make(map[string]bool)
+	var result []*corev1.Pod
+
+	// Source 1: tracked pods
+	for key, pod := range p.pods {
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, pod)
+		}
+	}
+
+	// Source 2: NATS store
+	if p.deps.Store != nil && p.deps.Store.Connected() {
+		storePods, _ := p.loadFromStore(ctx)
+		for _, pod := range storePods {
+			key := podKey(pod)
+			if !seen[key] {
+				seen[key] = true
+				result = append(result, pod)
+			}
+		}
+	}
+
+	// Source 3: boot-order manifest
+	if p.deps.Config.Lifecycle.BootManifestPath != "" {
+		bootPods, _, err := loadManifests(p.deps.Config.Lifecycle.BootManifestPath)
+		if err == nil {
+			for _, pod := range bootPods {
+				key := podKey(pod)
+				if !seen[key] {
+					seen[key] = true
+					result = append(result, pod)
+				}
+			}
+		}
+	}
+
+	return result
 }
 

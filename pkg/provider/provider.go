@@ -86,6 +86,7 @@ type MicroKubeProvider struct {
 	notifyPodStatus func(*corev1.Pod)            // callback for pod status updates
 	pushNotify      chan registry.PushEvent       // internal channel for API push notifications
 	redeploying     map[string]bool              // pod keys currently being redeployed (skip in reconciler)
+	networkFailures map[string]int               // pod key -> consecutive network health failures
 }
 
 // SetStore sets the NATS store on the provider (used for deferred NATS connection).
@@ -108,11 +109,20 @@ func NewMicroKubeProvider(deps Deps) (*MicroKubeProvider, error) {
 		dhcpIndex:       buildDHCPIndex(deps.Config.Networks),
 		pushNotify:      make(chan registry.PushEvent, 16),
 		redeploying:     make(map[string]bool),
+		networkFailures: make(map[string]int),
 	}
 
 	// Load built-in default ConfigMaps derived from mkube config
 	for _, cm := range generateDefaultConfigMaps(deps.Config) {
 		p.configMaps[cm.Namespace+"/"+cm.Name] = cm
+	}
+
+	// Register lifecycle failed callback so containers that exceed max
+	// restarts trigger a full pod recreate (fresh veth allocation).
+	if deps.LifecycleMgr != nil {
+		deps.LifecycleMgr.OnFailed = func(containerName string) {
+			p.handleLifecycleFailed(containerName)
+		}
 	}
 
 	return p, nil
@@ -964,6 +974,40 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 		log.Warnw("failed to re-sync IPAM allocations", "error", err)
 	}
 
+	// 4b. Validate static IP pods have the correct veth IP.
+	// The "already exists" path above tracks pods but never calls
+	// AllocateInterface, so a stale veth with a wrong IP is silently
+	// accepted. Fix that now by checking static-IP annotations against
+	// actual veth state.
+	for key, pod := range p.pods {
+		staticIP := pod.Annotations[annotationStaticIP]
+		if staticIP == "" {
+			continue
+		}
+		if p.redeploying[key] {
+			continue
+		}
+		for i := range pod.Spec.Containers {
+			veth := vethName(pod, i)
+			ip, _, ok := p.deps.NetworkMgr.GetPortInfo(veth)
+			if !ok {
+				continue
+			}
+			if ip != staticIP {
+				log.Warnw("static IP mismatch on tracked pod, recreating",
+					"pod", key, "expected", staticIP, "actual", ip, "veth", veth)
+				delete(p.pods, key)
+				if err := p.DeletePod(ctx, pod); err != nil {
+					log.Errorw("failed to delete pod for static IP repair", "pod", key, "error", err)
+				}
+				if err := p.CreatePod(ctx, pod); err != nil {
+					log.Errorw("failed to recreate pod for static IP repair", "pod", key, "error", err)
+				}
+				break // pod has been recreated, move to next pod
+			}
+		}
+	}
+
 	// 5. Sync ConfigMap data to disk and recreate pods whose ConfigMaps changed
 	p.syncConfigMapsToDisk(ctx)
 
@@ -1699,6 +1743,43 @@ func (p *MicroKubeProvider) pushLogMappings(ctx context.Context, pod *corev1.Pod
 			log.Warnw("micrologs rejected mapping", "container", rosName, "status", resp.StatusCode)
 		}
 	}
+}
+
+// ─── Lifecycle Failed Handler ────────────────────────────────────────────────
+
+// handleLifecycleFailed is called by the lifecycle manager when a container
+// exceeds max restarts. It finds the owning pod and triggers a full
+// delete+create cycle with fresh veth allocation.
+func (p *MicroKubeProvider) handleLifecycleFailed(containerName string) {
+	log := p.deps.Logger.With("container", containerName)
+	log.Infow("lifecycle manager reported container failed, attempting pod recreate")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Find the pod that owns this container
+	for key, pod := range p.pods {
+		if p.redeploying[key] {
+			continue
+		}
+		for _, c := range pod.Spec.Containers {
+			if sanitizeName(pod, c.Name) == containerName {
+				log.Infow("found owning pod, recreating", "pod", key)
+				if err := p.DeletePod(ctx, pod); err != nil {
+					log.Errorw("failed to delete pod for lifecycle recovery", "pod", key, "error", err)
+					return
+				}
+				if err := p.CreatePod(ctx, pod); err != nil {
+					log.Errorw("failed to recreate pod for lifecycle recovery", "pod", key, "error", err)
+					return
+				}
+				log.Infow("pod recreated after lifecycle failure", "pod", key)
+				return
+			}
+		}
+	}
+
+	log.Warnw("no tracked pod found for failed container")
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────

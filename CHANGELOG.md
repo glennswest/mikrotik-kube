@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 2026-02-23
+- **feat:** Container network health repair — automatically detects and recreates pods with broken networking (missing veth, no IP, static IP mismatch). Tracks consecutive failures with threshold of 3 before triggering recreate to avoid flapping.
+- **feat:** Static IP validation in reconcile — pods tracked via "already exists" path now have their veth IP checked against `vkube.io/static-ip` annotation. Mismatches trigger immediate delete+recreate.
+- **feat:** Lifecycle failure recovery — containers that exceed max restarts are now automatically recreated with fresh veth allocation via new `OnFailed` callback from lifecycle manager.
+- **feat:** Network health category in consistency report — `/api/v1/consistency` now includes a `network` section showing veth presence, IP assignment, and static IP match status for all pods.
+
 ### 2026-02-24
 - **fix:** Stale DNS cleanup — when a pod gets a new IP, old A records for the same hostname are automatically removed before registering the new one. Prevents accumulation of stale DNS entries across pod recreations.
 
