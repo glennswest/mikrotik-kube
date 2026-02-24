@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-02-24
+- **fix:** Stale DNS cleanup — when a pod gets a new IP, old A records for the same hostname are automatically removed before registering the new one. Prevents accumulation of stale DNS entries across pod recreations.
+
 ### 2026-02-23
 - **fix:** Consistency checker crash-looping containers — orphan detection only checked `p.pods` (tracked pods), not NATS store or boot-order manifest. NATS-sourced pods like ipmiserial were incorrectly flagged as orphaned and killed. Now checks all desired sources (tracked + NATS + boot-order) and skips cleanup entirely when NATS isn't connected yet.
 - **fix:** Pods missing IPs after restart — IPAM not re-synced for pods tracked via "already exists" path during reconcile. Added ResyncAllocations call in reconcile and consistency checker to ensure all veths have IPAM entries

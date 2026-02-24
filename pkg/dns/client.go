@@ -303,6 +303,31 @@ func (c *Client) DeregisterHostByIP(ctx context.Context, endpoint, zoneID, hostn
 	return nil
 }
 
+// CleanStaleRecords removes A records for a hostname where the IP doesn't
+// match the given current IP. Used to clean up stale records when a pod
+// gets a new IP on recreation.
+func (c *Client) CleanStaleRecords(ctx context.Context, endpoint, zoneID, hostname, currentIP string) error {
+	records, err := c.ListRecords(ctx, endpoint, zoneID)
+	if err != nil {
+		return err
+	}
+
+	for _, r := range records {
+		if r.Name == hostname && r.Type == "A" && r.Data.Data != currentIP {
+			if err := c.DeleteRecord(ctx, endpoint, zoneID, r.ID); err != nil {
+				c.log.Warnw("failed to delete stale DNS record",
+					"hostname", hostname, "stale_ip", r.Data.Data,
+					"current_ip", currentIP, "error", err)
+			} else {
+				c.log.Infow("removed stale DNS record",
+					"hostname", hostname, "stale_ip", r.Data.Data,
+					"current_ip", currentIP)
+			}
+		}
+	}
+	return nil
+}
+
 // Close cleans up the client.
 func (c *Client) Close() {
 	c.http.CloseIdleConnections()

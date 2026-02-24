@@ -225,6 +225,7 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 			} else {
 				dnsClient := p.deps.NetworkMgr.DNSClient()
 				if dnsClient != nil {
+					_ = dnsClient.CleanStaleRecords(ctx, endpoint, zoneID, containerHostname, bareIP)
 					if regErr := dnsClient.RegisterHost(ctx, endpoint, zoneID, containerHostname, bareIP, 60); regErr != nil {
 						log.Warnw("failed to register container in namespace zone", "namespace", namespaceName, "error", regErr)
 					}
@@ -1571,6 +1572,11 @@ func (p *MicroKubeProvider) registerPodAliases(ctx context.Context, pod *corev1.
 			continue
 		}
 
+		// Clean stale DNS records (old IPs) before registering the current one
+		if cleanErr := p.deps.NetworkMgr.CleanStaleDNS(ctx, networkName, a.hostname, ip); cleanErr != nil {
+			log.Warnw("failed to clean stale DNS records", "alias", a.hostname, "error", cleanErr)
+		}
+
 		// Register in network zone
 		if regErr := p.deps.NetworkMgr.RegisterDNS(ctx, networkName, a.hostname, ip); regErr != nil {
 			log.Warnw("failed to register DNS alias", "alias", a.hostname, "ip", ip, "error", regErr)
@@ -1578,8 +1584,9 @@ func (p *MicroKubeProvider) registerPodAliases(ctx context.Context, pod *corev1.
 			log.Infow("DNS alias registered", "alias", a.hostname, "container", a.containerName, "ip", ip)
 		}
 
-		// Register in namespace zone
+		// Register in namespace zone (clean stale + register)
 		if nsZoneID != "" && dnsClient != nil {
+			_ = dnsClient.CleanStaleRecords(ctx, nsEndpoint, nsZoneID, a.hostname, ip)
 			if regErr := dnsClient.RegisterHost(ctx, nsEndpoint, nsZoneID, a.hostname, ip, 60); regErr != nil {
 				log.Warnw("failed to register DNS alias in namespace zone", "alias", a.hostname, "error", regErr)
 			}

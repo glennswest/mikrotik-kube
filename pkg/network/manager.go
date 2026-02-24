@@ -354,6 +354,22 @@ func (m *Manager) RegisterDNS(ctx context.Context, networkName, hostname, ip str
 	return m.dns.RegisterHost(ctx, ns.def.DNS.Endpoint, ns.zoneID, hostname, ip, 60)
 }
 
+// CleanStaleDNS removes A records for hostname that don't match the given IP.
+// Used during pod alias registration to clean up stale records from previous IPs.
+func (m *Manager) CleanStaleDNS(ctx context.Context, networkName, hostname, currentIP string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	ns, err := m.resolveNetwork(networkName)
+	if err != nil {
+		return err
+	}
+	if m.dns == nil || ns.zoneID == "" {
+		return nil
+	}
+	return m.dns.CleanStaleRecords(ctx, ns.def.DNS.Endpoint, ns.zoneID, hostname, currentIP)
+}
+
 // DeregisterDNS removes the A record matching hostname+ip from the named network's DNS zone.
 func (m *Manager) DeregisterDNS(ctx context.Context, networkName, hostname, ip string) error {
 	m.mu.Lock()
