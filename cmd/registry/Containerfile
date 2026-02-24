@@ -1,0 +1,6 @@
+# Scratch container for mkube-registry
+# Binary is cross-compiled locally (CGO_ENABLED=0, static)
+FROM scratch
+COPY mkube-registry /mkube-registry
+EXPOSE 5000 5001
+ENTRYPOINT ["/mkube-registry"]

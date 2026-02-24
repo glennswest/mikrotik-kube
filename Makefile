@@ -21,9 +21,9 @@ build-local:
 build-registry:
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build $(GOFLAGS) -o dist/mkube-registry-$(ARCH) ./cmd/registry/
 
-## Build installer for target architecture
+## Build installer (runs locally on the workstation, not on the device)
 build-installer:
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build $(GOFLAGS) -o dist/mkube-installer-$(ARCH) ./cmd/installer/
+	go build $(GOFLAGS) -o dist/mkube-installer ./cmd/installer/
 
 ## Build mkube-update for the target architecture
 build-update:
