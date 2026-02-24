@@ -14,6 +14,10 @@
 - **feat:** Scratch-based Containerfiles for mkube, mkube-update, and mkube-registry.
 - **feat:** Proper TLS for registry — installer generates CA + server cert (ECDSA P256), distributes CA cert to mkube and mkube-update. Registry serves HTTPS with fallback to HTTP.
 - **fix:** Installer seeding uses separate transports for GHCR (default) and local registry (CA transport). `crane.Copy` used a single transport which broke GHCR connections when using our CA. Now uses `crane.Pull` + `crane.Push`. Adds exists-check optimization.
+- **fix:** mkube-update bootstrap rewrites GHCR image refs to local registry — scratch containers have no system root CAs so GHCR TLS fails. Images are seeded by installer.
+- **fix:** mkube-update bootstrap uses `remote-image` instead of tarball — RouterOS pulls directly from local registry. Removes crane/dockersave/mutate dependencies.
+- **fix:** mkube-update `replaceContainer` uses `remote-image` instead of `tag` (which is read-only metadata). Adds `check-certificate=no` for RouterOS pulls.
+- **fix:** IP collision between veth-mkube-update (.3) and veth-registry (.3) — mkube-update got unique IP .5. Was causing "connection refused" (container connecting to itself).
 
 ### 2026-02-23
 - **fix:** Remove gw/dns pod from boot-order — gw microdns runs on pvex.gw.lo, not rose1. The conflicting rose1 container caused IP conflict on bridge-lan and "no route to host" errors.
