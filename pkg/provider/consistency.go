@@ -800,6 +800,10 @@ func (p *MicroKubeProvider) cleanStaleDNSRecords(ctx context.Context) (int, erro
 		return 0, nil
 	}
 
+	// Enable batch mode to cache record lists across zone iterations
+	dnsClient.BeginBatch()
+	defer dnsClient.EndBatch()
+
 	allPods := p.allDesiredPods(ctx)
 	cleaned := 0
 

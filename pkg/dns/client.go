@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -15,9 +16,16 @@ import (
 // Client is a REST client for MicroDNS instances.
 // It is stateless — each call takes the endpoint URL as a parameter,
 // so a single client can talk to multiple MicroDNS servers.
+//
+// Use BeginBatch/EndBatch to cache record lists across multiple calls,
+// avoiding repeated HTTP GETs of the same zone in a single reconcile.
 type Client struct {
 	http *http.Client
 	log  *zap.SugaredLogger
+
+	mu         sync.Mutex
+	batchMode  bool
+	recordCache map[string][]Record // "endpoint:zoneID" -> records
 }
 
 // Zone represents a MicroDNS zone.
@@ -57,6 +65,59 @@ func NewClient(log *zap.SugaredLogger) *Client {
 		http: &http.Client{Timeout: 10 * time.Second},
 		log:  log,
 	}
+}
+
+// BeginBatch enables record caching. While batch mode is active,
+// ListRecords results are cached per zone and reused by RegisterHost,
+// CleanStaleRecords, etc. This avoids O(N) HTTP GETs during reconcile.
+// Call EndBatch when done to release the cache.
+func (c *Client) BeginBatch() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.batchMode = true
+	c.recordCache = make(map[string][]Record)
+}
+
+// EndBatch disables record caching and clears the cache.
+func (c *Client) EndBatch() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.batchMode = false
+	c.recordCache = nil
+}
+
+// invalidateCache removes the cached records for a zone.
+// Called after mutations (create, delete) to keep the cache consistent.
+func (c *Client) invalidateCache(endpoint, zoneID string) {
+	if c.recordCache != nil {
+		delete(c.recordCache, endpoint+":"+zoneID)
+	}
+}
+
+// listRecordsCached returns cached records if in batch mode, otherwise fetches fresh.
+func (c *Client) listRecordsCached(ctx context.Context, endpoint, zoneID string) ([]Record, error) {
+	c.mu.Lock()
+	if c.batchMode {
+		key := endpoint + ":" + zoneID
+		if cached, ok := c.recordCache[key]; ok {
+			c.mu.Unlock()
+			return cached, nil
+		}
+		c.mu.Unlock()
+		// Fetch and cache
+		records, err := c.ListRecords(ctx, endpoint, zoneID)
+		if err != nil {
+			return nil, err
+		}
+		c.mu.Lock()
+		if c.recordCache != nil {
+			c.recordCache[key] = records
+		}
+		c.mu.Unlock()
+		return records, nil
+	}
+	c.mu.Unlock()
+	return c.ListRecords(ctx, endpoint, zoneID)
 }
 
 // EnsureZone finds an existing zone by name or creates it.
@@ -135,7 +196,7 @@ func (c *Client) EnsureZone(ctx context.Context, endpoint, zoneName string) (str
 // exists, the call is a no-op.
 func (c *Client) RegisterHost(ctx context.Context, endpoint, zoneID, hostname, ip string, ttl int) error {
 	// Check for existing record to avoid creating duplicates.
-	records, err := c.ListRecords(ctx, endpoint, zoneID)
+	records, err := c.listRecordsCached(ctx, endpoint, zoneID)
 	if err == nil {
 		for _, r := range records {
 			if r.Type == "A" && r.Name == hostname && r.Data.Data == ip {
@@ -168,6 +229,7 @@ func (c *Client) RegisterHost(ctx context.Context, endpoint, zoneID, hostname, i
 		return fmt.Errorf("registering host: HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
+	c.invalidateCache(endpoint, zoneID)
 	c.log.Infow("DNS record registered", "hostname", hostname, "ip", ip, "zone", zoneID)
 	return nil
 }
@@ -237,34 +299,25 @@ func (c *Client) ListRecords(ctx context.Context, endpoint, zoneID string) ([]Re
 
 // DeregisterHost removes all A records matching the given hostname from a zone.
 func (c *Client) DeregisterHost(ctx context.Context, endpoint, zoneID, hostname string) error {
-	records, err := c.ListRecords(ctx, endpoint, zoneID)
+	records, err := c.listRecordsCached(ctx, endpoint, zoneID)
 	if err != nil {
 		return err
 	}
 
-	// Delete matching records
+	deleted := false
 	for _, r := range records {
 		if r.Name == hostname && r.Type == "A" {
-			delURL := fmt.Sprintf("%s/api/v1/zones/%s/records/%s", endpoint, zoneID, r.ID)
-			delReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, delURL, nil)
-			if err != nil {
-				return fmt.Errorf("building delete request: %w", err)
+			if err := c.DeleteRecord(ctx, endpoint, zoneID, r.ID); err != nil {
+				return err
 			}
-
-			delResp, err := c.http.Do(delReq)
-			if err != nil {
-				return fmt.Errorf("deleting record %s: %w", r.ID, err)
-			}
-			delResp.Body.Close()
-
-			if delResp.StatusCode != http.StatusOK && delResp.StatusCode != http.StatusNoContent {
-				return fmt.Errorf("deleting record %s: HTTP %d", r.ID, delResp.StatusCode)
-			}
-
+			deleted = true
 			c.log.Infow("DNS record deregistered", "hostname", hostname, "record_id", r.ID, "zone", zoneID)
 		}
 	}
 
+	if deleted {
+		c.invalidateCache(endpoint, zoneID)
+	}
 	return nil
 }
 
@@ -273,33 +326,25 @@ func (c *Client) DeregisterHost(ctx context.Context, endpoint, zoneID, hostname 
 // removes the specific record for one IP — used for cleaning up pod-level
 // round-robin records without removing other containers' entries.
 func (c *Client) DeregisterHostByIP(ctx context.Context, endpoint, zoneID, hostname, ip string) error {
-	records, err := c.ListRecords(ctx, endpoint, zoneID)
+	records, err := c.listRecordsCached(ctx, endpoint, zoneID)
 	if err != nil {
 		return err
 	}
 
+	deleted := false
 	for _, r := range records {
 		if r.Name == hostname && r.Type == "A" && r.Data.Data == ip {
-			delURL := fmt.Sprintf("%s/api/v1/zones/%s/records/%s", endpoint, zoneID, r.ID)
-			delReq, err := http.NewRequestWithContext(ctx, http.MethodDelete, delURL, nil)
-			if err != nil {
-				return fmt.Errorf("building delete request: %w", err)
+			if err := c.DeleteRecord(ctx, endpoint, zoneID, r.ID); err != nil {
+				return err
 			}
-
-			delResp, err := c.http.Do(delReq)
-			if err != nil {
-				return fmt.Errorf("deleting record %s: %w", r.ID, err)
-			}
-			delResp.Body.Close()
-
-			if delResp.StatusCode != http.StatusOK && delResp.StatusCode != http.StatusNoContent {
-				return fmt.Errorf("deleting record %s: HTTP %d", r.ID, delResp.StatusCode)
-			}
-
+			deleted = true
 			c.log.Infow("DNS record deregistered by IP", "hostname", hostname, "ip", ip, "record_id", r.ID, "zone", zoneID)
 		}
 	}
 
+	if deleted {
+		c.invalidateCache(endpoint, zoneID)
+	}
 	return nil
 }
 
@@ -307,11 +352,12 @@ func (c *Client) DeregisterHostByIP(ctx context.Context, endpoint, zoneID, hostn
 // match the given current IP. Used to clean up stale records when a pod
 // gets a new IP on recreation.
 func (c *Client) CleanStaleRecords(ctx context.Context, endpoint, zoneID, hostname, currentIP string) error {
-	records, err := c.ListRecords(ctx, endpoint, zoneID)
+	records, err := c.listRecordsCached(ctx, endpoint, zoneID)
 	if err != nil {
 		return err
 	}
 
+	deleted := false
 	for _, r := range records {
 		if r.Name == hostname && r.Type == "A" && r.Data.Data != currentIP {
 			if err := c.DeleteRecord(ctx, endpoint, zoneID, r.ID); err != nil {
@@ -319,11 +365,15 @@ func (c *Client) CleanStaleRecords(ctx context.Context, endpoint, zoneID, hostna
 					"hostname", hostname, "stale_ip", r.Data.Data,
 					"current_ip", currentIP, "error", err)
 			} else {
+				deleted = true
 				c.log.Infow("removed stale DNS record",
 					"hostname", hostname, "stale_ip", r.Data.Data,
 					"current_ip", currentIP)
 			}
 		}
+	}
+	if deleted {
+		c.invalidateCache(endpoint, zoneID)
 	}
 	return nil
 }

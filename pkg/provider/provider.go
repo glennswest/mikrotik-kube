@@ -1662,6 +1662,14 @@ func (p *MicroKubeProvider) registerPodAliases(ctx context.Context, pod *corev1.
 // Registers both container-level records (container.pod → IP) and pod-level
 // aliases (podName → IP).
 func (p *MicroKubeProvider) reregisterPodDNS(ctx context.Context) {
+	// Enable batch mode on the DNS client to cache record lists per zone.
+	// Without this, every RegisterDNS and CleanStaleDNS call fetches the
+	// full zone record list via HTTP — O(pods × containers × 2) GETs.
+	if dc := p.deps.NetworkMgr.DNSClient(); dc != nil {
+		dc.BeginBatch()
+		defer dc.EndBatch()
+	}
+
 	for _, pod := range p.pods {
 		networkName := pod.Annotations[annotationNetwork]
 		namespaceName := pod.Namespace

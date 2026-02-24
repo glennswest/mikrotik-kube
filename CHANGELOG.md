@@ -19,7 +19,8 @@
 - **feat:** Network health category in consistency report — `/api/v1/consistency` now includes a `network` section showing veth presence, IP assignment, and static IP match status for all pods.
 
 ### 2026-02-24
-- **feat:** Boot timing instrumentation — all startup phases (`BOOT:` prefix) and reconcile steps (`RECONCILE:` prefix) now log elapsed milliseconds. Enables profiling the 60+ second boot delay to identify specific bottlenecks (RouterOS connect, discovery, DNS init, NATS, registry, etc.).
+- **perf:** DNS record cache (batch mode) — `BeginBatch`/`EndBatch` on DNS client caches `ListRecords` results per zone, avoiding O(pods × containers × 2) HTTP GETs during reconcile. Steady-state reconcile step 7 (`reregisterPodDNS`) dropped from **~56 seconds to <3 seconds**. Applied to `reregisterPodDNS`, `InitDNSZones`, and `cleanStaleDNSRecords`.
+- **feat:** Boot timing instrumentation — all startup phases (`BOOT:` prefix) and reconcile steps (`RECONCILE:` prefix) now log elapsed milliseconds. Identifies bottlenecks: discovery (8.4s), DZO bootstrap (6.2s), DNS init (3.2s) = ~18s boot total. First reconcile ~188s (pod creation + DNS registration).
 - **fix:** Stale DNS cleanup — when a pod gets a new IP, old A records for the same hostname are automatically removed before registering the new one. Prevents accumulation of stale DNS entries across pod recreations.
 
 ### 2026-02-23
