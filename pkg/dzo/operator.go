@@ -386,7 +386,7 @@ func (o *Operator) createMicroDNSInstance(ctx context.Context, zoneName, network
 	// Create RouterOS container
 	spec := routeros.ContainerSpec{
 		Name:        containerName,
-		Tag:         image,
+		RemoteImage: image,
 		Interface:   vethName,
 		RootDir:     fmt.Sprintf("/raid1/images/%s", containerName),
 		Hostname:    containerName,

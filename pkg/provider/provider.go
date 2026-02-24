@@ -1462,8 +1462,9 @@ func (p *MicroKubeProvider) watchPods(ctx context.Context, clientset kubernetes.
 
 // UpdateContainerRequest is the JSON body for the update-container API.
 type UpdateContainerRequest struct {
-	Name string `json:"name"` // RouterOS container name
-	Tag  string `json:"tag"`  // new registry image ref
+	Name    string `json:"name"`              // RouterOS container name
+	Tag     string `json:"tag"`               // new registry image ref
+	Tarball string `json:"tarball,omitempty"` // RouterOS-relative tarball path (preferred over Tag)
 }
 
 // RunUpdateAPI starts an HTTP server that exposes an internal API for
@@ -1483,9 +1484,9 @@ func (p *MicroKubeProvider) RunUpdateAPI(ctx context.Context, listenAddr string)
 			return
 		}
 
-		log.Infow("update-container request", "name", req.Name, "tag", req.Tag)
+		log.Infow("update-container request", "name", req.Name, "tag", req.Tag, "tarball", req.Tarball)
 
-		if err := p.replaceContainer(r.Context(), req.Name, req.Tag); err != nil {
+		if err := p.replaceContainer(r.Context(), req.Name, req.Tag, req.Tarball); err != nil {
 			log.Errorw("update-container failed", "name", req.Name, "error", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -1511,9 +1512,10 @@ func (p *MicroKubeProvider) RunUpdateAPI(ctx context.Context, listenAddr string)
 	}
 }
 
-// replaceContainer stops, removes, and recreates a container with a new image tag.
+// replaceContainer stops, removes, and recreates a container with a new image.
+// If tarball is provided, uses local file (file=); otherwise uses remote-image (tag=).
 // It preserves the existing container's config (interface, root-dir, mounts, etc.).
-func (p *MicroKubeProvider) replaceContainer(ctx context.Context, name, newTag string) error {
+func (p *MicroKubeProvider) replaceContainer(ctx context.Context, name, newTag, tarball string) error {
 	log := p.deps.Logger.Named("update-api")
 
 	// Get the existing container to preserve its config
@@ -1550,10 +1552,10 @@ func (p *MicroKubeProvider) replaceContainer(ctx context.Context, name, newTag s
 		return fmt.Errorf("removing container %s: %w", name, err)
 	}
 
-	// Recreate with new tag, preserving config
+	// Recreate with new image, preserving config.
+	// Prefer tarball (file=) over remote-image (tag=) when available.
 	spec := runtime.ContainerSpec{
 		Name:        ct.Name,
-		Tag:         newTag,
 		Interface:   ct.Interface,
 		RootDir:     ct.RootDir,
 		MountLists:  ct.MountLists,
@@ -1565,8 +1567,13 @@ func (p *MicroKubeProvider) replaceContainer(ctx context.Context, name, newTag s
 		Logging:     ct.Logging,
 		StartOnBoot: ct.StartOnBoot,
 	}
-
-	log.Infow("creating container with new tag", "name", name, "tag", newTag)
+	if tarball != "" {
+		spec.Image = tarball // maps to RouterOS file= parameter
+		log.Infow("creating container from tarball", "name", name, "tarball", tarball)
+	} else {
+		spec.Tag = newTag // maps to RouterOS remote-image= parameter
+		log.Infow("creating container with remote-image", "name", name, "tag", newTag)
+	}
 	if err := p.deps.Runtime.CreateContainer(ctx, spec); err != nil {
 		return fmt.Errorf("creating container %s: %w", name, err)
 	}

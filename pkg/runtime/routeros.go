@@ -21,7 +21,7 @@ func (r *RouterOSRuntime) CreateContainer(ctx context.Context, spec ContainerSpe
 	return r.client.CreateContainer(ctx, routeros.ContainerSpec{
 		Name:        spec.Name,
 		File:        spec.Image,
-		Tag:         spec.Tag,
+		RemoteImage: spec.Tag,
 		Interface:   spec.Interface,
 		RootDir:     spec.RootDir,
 		MountLists:  spec.MountLists,
