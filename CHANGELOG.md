@@ -10,6 +10,10 @@
 - **feat:** Registry IP configurable — default `192.168.200.3`, all image refs and config updated. User can override via installer config.
 - **feat:** `deploy-installer.sh` and `make-tarball-generic.sh` scripts for bootstrapping fresh devices.
 - **feat:** Makefile targets: `build-registry`, `build-installer`, `build-all`, `deploy-installer`.
+- **refactor:** Installer rewritten as local CLI tool (cobra) — runs on Mac, connects to device via REST API + SSH/SFTP. No tarballs, no container deployment of the installer itself.
+- **feat:** Scratch-based Containerfiles for mkube, mkube-update, and mkube-registry.
+- **feat:** Proper TLS for registry — installer generates CA + server cert (ECDSA P256), distributes CA cert to mkube and mkube-update. Registry serves HTTPS with fallback to HTTP.
+- **fix:** Installer seeding uses separate transports for GHCR (default) and local registry (CA transport). `crane.Copy` used a single transport which broke GHCR connections when using our CA. Now uses `crane.Pull` + `crane.Push`. Adds exists-check optimization.
 
 ### 2026-02-23
 - **fix:** Remove gw/dns pod from boot-order — gw microdns runs on pvex.gw.lo, not rose1. The conflicting rose1 container caused IP conflict on bridge-lan and "no route to host" errors.
