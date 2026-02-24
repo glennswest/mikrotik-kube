@@ -1,9 +1,11 @@
 // mkube-update: Watches a local OCI registry for image digest changes and
 // replaces RouterOS containers when new images are available.
 //
-// For most containers, mkube-update talks directly to the RouterOS REST API.
-// For its own container (self-update), it calls the mkube update API
-// which performs the swap.
+// Uses tarball-based updates: pre-pulls images from registry while old
+// container is still running, then swaps using local file. This eliminates
+// the chicken-and-egg problem where registry can't pull its own update.
+//
+// For self-updates, it calls the mkube update API which performs the swap.
 
 package main
 
@@ -18,10 +20,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/crane"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
@@ -36,6 +42,8 @@ type Config struct {
 	RouterOSPassword string          `yaml:"routerosPassword"`
 	MkubeAPI         string          `yaml:"mkubeAPI"`
 	PollSeconds      int             `yaml:"pollSeconds"`
+	TarballDir       string          `yaml:"tarballDir"`       // container path for staging tarballs (default: /data/staging)
+	TarballROSPath   string          `yaml:"tarballROSPath"`   // RouterOS-relative path prefix (default: raid1/volumes/mkube-update-updater/data/staging)
 	Watches          []WatchEntry    `yaml:"watches"`
 	Bootstrap        BootstrapConfig `yaml:"bootstrap"`
 }
@@ -64,9 +72,9 @@ type BootstrapContainer struct {
 // WatchEntry defines a single image to watch in the local registry.
 type WatchEntry struct {
 	Repo         string        `yaml:"repo"`
-	Tag          string        `yaml:"tag"`           // single tag (backward compat)
-	Tags         []string      `yaml:"tags,omitempty"` // ordered preference list; first found wins
-	Container    string        `yaml:"container,omitempty"`  // single container
+	Tag          string        `yaml:"tag"`                   // single tag (backward compat)
+	Tags         []string      `yaml:"tags,omitempty"`        // ordered preference list; first found wins
+	Container    string        `yaml:"container,omitempty"`   // single container
 	Containers   []string      `yaml:"containers,omitempty"` // multiple containers
 	SelfUpdate   bool          `yaml:"selfUpdate,omitempty"`
 	Rolling      bool          `yaml:"rolling,omitempty"`
@@ -121,6 +129,12 @@ func main() {
 	if cfg.PollSeconds <= 0 {
 		cfg.PollSeconds = 60
 	}
+	if cfg.TarballDir == "" {
+		cfg.TarballDir = "/data/staging"
+	}
+	if cfg.TarballROSPath == "" {
+		cfg.TarballROSPath = "raid1/volumes/mkube-update-updater/data/staging"
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -133,6 +147,11 @@ func main() {
 			Transport: loadRegistryTransport(log),
 			Timeout:   30 * time.Second,
 		},
+	}
+
+	// Ensure tarball staging directory exists
+	if err := os.MkdirAll(cfg.TarballDir, 0755); err != nil {
+		log.Fatalw("creating tarball staging dir", "path", cfg.TarballDir, "error", err)
 	}
 
 	// Bootstrap mkube if configured
@@ -234,9 +253,9 @@ func (u *Updater) poll(ctx context.Context) {
 
 		if w.SelfUpdate {
 			// Self-update: ask mkube to replace us
-			for _, name := range targets {
-				if err := u.requestSelfUpdate(ctx, name, imageRef); err != nil {
-					u.log.Errorw("self-update request failed", "name", name, "error", err)
+			for _, tgt := range targets {
+				if err := u.requestSelfUpdate(ctx, tgt, imageRef); err != nil {
+					u.log.Errorw("self-update request failed", "name", tgt, "error", err)
 					// Revert digest so we retry next poll
 					u.digests[key] = prev
 				}
@@ -246,10 +265,9 @@ func (u *Updater) poll(ctx context.Context) {
 			if delay == 0 {
 				delay = 5 * time.Second
 			}
-			for i, name := range targets {
-				if err := u.replaceContainer(ctx, name, imageRef); err != nil {
-					u.log.Errorw("rolling update failed", "name", name, "error", err)
-					// Revert digest so we retry next poll
+			for i, tgt := range targets {
+				if err := u.replaceContainer(ctx, tgt, imageRef); err != nil {
+					u.log.Errorw("rolling update failed", "name", tgt, "error", err)
 					u.digests[key] = prev
 					break
 				}
@@ -258,9 +276,9 @@ func (u *Updater) poll(ctx context.Context) {
 				}
 			}
 		} else {
-			for _, name := range targets {
-				if err := u.replaceContainer(ctx, name, imageRef); err != nil {
-					u.log.Errorw("container replacement failed", "name", name, "error", err)
+			for _, tgt := range targets {
+				if err := u.replaceContainer(ctx, tgt, imageRef); err != nil {
+					u.log.Errorw("container replacement failed", "name", tgt, "error", err)
 					u.digests[key] = prev
 				}
 			}
@@ -298,17 +316,71 @@ func (u *Updater) getDigest(ctx context.Context, repo, tag string) (string, erro
 	return digest, nil
 }
 
-// replaceContainer stops, removes, and recreates a container via RouterOS REST API.
+// prePullTarball pulls an image from the registry and saves it as a docker-save
+// tarball to the staging directory. This happens BEFORE the old container is
+// stopped, so the registry is still available. Returns the container-local path
+// and the RouterOS-relative path.
+func (u *Updater) prePullTarball(ctx context.Context, imageRef string) (containerPath, rosPath string, err error) {
+	log := u.log.With("image", imageRef)
+	log.Info("pre-pulling image as tarball")
+
+	// Parse the image reference
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return "", "", fmt.Errorf("parsing image ref %q: %w", imageRef, err)
+	}
+
+	// Pull the image using our custom transport (registry CA)
+	img, err := remote.Image(ref, remote.WithContext(ctx), remote.WithTransport(u.http.Transport))
+	if err != nil {
+		return "", "", fmt.Errorf("pulling image %q: %w", imageRef, err)
+	}
+
+	// Sanitize filename: "192.168.200.3:5000/mkube:edge" → "mkube-edge.tar"
+	parts := strings.Split(imageRef, "/")
+	repoTag := parts[len(parts)-1] // "mkube:edge"
+	safeName := strings.ReplaceAll(repoTag, ":", "-") + ".tar"
+
+	containerPath = filepath.Join(u.cfg.TarballDir, safeName)
+	rosPath = u.cfg.TarballROSPath + "/" + safeName
+
+	// Save as docker-save format tar
+	log.Infow("saving tarball", "path", containerPath, "rosPath", rosPath)
+	if err := crane.Save(img, imageRef, containerPath); err != nil {
+		os.Remove(containerPath)
+		return "", "", fmt.Errorf("saving tarball: %w", err)
+	}
+
+	// Verify file was created
+	info, err := os.Stat(containerPath)
+	if err != nil {
+		return "", "", fmt.Errorf("verifying tarball: %w", err)
+	}
+
+	log.Infow("tarball staged", "size", info.Size(), "rosPath", rosPath)
+	return containerPath, rosPath, nil
+}
+
+// replaceContainer pre-pulls the new image as a tarball, then stops, removes,
+// and recreates the container using the local tarball file.
 func (u *Updater) replaceContainer(ctx context.Context, name, imageRef string) error {
 	log := u.log.With("container", name, "image", imageRef)
 
-	// Get current container
+	// Step 1: Pre-pull tarball WHILE old container is still running.
+	// This is the key improvement — the registry is still up during this step.
+	containerPath, rosPath, err := u.prePullTarball(ctx, imageRef)
+	if err != nil {
+		return fmt.Errorf("pre-pulling tarball: %w", err)
+	}
+	defer os.Remove(containerPath) // clean up after use
+
+	// Step 2: Get current container config
 	ct, err := u.rosGetContainer(ctx, name)
 	if err != nil {
 		return fmt.Errorf("getting container: %w", err)
 	}
 
-	// Stop if running
+	// Step 3: Stop if running
 	if ct.isRunning() {
 		log.Info("stopping container")
 		if err := u.rosPost(ctx, "/container/stop", map[string]string{".id": ct.ID}); err != nil {
@@ -319,28 +391,29 @@ func (u *Updater) replaceContainer(ctx context.Context, name, imageRef string) e
 		}
 	}
 
-	// Remove
+	// Step 4: Remove old container
 	log.Info("removing container")
 	if err := u.rosPost(ctx, "/container/remove", map[string]string{".id": ct.ID}); err != nil {
 		return fmt.Errorf("removing: %w", err)
 	}
-
-	// Wait for removal
 	time.Sleep(2 * time.Second)
 
-	// Recreate — we need the original container's full config
-	// Re-read to get all fields (the list endpoint returns everything)
-	// Since we just removed it, we build the spec from what we had.
-	// Use remote-image (not tag) for OCI pulls, and skip RouterOS cert
-	// check since it doesn't have our custom CA.
+	// Step 5: Remove old root-dir to force fresh extraction
+	if ct.rootDir != "" {
+		log.Infow("cleaning root-dir for fresh extraction", "rootDir", ct.rootDir)
+		// RouterOS file remove via REST API
+		_ = u.rosPost(ctx, "/file/remove", map[string]string{".id": ct.rootDir})
+		time.Sleep(time.Second)
+	}
+
+	// Step 6: Create new container from pre-staged tarball
 	spec := map[string]string{
-		"name":              name,
-		"remote-image":      imageRef,
-		"check-certificate": "no",
-		"interface":         ct.iface,
-		"root-dir":          ct.rootDir,
-		"logging":           ct.logging,
-		"start-on-boot":     ct.startOnBoot,
+		"name":          name,
+		"file":          rosPath,
+		"interface":     ct.iface,
+		"root-dir":      ct.rootDir,
+		"logging":       ct.logging,
+		"start-on-boot": ct.startOnBoot,
 	}
 	if ct.mountLists != "" {
 		spec["mountlists"] = ct.mountLists
@@ -361,13 +434,13 @@ func (u *Updater) replaceContainer(ctx context.Context, name, imageRef string) e
 		spec["workdir"] = ct.workDir
 	}
 
-	log.Info("creating container with new image")
+	log.Infow("creating container from tarball", "rosPath", rosPath)
 	if err := u.rosPost(ctx, "/container/add", spec); err != nil {
 		return fmt.Errorf("creating: %w", err)
 	}
 
-	// Wait for extraction + start
-	if err := u.waitForExists(ctx, name); err != nil {
+	// Step 7: Wait for extraction + start
+	if err := u.waitForExtraction(ctx, name); err != nil {
 		return err
 	}
 
@@ -381,12 +454,11 @@ func (u *Updater) replaceContainer(ctx context.Context, name, imageRef string) e
 		return fmt.Errorf("starting: %w", err)
 	}
 
-	// Verify running
 	if err := u.waitForRunning(ctx, name); err != nil {
 		return err
 	}
 
-	log.Info("container replaced successfully")
+	log.Info("container replaced successfully via tarball")
 	return nil
 }
 
@@ -394,9 +466,18 @@ func (u *Updater) replaceContainer(ctx context.Context, name, imageRef string) e
 func (u *Updater) requestSelfUpdate(ctx context.Context, name, imageRef string) error {
 	u.log.Infow("requesting self-update via mkube API", "name", name, "tag", imageRef)
 
+	// Pre-pull tarball first, then tell mkube to use it
+	containerPath, rosPath, err := u.prePullTarball(ctx, imageRef)
+	if err != nil {
+		return fmt.Errorf("pre-pulling tarball for self-update: %w", err)
+	}
+	// Don't remove tarball here — mkube needs it to recreate us
+	_ = containerPath
+
 	body, _ := json.Marshal(map[string]string{
-		"name": name,
-		"tag":  imageRef,
+		"name":    name,
+		"tag":     imageRef,
+		"tarball": rosPath,
 	})
 
 	url := fmt.Sprintf("%s/api/v1/update-container", u.cfg.MkubeAPI)
@@ -424,8 +505,8 @@ func (u *Updater) requestSelfUpdate(ctx context.Context, name, imageRef string) 
 // ─── Bootstrap ──────────────────────────────────────────────────────────────
 
 // bootstrap ensures the mkube container exists on RouterOS. If missing, it
-// pulls the image from GHCR, creates a docker-save tarball, and creates the
-// container via the RouterOS REST API.
+// pre-pulls the image as a tarball from the local registry and creates the
+// container using the file parameter.
 func (u *Updater) bootstrap(ctx context.Context) error {
 	bc := u.cfg.Bootstrap
 	log := u.log.With("bootstrap", bc.Container.Name)
@@ -450,9 +531,7 @@ func (u *Updater) bootstrap(ctx context.Context) error {
 		return nil
 	}
 
-	// Container doesn't exist — create it via remote-image from local registry.
-	// The installer seeds all images into the local registry, so we pull from
-	// there. Scratch containers have no system root CAs so GHCR TLS would fail.
+	// Container doesn't exist — pre-pull tarball from local registry, then create.
 	imageRef := bc.Image
 	if strings.HasPrefix(imageRef, "ghcr.io") {
 		repo := imageRef[strings.LastIndex(imageRef, "/")+1:] // "mkube:edge"
@@ -462,28 +541,33 @@ func (u *Updater) bootstrap(ctx context.Context) error {
 
 	log.Infow("mkube container not found, bootstrapping", "image", imageRef)
 
-	// Create container via remote-image (RouterOS pulls from registry directly)
+	// Pre-pull tarball
+	_, rosPath, err := u.prePullTarball(ctx, imageRef)
+	if err != nil {
+		return fmt.Errorf("pre-pulling tarball for bootstrap: %w", err)
+	}
+
+	// Create container from tarball
 	spec := map[string]string{
-		"name":              bc.Container.Name,
-		"remote-image":      imageRef,
-		"check-certificate": "no",
-		"interface":         bc.Container.Interface,
-		"root-dir":          bc.Container.RootDir,
-		"hostname":          bc.Container.Hostname,
-		"dns":               bc.Container.DNS,
-		"logging":           bc.Container.Logging,
-		"start-on-boot":     bc.Container.StartOnBoot,
+		"name":          bc.Container.Name,
+		"file":          rosPath,
+		"interface":     bc.Container.Interface,
+		"root-dir":      bc.Container.RootDir,
+		"hostname":      bc.Container.Hostname,
+		"dns":           bc.Container.DNS,
+		"logging":       bc.Container.Logging,
+		"start-on-boot": bc.Container.StartOnBoot,
 	}
 	if bc.Container.MountLists != "" {
 		spec["mountlists"] = bc.Container.MountLists
 	}
 
-	log.Infow("creating mkube container", "spec", spec)
+	log.Infow("creating mkube container from tarball", "spec", spec)
 	if err := u.rosPost(ctx, "/container/add", spec); err != nil {
 		return fmt.Errorf("creating container: %w", err)
 	}
 
-	// Wait for extraction (RouterOS downloads + extracts the image)
+	// Wait for extraction
 	log.Info("waiting for container extraction")
 	if err := u.waitForExtraction(ctx, bc.Container.Name); err != nil {
 		return fmt.Errorf("waiting for extraction: %w", err)
@@ -525,6 +609,10 @@ func (u *Updater) waitForExtraction(ctx context.Context, name string) error {
 		if ct.isStopped() {
 			return nil
 		}
+		// Check for extraction failure
+		if ct.status == "error" {
+			return fmt.Errorf("container %s extraction failed: %s", name, ct.comment)
+		}
 	}
 	return fmt.Errorf("container %s not extracted within 120s", name)
 }
@@ -548,6 +636,8 @@ type rosContainerFull struct {
 	dns         string
 	logging     string
 	startOnBoot string
+	status      string
+	comment     string
 }
 
 func (c rosContainerFull) isRunning() bool { return c.Running == "true" }
@@ -581,6 +671,8 @@ func (u *Updater) rosGetContainer(ctx context.Context, name string) (*rosContain
 		ct.dns = strVal(c, "dns")
 		ct.logging = strVal(c, "logging")
 		ct.startOnBoot = strVal(c, "start-on-boot")
+		ct.status = strVal(c, "status")
+		ct.comment = strVal(c, "comment")
 		return ct, nil
 	}
 	return nil, fmt.Errorf("container %q not found", name)

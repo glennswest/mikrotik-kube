@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### 2026-02-24
+- **feat:** Tarball-based container updates — mkube-update now pre-pulls images as docker-save tarballs from registry while old container is still running, then swaps using `file=` parameter instead of `remote-image`. Eliminates the chicken-and-egg problem where registry can't pull its own update. Works for all containers: registry, mkube, microdns, etc. New config fields `tarballDir` and `tarballROSPath`.
+- **fix:** Registry concurrency — replaced global RWMutex in BlobStore with per-resource locking. Blob reads are lock-free (immutable content-addressed). Blob writes use per-digest mutex. Manifest operations use per-repo RWMutex. Upload sessions use per-session mutex. Different repos/blobs can now be pushed/pulled concurrently.
+- **fix:** Registry operation timeouts — added 15s timeout to `getRegistryDigest` and 2min timeout to `pullAndUpload` in storage manager. Prevents reconcile loop from blocking indefinitely when registry is unresponsive.
 - **fix:** Handle orphaned pods in NATS during delete — `GetPod` now falls back to NATS store when pod isn't tracked in memory. `handleDeletePod` can delete orphaned pods (e.g., `infra/registry`) that exist in NATS but never got tracked because `CreatePod` failed. Cleaned stale `infra/registry` entry from NATS.
 - **feat:** `boot_file_efi` support for UEFI PXE boot — new `bootFileEfi` field in `DHCPConfig`, TOML generation in `buildDHCPSection()`. g10 serves `ipxe.efi` to UEFI clients.
 - **fix:** Add server30 DHCP reservations on g10 — MACs `50:6B:4B:B1:9E:26`/`27` (Mellanox 25G SFP28) → `.30`/`.31` with DNS A records.
