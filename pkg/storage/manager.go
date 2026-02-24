@@ -57,6 +57,21 @@ type ProvisionedVolume struct {
 	CreatedAt     time.Time
 }
 
+// HostVisiblePath translates a container-internal path to the path visible
+// to RouterOS on the host. Paths under persistent mounts use the mount's
+// host path; all other paths use the selfRootDir prefix.
+func (m *Manager) HostVisiblePath(containerPath string) string {
+	for _, mount := range m.cfg.PersistentMounts {
+		if strings.HasPrefix(containerPath, mount.ContainerPath) {
+			return strings.Replace(containerPath, mount.ContainerPath, mount.HostPath, 1)
+		}
+	}
+	if m.cfg.SelfRootDir != "" {
+		return m.cfg.SelfRootDir + "/" + strings.TrimPrefix(containerPath, "/")
+	}
+	return containerPath
+}
+
 // NewManager initializes the storage manager.
 func NewManager(cfg config.StorageConfig, registryCfg config.RegistryConfig, ros *routeros.Client, log *zap.SugaredLogger) (*Manager, error) {
 	return &Manager{
@@ -101,10 +116,7 @@ func (m *Manager) EnsureImage(ctx context.Context, imageRef string) (string, err
 			if storedDigest != "" {
 				if currentDigest, err := m.getRegistryDigest(ctx, imageRef); err == nil && currentDigest == storedDigest {
 					// Tarball on disk matches registry — reuse it
-					hostPath := tarballPath
-					if m.cfg.SelfRootDir != "" {
-						hostPath = m.cfg.SelfRootDir + "/" + strings.TrimPrefix(tarballPath, "/")
-					}
+					hostPath := m.HostVisiblePath(tarballPath)
 					m.images[imageRef] = &CachedImage{
 						Ref:         imageRef,
 						TarballPath: hostPath,
@@ -131,14 +143,7 @@ func (m *Manager) EnsureImage(ctx context.Context, imageRef string) (string, err
 		_ = os.WriteFile(tarballPath+".digest", []byte(digest), 0o644)
 	}
 
-	// When selfRootDir is set, translate the container-internal path to the
-	// host-visible path that RouterOS uses for container file references.
-	// e.g. /raid1/cache/foo.tar → raid1/images/kube.gt.lo/raid1/cache/foo.tar
-	hostPath := tarballPath
-	if m.cfg.SelfRootDir != "" {
-		hostPath = m.cfg.SelfRootDir + "/" + strings.TrimPrefix(tarballPath, "/")
-		m.log.Infow("translated tarball path for RouterOS", "container", tarballPath, "host", hostPath)
-	}
+	hostPath := m.HostVisiblePath(tarballPath)
 
 	m.images[imageRef] = &CachedImage{
 		Ref:         imageRef,
@@ -177,10 +182,7 @@ func (m *Manager) RefreshImage(ctx context.Context, imageRef string) (tarballPat
 
 	if storedDigest == currentDigest {
 		// Image is fresh — populate cache if not already and return
-		hostPath := localTarball
-		if m.cfg.SelfRootDir != "" {
-			hostPath = m.cfg.SelfRootDir + "/" + strings.TrimPrefix(localTarball, "/")
-		}
+		hostPath := m.HostVisiblePath(localTarball)
 		if _, ok := m.images[imageRef]; !ok {
 			m.images[imageRef] = &CachedImage{
 				Ref:         imageRef,
@@ -207,10 +209,7 @@ func (m *Manager) RefreshImage(ctx context.Context, imageRef string) (tarballPat
 	}
 	_ = os.WriteFile(localTarball+".digest", []byte(currentDigest), 0o644)
 
-	hostPath := localTarball
-	if m.cfg.SelfRootDir != "" {
-		hostPath = m.cfg.SelfRootDir + "/" + strings.TrimPrefix(localTarball, "/")
-	}
+	hostPath := m.HostVisiblePath(localTarball)
 
 	m.images[imageRef] = &CachedImage{
 		Ref:         imageRef,

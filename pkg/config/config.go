@@ -181,10 +181,25 @@ type StorageConfig struct {
 	// raid1/images/kube.gt.lo/raid1/cache/foo.tar.
 	SelfRootDir string `yaml:"selfRootDir"`
 
+	// PersistentMounts maps container-internal paths to their host-visible
+	// paths for directories on dedicated mounts (not under root-dir).
+	// When translating a container path to a RouterOS-visible path, these
+	// mappings take priority over the selfRootDir prefix. This is required
+	// because the container root image is treated as read-only — all writable
+	// data lives on persistent mounts that survive container recreation.
+	PersistentMounts []MountMapping `yaml:"persistentMounts,omitempty"`
+
 	// Garbage collection
 	GCIntervalMinutes int  `yaml:"gcIntervalMinutes"`
 	GCKeepLastN       int  `yaml:"gcKeepLastN"` // keep last N unused images
 	GCDryRun          bool `yaml:"gcDryRun"`    // log only, don't delete
+}
+
+// MountMapping maps a container-internal path to its host-visible path.
+// Used for paths on dedicated persistent mounts that aren't under root-dir.
+type MountMapping struct {
+	ContainerPath string `yaml:"containerPath"` // e.g. "/raid1/cache"
+	HostPath      string `yaml:"hostPath"`      // e.g. "raid1/cache" (RouterOS-visible, no leading /)
 }
 
 type LifecycleConfig struct {

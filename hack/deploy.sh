@@ -110,6 +110,14 @@ sftp ${SSH_OPTS} "${SSH_USER}@${DEVICE}" <<SFTP_EOF 2>/dev/null || true
 -mkdir ${VOLUME_DIR}/${CONTAINER_NAME}
 -mkdir ${VOLUME_DIR}/${CONTAINER_NAME}/config
 -mkdir ${VOLUME_DIR}/${CONTAINER_NAME}/registry
+-mkdir ${VOLUME_DIR}/${CONTAINER_NAME}/data
+-mkdir ${VOLUME_DIR}/${CONTAINER_NAME}/data/configmaps
+SFTP_EOF
+
+# Tarball cache lives on a dedicated mount so it persists across root-dir recreations.
+# /raid1/cache is a top-level directory, not under any container's root-dir.
+sftp ${SSH_OPTS} "${SSH_USER}@${DEVICE}" <<SFTP_EOF 2>/dev/null || true
+-mkdir /raid1/cache
 SFTP_EOF
 
 echo "  ✓ Volume directories ready"
@@ -156,6 +164,26 @@ else
     echo "  ✓ Registry mount already exists"
 fi
 
+# Tarball cache — persistent so .tar and .digest files survive container recreation.
+# Root image is readonly; all writable data must be on persistent mounts.
+EXISTING_CACHE=$(ros "/container/mounts/print count-only where list=${CONTAINER_NAME}.cache and dst=/raid1/cache")
+if [ "${EXISTING_CACHE}" = "0" ] || [ -z "${EXISTING_CACHE}" ]; then
+    ros "/container/mounts/add list=${CONTAINER_NAME}.cache src=/raid1/cache dst=/raid1/cache" 2>/dev/null
+    echo "  ✓ Cache mount created"
+else
+    echo "  ✓ Cache mount already exists"
+fi
+
+# ConfigMap data — persistent so configmap files survive container recreation.
+# Without this, syncConfigMapsToDisk sees missing files and recreates ALL pods.
+EXISTING_DATA=$(ros "/container/mounts/print count-only where list=${CONTAINER_NAME}.data and dst=/data")
+if [ "${EXISTING_DATA}" = "0" ] || [ -z "${EXISTING_DATA}" ]; then
+    ros "/container/mounts/add list=${CONTAINER_NAME}.data src=/${VOLUME_DIR}/${CONTAINER_NAME}/data dst=/data" 2>/dev/null
+    echo "  ✓ Data mount created"
+else
+    echo "  ✓ Data mount already exists"
+fi
+
 echo "  ✓ Mounts configured"
 
 # ── Step 8: Upload tarball ───────────────────────────────────────────────────
@@ -190,7 +218,7 @@ fi
 echo ""
 echo "▸ Creating container '${CONTAINER_NAME}'..."
 
-ros "/container/add file=${REMOTE_TARBALL} interface=${MGMT_VETH} root-dir=${ROOT_DIR} name=${CONTAINER_NAME} start-on-boot=yes logging=yes dns=${DNS_SERVER} hostname=${CONTAINER_NAME} mountlists=${CONTAINER_NAME}.config,${CONTAINER_NAME}.registry"
+ros "/container/add file=${REMOTE_TARBALL} interface=${MGMT_VETH} root-dir=${ROOT_DIR} name=${CONTAINER_NAME} start-on-boot=yes logging=yes dns=${DNS_SERVER} hostname=${CONTAINER_NAME} mountlists=${CONTAINER_NAME}.config,${CONTAINER_NAME}.registry,${CONTAINER_NAME}.cache,${CONTAINER_NAME}.data"
 
 echo "  ✓ Container created"
 

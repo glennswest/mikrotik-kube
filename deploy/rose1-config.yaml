@@ -108,10 +108,10 @@ networks:
             ip: "192.168.10.27"
             hostname: "server8b"
           - mac: "FC:4C:EA:F9:4F:2F"
-            ip: "192.168.10.30"
+            ip: "192.168.10.50"
             hostname: "gb10"
           - mac: "FC:4C:EA:F9:4F:33"
-            ip: "192.168.10.40"
+            ip: "192.168.10.51"
             hostname: "gb10b"
           - mac: "D0:11:E5:A0:1A:A4"
             ip: "192.168.10.190"
@@ -185,6 +185,11 @@ storage:
   basePath: /raid1/images
   tarballCache: /raid1/cache
   selfRootDir: raid1/images/kube.gt.lo
+  persistentMounts:
+    - containerPath: "/raid1/cache"
+      hostPath: "raid1/cache"
+    - containerPath: "/data"
+      hostPath: "raid1/volumes/kube.gt.lo/data"
   gcIntervalMinutes: 60
   gcKeepLastN: 10
   gcDryRun: false

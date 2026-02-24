@@ -26,6 +26,8 @@
 - **perf:** Reduce DNS HTTP timeout from 10s to 3s — DNS containers are local, 10s was far too generous and caused 60s reconcile cycles when namespace DNS endpoints were unreachable.
 - **feat:** Boot timing instrumentation — all startup phases (`BOOT:` prefix) and reconcile steps (`RECONCILE:` prefix) now log elapsed milliseconds. Identifies bottlenecks: discovery (8.4s), DZO bootstrap (6.2s), DNS init (3.2s) = ~18s boot total. First reconcile ~188s (pod creation + DNS registration).
 - **fix:** Stale DNS cleanup — when a pod gets a new IP, old A records for the same hostname are automatically removed before registering the new one. Prevents accumulation of stale DNS entries across pod recreations.
+- **fix:** Root-readonly persistent mounts — root image is treated as readonly (like docker/podman). All writable data (`/raid1/cache` for tarballs+digests, `/data` for ConfigMaps) now lives on persistent mounts that survive container recreation. Prevents cascade recreation of ALL pods on mkube restart (syncConfigMapsToDisk saw missing files as "changed"). New `persistentMounts` config maps container paths to host-visible paths, replacing hardcoded `selfRootDir` translations.
+- **fix:** gb10 DHCP reservation IPs — moved gb10 from `.30`/`.40` (server30's addresses) to `.50`/`.51`. gb10 is a 100gig Mellanox device, not server30 (25gig Dell).
 
 ### 2026-02-23
 - **fix:** Consistency checker crash-looping containers — orphan detection only checked `p.pods` (tracked pods), not NATS store or boot-order manifest. NATS-sourced pods like ipmiserial were incorrectly flagged as orphaned and killed. Now checks all desired sources (tracked + NATS + boot-order) and skips cleanup entirely when NATS isn't connected yet.

@@ -255,8 +255,8 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 			}
 
 			// Write ConfigMap data files if this volume references a ConfigMap.
-			// Files are written locally and the path is translated via selfRootDir
-			// so RouterOS can see them.
+			// Files are written locally and the path is translated via HostVisiblePath
+			// so RouterOS can see them (uses persistent mount mapping if configured).
 			if data := p.resolveConfigMapVolume(pod, vm.Name); data != nil {
 				localDir := fmt.Sprintf("/data/configmaps/%s/%s", name, vm.Name)
 				if mkErr := os.MkdirAll(localDir, 0o755); mkErr != nil {
@@ -268,9 +268,7 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 						}
 					}
 					// Translate local path to RouterOS-visible path
-					if p.deps.Config.Storage.SelfRootDir != "" {
-						hostPath = p.deps.Config.Storage.SelfRootDir + "/" + strings.TrimPrefix(localDir, "/")
-					}
+					hostPath = p.deps.StorageMgr.HostVisiblePath(localDir)
 				}
 			}
 
