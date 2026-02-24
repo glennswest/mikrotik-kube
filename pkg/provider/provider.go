@@ -802,11 +802,13 @@ func (p *MicroKubeProvider) pushEventsChan() <-chan registry.PushEvent {
 
 func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 	log := p.deps.Logger
+	reconcileStart := time.Now()
 
 	// 1. Load desired pods and configmaps — from NATS store if available, else from YAML manifest
 	var desiredPods []*corev1.Pod
 	var manifestCMs []*corev1.ConfigMap
 
+	stepStart := time.Now()
 	if p.deps.Store != nil && p.deps.Store.Connected() {
 		desiredPods, manifestCMs = p.loadFromStore(ctx)
 	}
@@ -819,6 +821,7 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 			return fmt.Errorf("loading manifests: %w", err)
 		}
 	}
+	log.Debugw("RECONCILE: step 1 load manifests", "pods", len(desiredPods), "ms", time.Since(stepStart).Milliseconds())
 
 	// 1b. Ensure boot-order pods exist in NATS so infrastructure (DNS)
 	// is always in the desired state. Only adds pods that are completely
@@ -857,6 +860,7 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 	}
 
 	// 2. List actual containers on RouterOS
+	stepStart = time.Now()
 	actual, err := p.deps.Runtime.ListContainers(ctx)
 	if err != nil {
 		return fmt.Errorf("listing containers: %w", err)
@@ -865,8 +869,10 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 	for _, c := range actual {
 		actualByName[c.Name] = c
 	}
+	log.Debugw("RECONCILE: step 2 list containers", "count", len(actual), "ms", time.Since(stepStart).Milliseconds())
 
 	// 3. Create missing containers
+	stepStart = time.Now()
 	for _, pod := range desiredPods {
 		key := podKey(pod)
 		if _, tracked := p.pods[key]; tracked {
@@ -968,13 +974,17 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 		}
 	}
 
+	log.Debugw("RECONCILE: step 3 create/track pods", "ms", time.Since(stepStart).Milliseconds())
+
 	// 4. Re-sync IPAM allocations from actual veths on the device.
 	// Pods tracked via the "already exists" path above don't call
 	// AllocateInterface, so their veths may not be in IPAM yet.
 	// This ensures GetPodStatus can always return pod IPs.
+	stepStart = time.Now()
 	if err := p.deps.NetworkMgr.ResyncAllocations(ctx); err != nil {
 		log.Warnw("failed to re-sync IPAM allocations", "error", err)
 	}
+	log.Debugw("RECONCILE: step 4 IPAM resync", "ms", time.Since(stepStart).Milliseconds())
 
 	// 4b. Validate static IP pods have the correct veth IP.
 	// The "already exists" path above tracks pods but never calls
@@ -1011,17 +1021,24 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 	}
 
 	// 5. Sync ConfigMap data to disk and recreate pods whose ConfigMaps changed
+	stepStart = time.Now()
 	p.syncConfigMapsToDisk(ctx)
+	log.Debugw("RECONCILE: step 5 sync configmaps", "ms", time.Since(stepStart).Milliseconds())
 
 	// 6. Ensure DNS zones exist and records are seeded from config
+	stepStart = time.Now()
 	p.deps.NetworkMgr.InitDNSZones(ctx)
+	log.Debugw("RECONCILE: step 6 init DNS zones", "ms", time.Since(stepStart).Milliseconds())
 
 	// 7. Re-register DNS aliases for all tracked pods so they survive DNS container restarts
+	stepStart = time.Now()
 	p.reregisterPodDNS(ctx)
+	log.Debugw("RECONCILE: step 7 reregister DNS", "ms", time.Since(stepStart).Milliseconds())
 
 	// 8. Async consistency check for orphaned veths/IPAM
 	p.CheckConsistencyAsync("reconcile")
 
+	log.Infow("RECONCILE: complete", "total_ms", time.Since(reconcileStart).Milliseconds(), "tracked_pods", len(p.pods))
 	return nil
 }
 

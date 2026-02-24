@@ -100,13 +100,16 @@ func run(cmd *cobra.Command, args []string) error {
 
 // runRouterOS is the original RouterOS backend initialization path.
 func runRouterOS(ctx context.Context, cfg *config.Config, log *zap.SugaredLogger) error {
+	bootStart := time.Now()
+	phaseStart := time.Now()
+
 	// ── RouterOS API Client ─────────────────────────────────────────
 	rosClient, err := routeros.NewClient(cfg.RouterOS)
 	if err != nil {
 		return fmt.Errorf("connecting to RouterOS: %w", err)
 	}
 	defer rosClient.Close()
-	log.Info("connected to RouterOS")
+	log.Infow("BOOT: RouterOS connected", "phase_ms", time.Since(phaseStart).Milliseconds(), "total_ms", time.Since(bootStart).Milliseconds())
 
 	rt := runtime.NewRouterOSRuntime(rosClient)
 
@@ -115,6 +118,7 @@ func runRouterOS(ctx context.Context, cfg *config.Config, log *zap.SugaredLogger
 	defer dnsClient.Close()
 
 	// ── Device Discovery ────────────────────────────────────────────
+	phaseStart = time.Now()
 	var inv *discovery.Inventory
 	for attempt := 1; attempt <= 3; attempt++ {
 		inv, err = discovery.Discover(ctx, rosClient, log)
@@ -135,29 +139,37 @@ func runRouterOS(ctx context.Context, cfg *config.Config, log *zap.SugaredLogger
 			"containers_found", len(inv.Containers),
 		)
 	}
+	log.Infow("BOOT: discovery complete", "phase_ms", time.Since(phaseStart).Milliseconds(), "total_ms", time.Since(bootStart).Milliseconds())
 
 	// ── Network Driver ──────────────────────────────────────────────
 	rosDriver := netdriver.NewRouterOS(rosClient, cfg.NodeName, log)
 
 	// ── Network Manager (IPAM + bridge/veth + DNS) ──────────────────
+	phaseStart = time.Now()
 	netMgr, err := network.NewManager(cfg.Networks, rosDriver, dnsClient, log)
 	if err != nil {
 		return fmt.Errorf("initializing network manager: %w", err)
 	}
+	log.Infow("BOOT: network manager created", "phase_ms", time.Since(phaseStart).Milliseconds(), "total_ms", time.Since(bootStart).Milliseconds())
+
+	phaseStart = time.Now()
 	netMgr.InitDNSZones(ctx)
 	for _, n := range cfg.Networks {
 		log.Infow("network ready", "name", n.Name, "cidr", n.CIDR, "bridge", n.Bridge, "dns_zone", n.DNS.Zone)
 	}
+	log.Infow("BOOT: DNS zones initialized", "phase_ms", time.Since(phaseStart).Milliseconds(), "total_ms", time.Since(bootStart).Milliseconds())
 
 	// ── Storage Manager ─────────────────────────────────────────────
+	phaseStart = time.Now()
 	storageMgr, err := storage.NewManager(cfg.Storage, cfg.Registry, rosClient, log)
 	if err != nil {
 		return fmt.Errorf("initializing storage manager: %w", err)
 	}
 	go storageMgr.RunGarbageCollector(ctx)
-	log.Info("storage manager ready, GC started")
+	log.Infow("BOOT: storage manager ready", "phase_ms", time.Since(phaseStart).Milliseconds(), "total_ms", time.Since(bootStart).Milliseconds())
 
 	// ── Lifecycle Manager (boot ordering + probes + keepalive) ──────
+	phaseStart = time.Now()
 	lcMgr := lifecycle.NewManager(cfg.Lifecycle, rt, log)
 
 	if inv != nil {
@@ -188,9 +200,9 @@ func runRouterOS(ctx context.Context, cfg *config.Config, log *zap.SugaredLogger
 		}
 	}()
 
-	log.Info("lifecycle manager ready")
+	log.Infow("BOOT: lifecycle manager ready", "phase_ms", time.Since(phaseStart).Milliseconds(), "total_ms", time.Since(bootStart).Milliseconds())
 
-	return runSharedServices(ctx, cfg, rt, netMgr, storageMgr, lcMgr, dnsClient, rosClient, log)
+	return runSharedServices(ctx, cfg, rt, netMgr, storageMgr, lcMgr, dnsClient, rosClient, log, bootStart)
 }
 
 // runStormBase initializes the StormBase gRPC backend.
@@ -258,7 +270,7 @@ func runStormBase(ctx context.Context, cfg *config.Config, log *zap.SugaredLogge
 	go lcMgr.RunWatchdog(ctx)
 	log.Info("lifecycle manager ready (stormbase)")
 
-	return runSharedServices(ctx, cfg, sbClient, netMgr, storageMgr, lcMgr, dnsClient, nil, log)
+	return runSharedServices(ctx, cfg, sbClient, netMgr, storageMgr, lcMgr, dnsClient, nil, log, time.Now())
 }
 
 // runSharedServices starts services common to both backends (DZO, registry,
@@ -273,7 +285,10 @@ func runSharedServices(
 	dnsClient *dns.Client,
 	rosClient *routeros.Client, // nil for stormbase
 	log *zap.SugaredLogger,
+	bootStart time.Time,
 ) error {
+	phaseStart := time.Now()
+
 	// ── NATS State Store (optional, deferred if NATS not ready yet) ──
 	var kvStore *store.Store
 	natsDeferred := false
@@ -290,12 +305,14 @@ func runSharedServices(
 			}
 		}
 	}
+	log.Infow("BOOT: NATS store init", "phase_ms", time.Since(phaseStart).Milliseconds(), "deferred", natsDeferred, "total_ms", time.Since(bootStart).Milliseconds())
 
 	// ── HTTP API mux ────────────────────────────────────────────────
 	mux := http.NewServeMux()
 	listenAddr := ":8082"
 
 	// ── Domain Zone Operator + Namespace Manager (optional) ─────────
+	phaseStart = time.Now()
 	var nsMgr *namespace.Manager
 	if cfg.DZO.Enabled && rosClient != nil {
 		dzoOp := dzo.NewOperator(cfg.DZO, cfg.Networks, dnsClient, rosClient, netMgr, lcMgr, log)
@@ -321,8 +338,10 @@ func runSharedServices(
 		}
 	}
 	netMgr.RegisterRoutes(mux)
+	log.Infow("BOOT: DZO/namespace bootstrap", "phase_ms", time.Since(phaseStart).Milliseconds(), "total_ms", time.Since(bootStart).Milliseconds())
 
 	// ── Embedded Registry (optional) ────────────────────────────────
+	phaseStart = time.Now()
 	var reg *registry.Registry
 	if cfg.Registry.Enabled {
 		var err error
@@ -333,8 +352,10 @@ func runSharedServices(
 		defer func() { _ = reg.Shutdown(ctx) }()
 		log.Infow("embedded registry started", "addr", cfg.Registry.ListenAddr)
 	}
+	log.Infow("BOOT: registry started", "phase_ms", time.Since(phaseStart).Milliseconds(), "total_ms", time.Since(bootStart).Milliseconds())
 
 	// ── Provider ────────────────────────────────────────────────────
+	phaseStart = time.Now()
 	var pushEvents <-chan registry.PushEvent
 	if reg != nil {
 		pushEvents = reg.PushEvents
@@ -354,6 +375,7 @@ func runSharedServices(
 	if err != nil {
 		return fmt.Errorf("creating provider: %w", err)
 	}
+	log.Infow("BOOT: provider created", "phase_ms", time.Since(phaseStart).Milliseconds(), "total_ms", time.Since(bootStart).Milliseconds())
 
 	// ── Image Watcher ───────────────────────────────────────────────
 	var watcher *registry.ImageWatcher
@@ -441,7 +463,7 @@ func runSharedServices(
 	go p.RunUpdateAPI(ctx, ":8080")
 
 	if cfg.Standalone {
-		log.Info("running in standalone mode (local reconciler)")
+		log.Infow("BOOT: complete, entering standalone reconciler", "total_ms", time.Since(bootStart).Milliseconds())
 		return p.RunStandaloneReconciler(ctx)
 	}
 
