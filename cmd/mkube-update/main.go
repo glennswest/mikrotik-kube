@@ -23,7 +23,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/crane"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -337,14 +336,17 @@ func (u *Updater) replaceContainer(ctx context.Context, name, imageRef string) e
 
 	// Recreate — we need the original container's full config
 	// Re-read to get all fields (the list endpoint returns everything)
-	// Since we just removed it, we build the spec from what we had
+	// Since we just removed it, we build the spec from what we had.
+	// Use remote-image (not tag) for OCI pulls, and skip RouterOS cert
+	// check since it doesn't have our custom CA.
 	spec := map[string]string{
-		"name":          name,
-		"tag":           imageRef,
-		"interface":     ct.iface,
-		"root-dir":      ct.rootDir,
-		"logging":       ct.logging,
-		"start-on-boot": ct.startOnBoot,
+		"name":              name,
+		"remote-image":      imageRef,
+		"check-certificate": "no",
+		"interface":         ct.iface,
+		"root-dir":          ct.rootDir,
+		"logging":           ct.logging,
+		"start-on-boot":     ct.startOnBoot,
 	}
 	if ct.mountLists != "" {
 		spec["mountlists"] = ct.mountLists
@@ -455,22 +457,31 @@ func (u *Updater) bootstrap(ctx context.Context) error {
 	}
 
 	// Container doesn't exist — pull image and create it
-	log.Infow("mkube container not found, bootstrapping", "image", bc.Image)
-
-	// Pull image from GHCR
-	opts := []crane.Option{
+	// Prefer local registry (images were seeded by installer), fall back to
+	// GHCR only if the config explicitly points there.
+	imageRef := bc.Image
+	pullOpts := []crane.Option{
 		crane.WithContext(ctx),
 		crane.WithPlatform(&v1.Platform{
 			OS:           "linux",
 			Architecture: "arm64",
 		}),
-		crane.WithAuthFromKeychain(
-			authn.NewMultiKeychain(authn.DefaultKeychain, dockersave.AnonymousKeychain{}),
-		),
 	}
 
-	log.Infow("pulling mkube image", "ref", bc.Image)
-	img, err := crane.Pull(bc.Image, opts...)
+	if strings.HasPrefix(imageRef, "ghcr.io") {
+		// Rewrite to local registry — the installer already seeded this image.
+		// Scratch containers have no system root CAs so GHCR TLS fails.
+		repo := imageRef[strings.LastIndex(imageRef, "/")+1:] // "mkube:edge"
+		imageRef = trimScheme(u.cfg.RegistryURL) + "/" + repo
+		log.Infow("rewrote GHCR ref to local registry", "original", bc.Image, "local", imageRef)
+	}
+
+	// Use registry transport (trusts our CA) for pulling from local registry
+	pullOpts = append(pullOpts, crane.WithTransport(u.http.Transport))
+
+	log.Infow("mkube container not found, bootstrapping", "image", imageRef)
+	log.Infow("pulling mkube image", "ref", imageRef)
+	img, err := crane.Pull(imageRef, pullOpts...)
 	if err != nil {
 		return fmt.Errorf("pulling image %s: %w", bc.Image, err)
 	}
