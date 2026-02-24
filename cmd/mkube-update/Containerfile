@@ -1,0 +1,6 @@
+# Scratch container for mkube-update
+# Binary is cross-compiled locally (CGO_ENABLED=0, static)
+FROM scratch
+COPY mkube-update /mkube-update
+EXPOSE 8081
+ENTRYPOINT ["/mkube-update"]

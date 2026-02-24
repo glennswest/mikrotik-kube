@@ -141,32 +141,35 @@ type Installer struct {
 }
 
 func (ins *Installer) Run(ctx context.Context) error {
-	ins.log.Info("step 1/6: verifying device connectivity")
+	ins.log.Info("step 1/7: verifying device connectivity")
 	if err := ins.verifyDevice(ctx); err != nil {
 		return fmt.Errorf("device not reachable: %w", err)
 	}
 
-	ins.log.Info("step 2/6: creating network interfaces and mounts")
+	ins.log.Info("step 2/7: creating network interfaces and mounts")
 	if err := ins.setupInfra(ctx); err != nil {
 		return fmt.Errorf("infra setup: %w", err)
 	}
 
-	ins.log.Info("step 3/6: uploading config files")
+	ins.log.Info("step 3/7: uploading config files")
 	if err := ins.uploadConfigs(); err != nil {
 		return fmt.Errorf("uploading configs: %w", err)
 	}
 
-	ins.log.Info("step 4/6: creating and starting registry")
+	ins.log.Info("step 4/7: creating and starting registry")
 	if err := ins.ensureRegistry(ctx); err != nil {
 		return fmt.Errorf("registry: %w", err)
 	}
 
-	ins.log.Info("step 5/6: seeding images from GHCR")
+	ins.log.Info("step 5/7: seeding images from GHCR")
 	if err := ins.seedAllImages(ctx); err != nil {
 		return fmt.Errorf("seeding: %w", err)
 	}
 
-	ins.log.Info("step 6/6: creating mkube-update")
+	ins.log.Info("step 6/7: cleaning up old containers")
+	ins.cleanupOldContainers(ctx)
+
+	ins.log.Info("step 7/7: creating mkube-update")
 	if err := ins.ensureMkubeUpdate(ctx); err != nil {
 		return fmt.Errorf("mkube-update: %w", err)
 	}
@@ -500,8 +503,32 @@ func extractLocal(ref string) string {
 
 // ── Step 6: mkube-update ────────────────────────────────────────────────────
 
+func (ins *Installer) cleanupOldContainers(ctx context.Context) {
+	// Remove old mkube-installer container (no longer needed — installer runs locally)
+	for _, name := range []string{"mkube-installer"} {
+		ct, err := ins.rosGetContainer(ctx, name)
+		if err != nil {
+			continue
+		}
+		ins.log.Infow("removing old container", "name", name)
+		_ = ins.rosPost(ctx, "/container/stop", map[string]string{".id": ct.ID})
+		time.Sleep(2 * time.Second)
+		_ = ins.rosPost(ctx, "/container/remove", map[string]string{".id": ct.ID})
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// removeRootDir removes a container's root-dir via SSH so RouterOS
+// re-extracts the image tarball on creation.
+func (ins *Installer) removeRootDir(dir string) {
+	ins.log.Infow("removing old root-dir", "dir", dir)
+	_, _ = ins.ssh(fmt.Sprintf("/file/remove %s", dir))
+	time.Sleep(time.Second)
+}
+
 func (ins *Installer) ensureMkubeUpdate(ctx context.Context) error {
 	name := "mkube-update-updater"
+	imageRef := fmt.Sprintf("%s:5000/mkube-update:edge", ins.registryIP)
 
 	ct, err := ins.rosGetContainer(ctx, name)
 	if err == nil {
@@ -509,17 +536,19 @@ func (ins *Installer) ensureMkubeUpdate(ctx context.Context) error {
 			ins.log.Info("mkube-update already running")
 			return nil
 		}
-		ins.log.Info("mkube-update exists but stopped, starting")
-		if err := ins.rosPost(ctx, "/container/start", map[string]string{".id": ct.ID}); err != nil {
-			return err
+		// Stopped container — likely stale/broken. Remove and recreate.
+		ins.log.Infow("removing stale mkube-update container", "id", ct.ID)
+		_ = ins.rosPost(ctx, "/container/stop", map[string]string{".id": ct.ID})
+		time.Sleep(2 * time.Second)
+		if err := ins.rosPost(ctx, "/container/remove", map[string]string{".id": ct.ID}); err != nil {
+			ins.log.Warnw("failed to remove old container, proceeding anyway", "err", err)
 		}
-		return ins.waitForContainerRunning(ctx, name)
+		time.Sleep(2 * time.Second)
 	}
 
-	// Pull from local registry — no tarball
-	imageRef := fmt.Sprintf("%s:5000/mkube-update:edge", ins.registryIP)
-	ins.log.Infow("creating mkube-update", "image", imageRef)
+	ins.removeRootDir("/raid1/images/mkube-update-updater")
 
+	ins.log.Infow("creating mkube-update", "image", imageRef)
 	if err := ins.rosPost(ctx, "/container/add", map[string]string{
 		"name":          name,
 		"tag":           imageRef,

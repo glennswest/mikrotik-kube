@@ -1,0 +1,6 @@
+# Scratch container for mkube
+# Binary is cross-compiled locally (CGO_ENABLED=0, static)
+FROM scratch
+COPY mkube /mkube
+EXPOSE 8080 8082
+ENTRYPOINT ["/mkube", "--config", "/etc/mkube/config.yaml"]
