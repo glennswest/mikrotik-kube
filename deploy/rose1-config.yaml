@@ -234,3 +234,4 @@ registry:
   localAddresses:
     - "192.168.200.3:5000"
     - "192.168.200.2:5000"  # legacy alias — rewritten to primary
+    - "registry.gt.lo:5000"  # DNS alias — rewritten to primary

@@ -571,7 +571,14 @@ func (p *MicroKubeProvider) checkIPAM(ctx context.Context) []CheckItem {
 // container operations. It detects and cleans up orphaned veths and IPAM entries.
 // The delay gives the system time to settle after the triggering operation.
 func (p *MicroKubeProvider) CheckConsistencyAsync(reason string) {
+	// Only allow one consistency check goroutine at a time.
+	// If one is already running/pending, skip this invocation.
+	if !p.consistencyRunning.CompareAndSwap(false, true) {
+		p.deps.Logger.Debugw("consistency check already running, skipping", "trigger", reason)
+		return
+	}
 	go func() {
+		defer p.consistencyRunning.Store(false)
 		time.Sleep(5 * time.Second) // let the operation settle
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

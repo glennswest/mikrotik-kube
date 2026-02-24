@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -85,8 +86,9 @@ type MicroKubeProvider struct {
 	events          []corev1.Event               // recent events (ring buffer, max 256)
 	notifyPodStatus func(*corev1.Pod)            // callback for pod status updates
 	pushNotify      chan registry.PushEvent       // internal channel for API push notifications
-	redeploying     map[string]bool              // pod keys currently being redeployed (skip in reconciler)
-	networkFailures map[string]int               // pod key -> consecutive network health failures
+	redeploying        map[string]bool              // pod keys currently being redeployed (skip in reconciler)
+	networkFailures    map[string]int               // pod key -> consecutive network health failures
+	consistencyRunning atomic.Bool                  // guards CheckConsistencyAsync against goroutine leaks
 }
 
 // SetStore sets the NATS store on the provider (used for deferred NATS connection).

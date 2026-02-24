@@ -21,42 +21,11 @@
 # mkube-update is deployed separately by the installer.
 
 # ── OCI Registry (priority 3 — before everything) ─────────────────────────────
-# Standalone registry providing images for all other containers.
-# Created by mkube-installer on first boot, managed by mkube after that.
-
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: registry
-  namespace: infra
-  annotations:
-    vkube.io/network: gt
-    vkube.io/boot-priority: "3"
-    vkube.io/static-ip: "192.168.200.3"
-spec:
-  restartPolicy: Always
-  containers:
-    - name: registry
-      image: 192.168.200.3:5000/mkube-registry:edge
-      startupProbe:
-        httpGet:
-          path: /v2/
-          port: 5000
-        initialDelaySeconds: 2
-        periodSeconds: 2
-        failureThreshold: 10
-      livenessProbe:
-        httpGet:
-          path: /v2/
-          port: 5000
-        periodSeconds: 30
-        failureThreshold: 3
-      volumeMounts:
-        - name: config
-          mountPath: /etc/registry
-        - name: data
-          mountPath: /raid1/registry
+# Registry runs as standalone container `registry.gt.lo` at 192.168.200.3:5000.
+# Created and managed by mkube-installer — NOT managed by mkube's reconciler.
+# The installer uses its own naming convention (registry.gt.lo, veth-registry)
+# which differs from mkube's (infra_registry_registry, veth_infra_registry_0).
+# Including it here causes naming conflicts and repeated recreate failures.
 
 # ── NATS JetStream (priority 5 — before DNS) ─────────────────────────────────
 # Distributed key-value store for persistent pod/configmap state.
