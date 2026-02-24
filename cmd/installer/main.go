@@ -1,14 +1,12 @@
-// mkube-installer: One-shot bootstrap that creates the registry container,
-// seeds required images from GHCR, and starts mkube-update.
+// mkube-installer: Local CLI tool that bootstraps a fresh RouterOS device.
 //
-// Flow:
-//   1. Create registry container on RouterOS (pull image → docker-save → REST API)
-//   2. Wait for registry to respond on /v2/
-//   3. Seed all required images from GHCR into local registry
-//   4. Create mkube-update container from local registry
-//   5. Exit
+// Runs on your Mac/Linux workstation. Connects to the device via REST API
+// and SSH. Creates the registry, seeds images, and starts mkube-update.
+// No tarballs — all containers use OCI image pulls via tag=.
 //
-// After this runs, mkube-update takes over and bootstraps mkube itself.
+// Usage:
+//   mkube-installer --device 192.168.1.88
+//   mkube-installer --device rose1.gw.lo --registry-ip 192.168.200.3
 
 package main
 
@@ -21,8 +19,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -30,434 +28,534 @@ import (
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/crane"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
-	"github.com/google/go-containerregistry/pkg/v1/mutate"
+	"github.com/spf13/cobra"
 	"go.uber.org/zap"
-	"gopkg.in/yaml.v3"
 
 	"github.com/glennswest/mkube/pkg/dockersave"
 )
 
 var version = "dev"
 
-// Config is the installer configuration.
-type Config struct {
-	// RouterOS connection
-	RouterOSURL      string `yaml:"routerosURL"`
-	RouterOSUser     string `yaml:"routerosUser"`
-	RouterOSPassword string `yaml:"routerosPassword"`
-
-	// Registry container settings
-	Registry RegistryContainerConfig `yaml:"registry"`
-
-	// mkube-update container settings
-	MkubeUpdate MkubeUpdateContainerConfig `yaml:"mkubeUpdate"`
-
-	// Images to seed from GHCR into local registry after it's up
-	SeedImages []SeedImage `yaml:"seedImages"`
-
-	// Working directory for tarballs (inside the installer container)
-	TarballDir string `yaml:"tarballDir"`
-
-	// SelfRootDir is the installer's root-dir as seen by RouterOS host,
-	// for translating container paths to host-visible paths.
-	SelfRootDir string `yaml:"selfRootDir"`
-}
-
-// RegistryContainerConfig defines the registry container to create.
-type RegistryContainerConfig struct {
-	// Image to pull from GHCR for the registry container
-	Image string `yaml:"image"` // e.g. "ghcr.io/glennswest/mkube-registry:edge"
-
-	// Container spec
-	Name        string `yaml:"name"`      // e.g. "registry.gt.lo"
-	Interface   string `yaml:"interface"` // e.g. "veth-registry"
-	RootDir     string `yaml:"rootDir"`   // e.g. "/raid1/images/registry.gt.lo"
-	DNS         string `yaml:"dns"`       // e.g. "192.168.200.199"
-	MountLists  string `yaml:"mountLists"`
-	IP          string `yaml:"ip"`     // e.g. "192.168.200.3"
-	Bridge      string `yaml:"bridge"` // e.g. "bridge-gt"
-	Gateway     string `yaml:"gateway"` // e.g. "192.168.200.1"
-
-	// URL for health check after creation
-	HealthURL string `yaml:"healthURL"` // e.g. "http://192.168.200.3:5000/v2/"
-}
-
-// MkubeUpdateContainerConfig defines the mkube-update container to create.
-type MkubeUpdateContainerConfig struct {
-	// Image ref in local registry (set after seeding)
-	LocalImage string `yaml:"localImage"` // e.g. "192.168.200.3:5000/mkube-update:edge"
-
-	// Container spec
-	Name        string `yaml:"name"`      // e.g. "mkube-update-updater"
-	Interface   string `yaml:"interface"` // e.g. "veth-mkube"
-	RootDir     string `yaml:"rootDir"`
-	DNS         string `yaml:"dns"`
-	MountLists  string `yaml:"mountLists"`
-	Hostname    string `yaml:"hostname"`
-}
-
-// SeedImage defines an image to copy from GHCR to local registry.
-type SeedImage struct {
-	Upstream string `yaml:"upstream"` // e.g. "ghcr.io/glennswest/mkube:edge"
-	Local    string `yaml:"local"`    // e.g. "mkube:edge" (local registry repo:tag)
-}
-
 func main() {
+	rootCmd := &cobra.Command{
+		Use:     "mkube-installer",
+		Short:   "Bootstrap a fresh RouterOS device with mkube infrastructure",
+		Version: version,
+		RunE:    run,
+	}
+
+	f := rootCmd.Flags()
+	f.String("device", "", "RouterOS device address (IP or hostname, required)")
+	f.String("ssh-user", "admin", "SSH username")
+	f.String("ros-user", "mkube", "RouterOS REST API username")
+	f.String("ros-password", "mkube-rest", "RouterOS REST API password")
+	f.String("registry-ip", "192.168.200.3", "Static IP for the registry container")
+	f.String("registry-image", "ghcr.io/glennswest/mkube-registry:edge", "Registry container image on GHCR")
+	f.String("bridge", "bridge-gt", "RouterOS bridge name for container network")
+	f.String("gateway", "192.168.200.1", "Gateway IP for container network")
+	f.String("dns", "192.168.200.199", "DNS server for containers")
+	f.String("mkube-ip", "192.168.200.2", "Static IP for the mkube container")
+	f.StringSlice("seed", []string{
+		"ghcr.io/glennswest/mkube:edge",
+		"ghcr.io/glennswest/mkube-update:edge",
+		"ghcr.io/glennswest/mkube-registry:edge",
+		"ghcr.io/glennswest/microdns:edge",
+		"ghcr.io/glennswest/nats:edge",
+		"ghcr.io/glennswest/micrologs:edge",
+		"ghcr.io/glennswest/micrologs-collector-routeros:edge",
+		"ghcr.io/glennswest/ipmiserial:edge",
+		"ghcr.io/glennswest/mkube-console:edge",
+		"ghcr.io/glennswest/agent-monitor:edge",
+		"ghcr.io/glennswest/fastregistry:edge",
+	}, "Images to seed from GHCR into local registry")
+
+	_ = rootCmd.MarkFlagRequired("device")
+
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
+}
+
+func run(cmd *cobra.Command, args []string) error {
 	logger, _ := zap.NewProduction()
 	defer func() { _ = logger.Sync() }()
 	log := logger.Sugar()
 
-	log.Infow("starting mkube-installer", "version", version)
+	device, _ := cmd.Flags().GetString("device")
+	sshUser, _ := cmd.Flags().GetString("ssh-user")
+	rosUser, _ := cmd.Flags().GetString("ros-user")
+	rosPass, _ := cmd.Flags().GetString("ros-password")
+	registryIP, _ := cmd.Flags().GetString("registry-ip")
+	registryImage, _ := cmd.Flags().GetString("registry-image")
+	bridge, _ := cmd.Flags().GetString("bridge")
+	gateway, _ := cmd.Flags().GetString("gateway")
+	dns, _ := cmd.Flags().GetString("dns")
+	mkubeIP, _ := cmd.Flags().GetString("mkube-ip")
+	seedImages, _ := cmd.Flags().GetStringSlice("seed")
 
-	configPath := "/etc/installer/config.yaml"
-	if v := os.Getenv("INSTALLER_CONFIG"); v != "" {
-		configPath = v
-	}
-
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		log.Fatalw("reading config", "path", configPath, "error", err)
-	}
-
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		log.Fatalw("parsing config", "error", err)
-	}
-
-	if cfg.TarballDir == "" {
-		cfg.TarballDir = "/data"
-	}
+	log.Infow("mkube-installer", "version", version, "device", device)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	installer := &Installer{
-		cfg: cfg,
-		log: log,
+	ins := &Installer{
+		device:        device,
+		sshUser:       sshUser,
+		rosURL:        fmt.Sprintf("http://%s/rest", device),
+		rosUser:       rosUser,
+		rosPassword:   rosPass,
+		registryIP:    registryIP,
+		registryImage: registryImage,
+		bridge:        bridge,
+		gateway:       gateway,
+		dns:           dns,
+		mkubeIP:       mkubeIP,
+		seedImages:    seedImages,
+		log:           log,
 		http: &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			},
-			Timeout: 30 * time.Second,
+			Timeout: 60 * time.Second,
 		},
 	}
 
-	if err := installer.Run(ctx); err != nil {
-		log.Fatalw("installer failed", "error", err)
-	}
-
-	log.Info("installer complete, exiting")
+	return ins.Run(ctx)
 }
 
-// Installer orchestrates the bootstrap process.
 type Installer struct {
-	cfg  Config
-	log  *zap.SugaredLogger
-	http *http.Client
+	device        string
+	sshUser       string
+	rosURL        string
+	rosUser       string
+	rosPassword   string
+	registryIP    string
+	registryImage string
+	bridge        string
+	gateway       string
+	dns           string
+	mkubeIP       string
+	seedImages    []string
+	log           *zap.SugaredLogger
+	http          *http.Client
 }
 
-// Run executes the full bootstrap sequence.
 func (ins *Installer) Run(ctx context.Context) error {
-	// Step 1: Create registry veth + container
+	ins.log.Info("step 1/6: verifying device connectivity")
+	if err := ins.verifyDevice(ctx); err != nil {
+		return fmt.Errorf("device not reachable: %w", err)
+	}
+
+	ins.log.Info("step 2/6: creating network interfaces and mounts")
+	if err := ins.setupInfra(ctx); err != nil {
+		return fmt.Errorf("infra setup: %w", err)
+	}
+
+	ins.log.Info("step 3/6: uploading config files")
+	if err := ins.uploadConfigs(); err != nil {
+		return fmt.Errorf("uploading configs: %w", err)
+	}
+
+	ins.log.Info("step 4/6: creating and starting registry")
 	if err := ins.ensureRegistry(ctx); err != nil {
-		return fmt.Errorf("ensuring registry: %w", err)
+		return fmt.Errorf("registry: %w", err)
 	}
 
-	// Step 2: Wait for registry to be healthy
-	if err := ins.waitForRegistry(ctx); err != nil {
-		return fmt.Errorf("waiting for registry: %w", err)
+	ins.log.Info("step 5/6: seeding images from GHCR")
+	if err := ins.seedAllImages(ctx); err != nil {
+		return fmt.Errorf("seeding: %w", err)
 	}
 
-	// Step 3: Seed images from GHCR
-	if err := ins.seedImages(ctx); err != nil {
-		return fmt.Errorf("seeding images: %w", err)
-	}
-
-	// Step 4: Create mkube-update container
+	ins.log.Info("step 6/6: creating mkube-update")
 	if err := ins.ensureMkubeUpdate(ctx); err != nil {
-		return fmt.Errorf("ensuring mkube-update: %w", err)
+		return fmt.Errorf("mkube-update: %w", err)
+	}
+
+	ins.log.Info("bootstrap complete — mkube-update will now start mkube")
+	return nil
+}
+
+// ── Step 1: Verify device ───────────────────────────────────────────────────
+
+func (ins *Installer) verifyDevice(ctx context.Context) error {
+	var result []map[string]interface{}
+	if err := ins.rosGET(ctx, "/system/resource", &result); err != nil {
+		return fmt.Errorf("REST API: %w", err)
+	}
+	if len(result) > 0 {
+		arch, _ := result[0]["architecture-name"].(string)
+		board, _ := result[0]["board-name"].(string)
+		ins.log.Infow("device info", "arch", arch, "board", board)
+	}
+	return nil
+}
+
+// ── Step 2: Create veths, bridge ports, mounts, directories ─────────────────
+
+func (ins *Installer) setupInfra(ctx context.Context) error {
+	// Veths
+	veths := []struct {
+		name, ip string
+	}{
+		{"veth-registry", ins.registryIP + "/24"},
+		{"veth-mkube", ins.mkubeIP + "/24"},
+		{"veth-mkube-update", ins.mkubeIP + "/24"}, // shares IP with mkube (only one runs at a time during bootstrap)
+	}
+	for _, v := range veths {
+		ins.rosPost(ctx, "/interface/veth/add", map[string]string{
+			"name": v.name, "address": v.ip, "gateway": ins.gateway,
+		}) // ignore error if exists
+		ins.rosPost(ctx, "/interface/bridge/port/add", map[string]string{
+			"bridge": ins.bridge, "interface": v.name,
+		}) // ignore error if exists
+		ins.log.Infow("veth ready", "name", v.name, "ip", v.ip)
+	}
+
+	// Mounts (idempotent — only created if not already present)
+	mounts := []struct {
+		list, src, dst string
+	}{
+		{"registry.gt.lo.config", "/raid1/volumes/registry.gt.lo/config", "/etc/registry"},
+		{"registry.gt.lo.data", "/raid1/registry", "/raid1/registry"},
+		{"kube.gt.lo.config", "/raid1/volumes/kube.gt.lo/config", "/etc/mkube"},
+		{"kube.gt.lo.registry", "/raid1/registry", "/raid1/registry"},
+		{"kube.gt.lo.cache", "/raid1/cache", "/raid1/cache"},
+		{"kube.gt.lo.data", "/raid1/volumes/kube.gt.lo/data", "/data"},
+		{"mkube-update-updater.config", "/raid1/volumes/mkube-update-updater/config", "/etc/mkube-update"},
+		{"mkube-update-updater.data", "/raid1/volumes/mkube-update-updater/data", "/data"},
+	}
+	for _, m := range mounts {
+		ins.rosPost(ctx, "/container/mounts/add", map[string]string{
+			"list": m.list, "src": m.src, "dst": m.dst,
+		}) // ignore error if exists
+	}
+	ins.log.Info("mounts ready")
+
+	// Directories via SFTP
+	dirs := []string{
+		"/raid1/volumes/registry.gt.lo/config",
+		"/raid1/volumes/registry.gt.lo/data",
+		"/raid1/volumes/kube.gt.lo/config",
+		"/raid1/volumes/kube.gt.lo/data",
+		"/raid1/volumes/kube.gt.lo/data/configmaps",
+		"/raid1/volumes/mkube-update-updater/config",
+		"/raid1/volumes/mkube-update-updater/data",
+		"/raid1/registry",
+		"/raid1/cache",
+		"/raid1/tarballs",
+	}
+	var sftpCmds strings.Builder
+	for _, d := range dirs {
+		fmt.Fprintf(&sftpCmds, "-mkdir %s\n", d)
+	}
+	ins.sftp(sftpCmds.String())
+	ins.log.Info("directories ready")
+
+	return nil
+}
+
+// ── Step 3: Upload config files ─────────────────────────────────────────────
+
+func (ins *Installer) uploadConfigs() error {
+	registryConfig := ins.generateRegistryConfig()
+	mkubeUpdateConfig := ins.generateMkubeUpdateConfig()
+
+	uploads := []struct {
+		content, remotePath string
+	}{
+		{registryConfig, "/raid1/volumes/registry.gt.lo/config/config.yaml"},
+		{mkubeUpdateConfig, "/raid1/volumes/mkube-update-updater/config/config.yaml"},
+	}
+
+	// Also upload rose1-config.yaml and boot-order.yaml if they exist locally
+	for _, local := range []struct {
+		path, remote string
+	}{
+		{"deploy/rose1-config.yaml", "/raid1/volumes/kube.gt.lo/config/config.yaml"},
+		{"deploy/boot-order.yaml", "/raid1/volumes/kube.gt.lo/config/boot-order.yaml"},
+	} {
+		data, err := os.ReadFile(local.path)
+		if err == nil {
+			uploads = append(uploads, struct{ content, remotePath string }{string(data), local.remote})
+		}
+	}
+
+	for _, u := range uploads {
+		if err := ins.sftpWriteFile(u.content, u.remotePath); err != nil {
+			return fmt.Errorf("uploading %s: %w", u.remotePath, err)
+		}
+		ins.log.Infow("uploaded", "path", u.remotePath)
 	}
 
 	return nil
 }
 
-// ensureRegistry creates the registry container if it doesn't already exist.
-func (ins *Installer) ensureRegistry(ctx context.Context) error {
-	rc := ins.cfg.Registry
-	log := ins.log.With("step", "registry")
+func (ins *Installer) generateRegistryConfig() string {
+	return fmt.Sprintf(`listenAddr: ":5000"
+storePath: /raid1/registry
+notifyURL: "http://%s:8082/api/v1/registry/push-notify"
+pullThrough: true
+upstreamRegistries:
+  - "ghcr.io"
+watchPollSeconds: 120
+watchImages:
+  - upstream: "ghcr.io/glennswest/mkube:edge"
+    localRepo: "mkube"
+  - upstream: "ghcr.io/glennswest/mkube-update:edge"
+    localRepo: "mkube-update"
+  - upstream: "ghcr.io/glennswest/mkube-registry:edge"
+    localRepo: "mkube-registry"
+  - upstream: "ghcr.io/glennswest/microdns:edge"
+    localRepo: "microdns"
+  - upstream: "ghcr.io/glennswest/micrologs:edge"
+    localRepo: "micrologs"
+  - upstream: "ghcr.io/glennswest/micrologs-collector-routeros:edge"
+    localRepo: "micrologs-collector-routeros"
+  - upstream: "ghcr.io/glennswest/fastregistry:edge"
+    localRepo: "fastregistry"
+  - upstream: "ghcr.io/glennswest/agent-monitor:edge"
+    localRepo: "agent-monitor"
+  - upstream: "ghcr.io/glennswest/ipmiserial:edge"
+    localRepo: "ipmiserial"
+  - upstream: "ghcr.io/glennswest/mkube-console:edge"
+    localRepo: "mkube-console"
+  - upstream: "ghcr.io/glennswest/nats:edge"
+    localRepo: "nats"
+`, ins.mkubeIP)
+}
 
-	// Check if already running
-	ct, err := ins.rosGetContainer(ctx, rc.Name)
+func (ins *Installer) generateMkubeUpdateConfig() string {
+	return fmt.Sprintf(`registryURL: "http://%s:5000"
+routerosURL: "http://%s/rest"
+routerosUser: "%s"
+routerosPassword: "%s"
+mkubeAPI: "http://%s:8080"
+pollSeconds: 60
+
+bootstrap:
+  enabled: true
+  image: "ghcr.io/glennswest/mkube:edge"
+  selfRootDir: "raid1/images/mkube-update-updater"
+  tarballDir: "/data"
+  container:
+    name: "kube.gt.lo"
+    interface: "veth-mkube"
+    rootDir: "/raid1/images/kube.gt.lo"
+    hostname: "kube.gt.lo"
+    dns: "%s"
+    logging: "yes"
+    startOnBoot: "yes"
+    mountLists: "kube.gt.lo.config,kube.gt.lo.registry,kube.gt.lo.cache,kube.gt.lo.data"
+
+watches:
+  - repo: mkube
+    tags: [edge, latest]
+    container: kube.gt.lo
+  - repo: mkube-update
+    tags: [edge, latest]
+    container: mkube-update-updater
+    selfUpdate: true
+  - repo: mkube-registry
+    tags: [edge, latest]
+    container: registry.gt.lo
+  - repo: microdns
+    tags: [edge, latest]
+    containers:
+      - gw_dns_microdns
+      - g10_dns_microdns
+      - g11_dns_microdns
+      - gt_dns_microdns
+    rolling: true
+    rollingDelay: 5s
+`, ins.registryIP, ins.gateway, ins.rosUser, ins.rosPassword, ins.mkubeIP, ins.dns)
+}
+
+// ── Step 4: Registry ────────────────────────────────────────────────────────
+
+func (ins *Installer) ensureRegistry(ctx context.Context) error {
+	name := "registry.gt.lo"
+
+	ct, err := ins.rosGetContainer(ctx, name)
 	if err == nil {
 		if ct.isRunning() {
-			log.Info("registry already running")
-			return nil
+			ins.log.Info("registry already running")
+			return ins.waitForRegistryHealth(ctx)
 		}
-		log.Info("registry exists but stopped, starting")
+		ins.log.Info("registry exists but stopped, starting")
 		if err := ins.rosPost(ctx, "/container/start", map[string]string{".id": ct.ID}); err != nil {
-			return fmt.Errorf("starting registry: %w", err)
+			return err
 		}
-		return ins.waitForContainerRunning(ctx, rc.Name)
+		if err := ins.waitForContainerRunning(ctx, name); err != nil {
+			return err
+		}
+		return ins.waitForRegistryHealth(ctx)
 	}
 
-	// Create veth for registry
-	log.Infow("creating registry veth", "interface", rc.Interface, "ip", rc.IP)
-	ins.rosPost(ctx, "/interface/veth/add", map[string]string{
-		"name":    rc.Interface,
-		"address": rc.IP + "/24",
-		"gateway": rc.Gateway,
-	}) // ignore error if already exists
-
-	// Add veth to bridge
-	ins.rosPost(ctx, "/interface/bridge/port/add", map[string]string{
-		"bridge":    rc.Bridge,
-		"interface": rc.Interface,
-	}) // ignore error if already exists
-
-	// Pull registry image from GHCR
-	log.Infow("pulling registry image", "ref", rc.Image)
-	img, err := ins.pullImage(ctx, rc.Image)
-	if err != nil {
-		return fmt.Errorf("pulling registry image: %w", err)
-	}
-
-	// Build docker-save tarball
-	tarball, err := ins.buildTarball(img, rc.Image)
-	if err != nil {
-		return fmt.Errorf("building registry tarball: %w", err)
-	}
-
-	// Write tarball to disk
-	tarballPath := filepath.Join(ins.cfg.TarballDir, "registry.tar")
-	log.Infow("writing tarball", "path", tarballPath, "size", len(tarball))
-	if err := os.MkdirAll(filepath.Dir(tarballPath), 0o755); err != nil {
-		return fmt.Errorf("creating tarball dir: %w", err)
-	}
-	if err := os.WriteFile(tarballPath, tarball, 0o644); err != nil {
-		return fmt.Errorf("writing tarball: %w", err)
-	}
-
-	// Translate path for RouterOS host visibility
-	hostTarball := tarballPath
-	if ins.cfg.SelfRootDir != "" {
-		hostTarball = ins.cfg.SelfRootDir + "/" + strings.TrimPrefix(tarballPath, "/")
-	}
-
-	// Create container
-	spec := map[string]string{
-		"name":          rc.Name,
-		"file":          hostTarball,
-		"interface":     rc.Interface,
-		"root-dir":      rc.RootDir,
+	// Create container — RouterOS pulls the OCI image from GHCR
+	ins.log.Infow("creating registry container", "image", ins.registryImage)
+	if err := ins.rosPost(ctx, "/container/add", map[string]string{
+		"name":          name,
+		"tag":           ins.registryImage,
+		"interface":     "veth-registry",
+		"root-dir":      "/raid1/images/registry.gt.lo",
 		"logging":       "yes",
 		"start-on-boot": "yes",
-		"hostname":      rc.Name,
-	}
-	if rc.DNS != "" {
-		spec["dns"] = rc.DNS
-	}
-	if rc.MountLists != "" {
-		spec["mountlists"] = rc.MountLists
+		"hostname":      name,
+		"dns":           ins.dns,
+		"mountlists":    "registry.gt.lo.config,registry.gt.lo.data",
+	}); err != nil {
+		return fmt.Errorf("creating container: %w", err)
 	}
 
-	log.Infow("creating registry container", "spec", spec)
-	if err := ins.rosPost(ctx, "/container/add", spec); err != nil {
-		return fmt.Errorf("creating registry container: %w", err)
-	}
-
-	// Wait for extraction
-	log.Info("waiting for container extraction")
-	if err := ins.waitForExtraction(ctx, rc.Name); err != nil {
+	ins.log.Info("waiting for image pull and extraction (this may take a minute)...")
+	if err := ins.waitForExtraction(ctx, name, 300); err != nil {
 		return err
 	}
 
-	// Start
-	newCt, err := ins.rosGetContainer(ctx, rc.Name)
+	ct, err = ins.rosGetContainer(ctx, name)
 	if err != nil {
-		return fmt.Errorf("getting new container: %w", err)
+		return err
 	}
 
-	log.Info("starting registry container")
-	if err := ins.rosPost(ctx, "/container/start", map[string]string{".id": newCt.ID}); err != nil {
-		return fmt.Errorf("starting registry: %w", err)
+	ins.log.Info("starting registry")
+	if err := ins.rosPost(ctx, "/container/start", map[string]string{".id": ct.ID}); err != nil {
+		return err
 	}
 
-	return ins.waitForContainerRunning(ctx, rc.Name)
+	if err := ins.waitForContainerRunning(ctx, name); err != nil {
+		return err
+	}
+
+	return ins.waitForRegistryHealth(ctx)
 }
 
-// waitForRegistry polls the registry's /v2/ endpoint until it responds.
-func (ins *Installer) waitForRegistry(ctx context.Context) error {
-	url := ins.cfg.Registry.HealthURL
-	if url == "" {
-		url = fmt.Sprintf("http://%s:5000/v2/", strings.TrimSuffix(ins.cfg.Registry.IP, "/24"))
-	}
-
+func (ins *Installer) waitForRegistryHealth(ctx context.Context) error {
+	url := fmt.Sprintf("http://%s:5000/v2/", ins.registryIP)
 	ins.log.Infow("waiting for registry health", "url", url)
 
-	for i := 0; i < 120; i++ {
+	for i := 0; i < 60; i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
 
-		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-		if err != nil {
-			return err
-		}
-
+		req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 		resp, err := ins.http.Do(req)
 		if err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
-				ins.log.Info("registry is healthy")
+				ins.log.Info("registry healthy")
 				return nil
 			}
 		}
-
-		time.Sleep(time.Second)
+		time.Sleep(2 * time.Second)
 	}
-
-	return fmt.Errorf("registry did not become healthy within 120s")
+	return fmt.Errorf("registry not healthy at %s after 120s", url)
 }
 
-// seedImages copies images from GHCR to the local registry.
-func (ins *Installer) seedImages(ctx context.Context) error {
-	registryAddr := strings.TrimSuffix(ins.cfg.Registry.IP, "/24") + ":5000"
+// ── Step 5: Seed images ─────────────────────────────────────────────────────
 
-	for _, img := range ins.cfg.SeedImages {
-		localRef := registryAddr + "/" + img.Local
-		ins.log.Infow("seeding image", "upstream", img.Upstream, "local", localRef)
+func (ins *Installer) seedAllImages(ctx context.Context) error {
+	registryAddr := ins.registryIP + ":5000"
 
-		err := crane.Copy(img.Upstream, localRef,
+	for _, upstream := range ins.seedImages {
+		// Extract repo:tag from "ghcr.io/glennswest/mkube:edge" → "mkube:edge"
+		local := extractLocal(upstream)
+		localRef := registryAddr + "/" + local
+
+		ins.log.Infow("seeding", "from", upstream, "to", localRef)
+
+		err := crane.Copy(upstream, localRef,
 			crane.WithContext(ctx),
-			crane.WithPlatform(&v1.Platform{
-				OS:           "linux",
-				Architecture: "arm64",
-			}),
+			crane.WithPlatform(&v1.Platform{OS: "linux", Architecture: "arm64"}),
 			crane.Insecure,
 			crane.WithAuthFromKeychain(
 				authn.NewMultiKeychain(authn.DefaultKeychain, dockersave.AnonymousKeychain{}),
 			),
 		)
 		if err != nil {
-			ins.log.Errorw("failed to seed image", "upstream", img.Upstream, "error", err)
-			return fmt.Errorf("seeding %s: %w", img.Upstream, err)
+			return fmt.Errorf("seeding %s: %w", upstream, err)
 		}
-		ins.log.Infow("seeded image", "local", localRef)
+		ins.log.Infow("seeded", "image", local)
 	}
 
 	return nil
 }
 
-// ensureMkubeUpdate creates the mkube-update container if it doesn't exist.
-func (ins *Installer) ensureMkubeUpdate(ctx context.Context) error {
-	mc := ins.cfg.MkubeUpdate
-	log := ins.log.With("step", "mkube-update")
+// extractLocal turns "ghcr.io/glennswest/mkube:edge" into "mkube:edge"
+func extractLocal(ref string) string {
+	// Split off host
+	parts := strings.SplitN(ref, "/", 3)
+	var repoTag string
+	if len(parts) == 3 {
+		repoTag = parts[2] // "glennswest/mkube:edge"
+	} else {
+		repoTag = ref
+	}
+	// Take last path component
+	slashParts := strings.Split(repoTag, "/")
+	return slashParts[len(slashParts)-1] // "mkube:edge"
+}
 
-	// Check if already running
-	ct, err := ins.rosGetContainer(ctx, mc.Name)
+// ── Step 6: mkube-update ────────────────────────────────────────────────────
+
+func (ins *Installer) ensureMkubeUpdate(ctx context.Context) error {
+	name := "mkube-update-updater"
+
+	ct, err := ins.rosGetContainer(ctx, name)
 	if err == nil {
 		if ct.isRunning() {
-			log.Info("mkube-update already running")
+			ins.log.Info("mkube-update already running")
 			return nil
 		}
-		log.Info("mkube-update exists but stopped, starting")
+		ins.log.Info("mkube-update exists but stopped, starting")
 		if err := ins.rosPost(ctx, "/container/start", map[string]string{".id": ct.ID}); err != nil {
-			return fmt.Errorf("starting mkube-update: %w", err)
+			return err
 		}
-		return ins.waitForContainerRunning(ctx, mc.Name)
+		return ins.waitForContainerRunning(ctx, name)
 	}
 
-	// Create container from local registry image
-	spec := map[string]string{
-		"name":          mc.Name,
-		"tag":           mc.LocalImage,
-		"interface":     mc.Interface,
-		"root-dir":      mc.RootDir,
+	// Pull from local registry — no tarball
+	imageRef := fmt.Sprintf("%s:5000/mkube-update:edge", ins.registryIP)
+	ins.log.Infow("creating mkube-update", "image", imageRef)
+
+	if err := ins.rosPost(ctx, "/container/add", map[string]string{
+		"name":          name,
+		"tag":           imageRef,
+		"interface":     "veth-mkube-update",
+		"root-dir":      "/raid1/images/mkube-update-updater",
 		"logging":       "yes",
 		"start-on-boot": "yes",
-	}
-	if mc.DNS != "" {
-		spec["dns"] = mc.DNS
-	}
-	if mc.Hostname != "" {
-		spec["hostname"] = mc.Hostname
-	}
-	if mc.MountLists != "" {
-		spec["mountlists"] = mc.MountLists
+		"hostname":      name,
+		"dns":           ins.dns,
+		"mountlists":    "mkube-update-updater.config,mkube-update-updater.data",
+	}); err != nil {
+		return fmt.Errorf("creating container: %w", err)
 	}
 
-	log.Infow("creating mkube-update container", "spec", spec)
-	if err := ins.rosPost(ctx, "/container/add", spec); err != nil {
-		return fmt.Errorf("creating mkube-update: %w", err)
-	}
-
-	// Wait for image pull + extraction
-	log.Info("waiting for mkube-update extraction")
-	if err := ins.waitForExtraction(ctx, mc.Name); err != nil {
+	ins.log.Info("waiting for image pull and extraction...")
+	if err := ins.waitForExtraction(ctx, name, 120); err != nil {
 		return err
 	}
 
-	// Start
-	newCt, err := ins.rosGetContainer(ctx, mc.Name)
+	ct, err = ins.rosGetContainer(ctx, name)
 	if err != nil {
-		return fmt.Errorf("getting new container: %w", err)
+		return err
 	}
 
-	log.Info("starting mkube-update")
-	if err := ins.rosPost(ctx, "/container/start", map[string]string{".id": newCt.ID}); err != nil {
-		return fmt.Errorf("starting mkube-update: %w", err)
+	ins.log.Info("starting mkube-update")
+	if err := ins.rosPost(ctx, "/container/start", map[string]string{".id": ct.ID}); err != nil {
+		return err
 	}
 
-	return ins.waitForContainerRunning(ctx, mc.Name)
-}
-
-// ── Image helpers ───────────────────────────────────────────────────────────
-
-func (ins *Installer) pullImage(ctx context.Context, ref string) (v1.Image, error) {
-	return crane.Pull(ref,
-		crane.WithContext(ctx),
-		crane.WithPlatform(&v1.Platform{
-			OS:           "linux",
-			Architecture: "arm64",
-		}),
-		crane.WithAuthFromKeychain(
-			authn.NewMultiKeychain(authn.DefaultKeychain, dockersave.AnonymousKeychain{}),
-		),
-	)
-}
-
-func (ins *Installer) buildTarball(img v1.Image, ref string) ([]byte, error) {
-	// Flatten OCI layers into rootfs
-	rootfsReader := mutate.Extract(img)
-	defer rootfsReader.Close()
-
-	var rootfsBuf bytes.Buffer
-	if _, err := io.Copy(&rootfsBuf, rootfsReader); err != nil {
-		return nil, fmt.Errorf("extracting rootfs: %w", err)
-	}
-
-	imgCfg, err := img.ConfigFile()
-	if err != nil {
-		return nil, fmt.Errorf("reading image config: %w", err)
-	}
-
-	var dockerSave bytes.Buffer
-	if err := dockersave.Write(&dockerSave, rootfsBuf.Bytes(), ref, imgCfg); err != nil {
-		return nil, fmt.Errorf("building tarball: %w", err)
-	}
-
-	return dockerSave.Bytes(), nil
+	return ins.waitForContainerRunning(ctx, name)
 }
 
 // ── RouterOS REST helpers ───────────────────────────────────────────────────
 
 type rosContainer struct {
-	ID      string
-	Name    string
-	Running string
-	Stopped string
+	ID, Name, Running, Stopped string
 }
 
 func (c rosContainer) isRunning() bool { return c.Running == "true" }
@@ -468,7 +566,6 @@ func (ins *Installer) rosGetContainer(ctx context.Context, name string) (*rosCon
 	if err := ins.rosGET(ctx, "/container", &containers); err != nil {
 		return nil, err
 	}
-
 	for _, c := range containers {
 		n, _ := c["name"].(string)
 		if n != name {
@@ -490,11 +587,11 @@ func strVal(m map[string]interface{}, key string) string {
 }
 
 func (ins *Installer) rosGET(ctx context.Context, path string, result interface{}) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", ins.cfg.RouterOSURL+path, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", ins.rosURL+path, nil)
 	if err != nil {
 		return err
 	}
-	req.SetBasicAuth(ins.cfg.RouterOSUser, ins.cfg.RouterOSPassword)
+	req.SetBasicAuth(ins.rosUser, ins.rosPassword)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := ins.http.Do(req)
@@ -511,16 +608,13 @@ func (ins *Installer) rosGET(ctx context.Context, path string, result interface{
 }
 
 func (ins *Installer) rosPost(ctx context.Context, path string, body interface{}) error {
-	data, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
+	data, _ := json.Marshal(body)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", ins.cfg.RouterOSURL+path, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, "POST", ins.rosURL+path, bytes.NewReader(data))
 	if err != nil {
 		return err
 	}
-	req.SetBasicAuth(ins.cfg.RouterOSUser, ins.cfg.RouterOSPassword)
+	req.SetBasicAuth(ins.rosUser, ins.rosPassword)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := ins.http.Do(req)
@@ -536,10 +630,54 @@ func (ins *Installer) rosPost(ctx context.Context, path string, body interface{}
 	return nil
 }
 
+// ── SSH/SFTP helpers ────────────────────────────────────────────────────────
+
+func (ins *Installer) ssh(command string) (string, error) {
+	cmd := exec.Command("ssh",
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-o", "ConnectTimeout=10",
+		fmt.Sprintf("%s@%s", ins.sshUser, ins.device),
+		command,
+	)
+	out, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(out)), err
+}
+
+func (ins *Installer) sftp(commands string) {
+	cmd := exec.Command("sftp",
+		"-o", "StrictHostKeyChecking=accept-new",
+		fmt.Sprintf("%s@%s", ins.sshUser, ins.device),
+	)
+	cmd.Stdin = strings.NewReader(commands)
+	_ = cmd.Run() // ignore errors for -mkdir (dirs may exist)
+}
+
+func (ins *Installer) sftpWriteFile(content, remotePath string) error {
+	// Write content to a temp file, then sftp put it
+	tmp, err := os.CreateTemp("", "mkube-installer-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		return err
+	}
+	tmp.Close()
+
+	cmd := exec.Command("sftp",
+		"-o", "StrictHostKeyChecking=accept-new",
+		fmt.Sprintf("%s@%s", ins.sshUser, ins.device),
+	)
+	cmd.Stdin = strings.NewReader(fmt.Sprintf("put %s %s\n", tmp.Name(), remotePath))
+	return cmd.Run()
+}
+
 // ── Wait helpers ────────────────────────────────────────────────────────────
 
-func (ins *Installer) waitForExtraction(ctx context.Context, name string) error {
-	for i := 0; i < 120; i++ {
+func (ins *Installer) waitForExtraction(ctx context.Context, name string, timeoutSec int) error {
+	for i := 0; i < timeoutSec; i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -548,13 +686,16 @@ func (ins *Installer) waitForExtraction(ctx context.Context, name string) error 
 		time.Sleep(time.Second)
 		ct, err := ins.rosGetContainer(ctx, name)
 		if err != nil {
+			// During download phase, container might show as "extracting"
+			// or not yet queryable — keep waiting
 			continue
 		}
 		if ct.isStopped() {
+			ins.log.Infow("container extracted", "name", name)
 			return nil
 		}
 	}
-	return fmt.Errorf("container %s not extracted within 120s", name)
+	return fmt.Errorf("container %s not ready within %ds", name, timeoutSec)
 }
 
 func (ins *Installer) waitForContainerRunning(ctx context.Context, name string) error {
