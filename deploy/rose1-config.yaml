@@ -233,3 +233,4 @@ registry:
   enabled: false
   localAddresses:
     - "192.168.200.3:5000"
+    - "192.168.200.2:5000"  # legacy alias — rewritten to primary

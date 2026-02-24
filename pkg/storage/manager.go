@@ -421,14 +421,29 @@ func (m *Manager) pullAndUpload(ctx context.Context, imageRef, tarballPath strin
 	return nil
 }
 
-// rewriteLocalhost rewrites bare "localhost/foo:tag" refs to the configured
-// local registry address. go-containerregistry treats "localhost/foo" (no port)
-// as docker.io/localhost/foo, not a local registry.
+// rewriteLocalhost rewrites image refs that point to the local registry
+// using old or alternative addresses. Handles:
+//   - "localhost/foo" → primary local address (go-containerregistry quirk)
+//   - old registry addresses (e.g. 192.168.200.2:5000) → primary local address
 func (m *Manager) rewriteLocalhost(imageRef string) string {
-	if strings.HasPrefix(imageRef, "localhost/") && len(m.registryCfg.LocalAddresses) > 0 {
-		rewritten := m.registryCfg.LocalAddresses[0] + "/" + strings.TrimPrefix(imageRef, "localhost/")
+	if len(m.registryCfg.LocalAddresses) == 0 {
+		return imageRef
+	}
+	primary := m.registryCfg.LocalAddresses[0]
+
+	if strings.HasPrefix(imageRef, "localhost/") {
+		rewritten := primary + "/" + strings.TrimPrefix(imageRef, "localhost/")
 		m.log.Infow("rewrote bare localhost ref", "original", imageRef, "rewritten", rewritten)
 		return rewritten
+	}
+
+	// Rewrite any non-primary local address alias to the primary address
+	for _, addr := range m.registryCfg.LocalAddresses[1:] {
+		if strings.HasPrefix(imageRef, addr+"/") {
+			rewritten := primary + "/" + strings.TrimPrefix(imageRef, addr+"/")
+			m.log.Infow("rewrote old registry address", "original", imageRef, "rewritten", rewritten)
+			return rewritten
+		}
 	}
 	return imageRef
 }
