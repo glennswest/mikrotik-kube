@@ -268,7 +268,11 @@ func (m *Manager) RefreshImage(ctx context.Context, imageRef string) (tarballPat
 func (m *Manager) getRegistryDigest(ctx context.Context, imageRef string) (string, error) {
 	imageRef = m.rewriteLocalhost(imageRef)
 
-	opts := []crane.Option{crane.WithContext(ctx)}
+	// Use a short timeout so a hung registry doesn't block the reconcile loop.
+	digestCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	opts := []crane.Option{crane.WithContext(digestCtx)}
 	opts = append(opts, crane.WithPlatform(&v1.Platform{
 		OS:           "linux",
 		Architecture: runtime.GOARCH,
@@ -345,8 +349,12 @@ func (m *Manager) pullAndUpload(ctx context.Context, imageRef, tarballPath strin
 	// Rewrite bare localhost/ refs to the configured local registry address
 	imageRef = m.rewriteLocalhost(imageRef)
 
+	// Use a bounded timeout so a hung registry doesn't block the reconcile loop.
+	pullCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+
 	// Determine crane options — allow insecure for localhost registry
-	opts := []crane.Option{crane.WithContext(ctx)}
+	opts := []crane.Option{crane.WithContext(pullCtx)}
 
 	// Explicit platform: target is always Linux (RouterOS), arch matches build
 	opts = append(opts, crane.WithPlatform(&v1.Platform{
