@@ -86,13 +86,37 @@ func (m *Manager) EnsureImage(ctx context.Context, imageRef string) (string, err
 	if cached, ok := m.images[imageRef]; ok {
 		if currentDigest, err := m.getRegistryDigest(ctx, imageRef); err == nil && cached.Digest != "" && currentDigest == cached.Digest {
 			cached.InUse++
-			m.log.Debugw("image cache hit", "ref", imageRef, "path", cached.TarballPath)
+			m.log.Debugw("image cache hit (memory)", "ref", imageRef, "path", cached.TarballPath)
 			return cached.TarballPath, nil
 		}
 		// Digest changed or unavailable — delete stale tarball and re-pull.
 		m.log.Infow("image digest changed in registry, deleting stale tarball and re-pulling", "ref", imageRef)
 		_ = os.Remove(tarballPath)
 		_ = os.Remove(tarballPath + ".digest")
+	} else {
+		// No in-memory cache (restart case). Check disk .digest file before pulling.
+		// This avoids re-pulling images that are already cached from a previous boot.
+		if diskDigest, err := os.ReadFile(tarballPath + ".digest"); err == nil {
+			storedDigest := strings.TrimSpace(string(diskDigest))
+			if storedDigest != "" {
+				if currentDigest, err := m.getRegistryDigest(ctx, imageRef); err == nil && currentDigest == storedDigest {
+					// Tarball on disk matches registry — reuse it
+					hostPath := tarballPath
+					if m.cfg.SelfRootDir != "" {
+						hostPath = m.cfg.SelfRootDir + "/" + strings.TrimPrefix(tarballPath, "/")
+					}
+					m.images[imageRef] = &CachedImage{
+						Ref:         imageRef,
+						TarballPath: hostPath,
+						Digest:      currentDigest,
+						PulledAt:    time.Now(),
+						InUse:       1,
+					}
+					m.log.Infow("image cache hit (disk)", "ref", imageRef, "path", hostPath, "digest", truncDigest(currentDigest))
+					return hostPath, nil
+				}
+			}
+		}
 	}
 
 	m.log.Infow("pulling image", "ref", imageRef)

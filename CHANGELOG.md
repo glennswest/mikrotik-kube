@@ -19,6 +19,8 @@
 - **feat:** Network health category in consistency report — `/api/v1/consistency` now includes a `network` section showing veth presence, IP assignment, and static IP match status for all pods.
 
 ### 2026-02-24
+- **fix:** Skip external DNS networks in `InitDNSZones` and DZO Bootstrap — gw DNS runs on pvex.gw.lo (not managed by mkube). Previously, every boot and reconcile cycle tried to reach it, causing 3s timeouts per attempt (6-9s total wasted per cycle). `externalDNS: true` flag now properly respected in all DNS operations, not just the consistency checker.
+- **perf:** Disk cache fallback in `EnsureImage` — on mkube restart, the in-memory image cache is empty, so EnsureImage always re-pulled from registry even when the tarball and `.digest` file were already on disk. Now checks disk `.digest` before pulling, avoiding unnecessary image pulls and reducing boot time.
 - **fix:** DHCP reservation hostname — `FC:4C:EA:F9:4F:2F` was mapped to `server30` but the device identifies as `gb10`. Changed `server30`→`gb10` and `server30b`→`gb10b` in g10 DHCP reservations and DNS.
 - **perf:** DNS record cache (batch mode) — `BeginBatch`/`EndBatch` on DNS client caches `ListRecords` results per zone and blacklists failed endpoints for the remainder of the batch, avoiding O(pods × containers × 2) HTTP GETs and repeated 10s timeouts during reconcile. Applied to `reregisterPodDNS`, `InitDNSZones`, and `cleanStaleDNSRecords`.
 - **perf:** Reduce DNS HTTP timeout from 10s to 3s — DNS containers are local, 10s was far too generous and caused 60s reconcile cycles when namespace DNS endpoints were unreachable.

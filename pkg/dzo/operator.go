@@ -98,8 +98,14 @@ func (o *Operator) Bootstrap(ctx context.Context) error {
 		}
 	}
 
-	// 3. Probe each MicroDNS endpoint and ensure zones exist
+	// 3. Probe each MicroDNS endpoint and ensure zones exist.
+	// Skip zones on external DNS networks (not managed by mkube) to avoid
+	// timeout delays when the external server is unreachable.
 	for zoneName, zone := range o.state.Zones {
+		if netDef := o.findNetwork(zone.Network); netDef != nil && netDef.ExternalDNS {
+			o.log.Infow("skipping external DNS zone probe", "zone", zoneName, "network", zone.Network)
+			continue
+		}
 		zoneID, err := o.dns.EnsureZone(ctx, zone.Endpoint, zoneName)
 		if err != nil {
 			o.log.Warnw("failed to ensure zone on MicroDNS", "zone", zoneName, "endpoint", zone.Endpoint, "error", err)

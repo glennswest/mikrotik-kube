@@ -152,6 +152,13 @@ func (m *Manager) InitDNSZones(ctx context.Context) {
 		if ns.def.DNS.Endpoint == "" || ns.def.DNS.Zone == "" {
 			continue
 		}
+		// Skip networks where DNS is managed externally (e.g. gw on pvex.gw.lo).
+		// External DNS servers are not guaranteed reachable from this node and
+		// would cause timeout delays during boot and reconcile.
+		if ns.def.ExternalDNS {
+			m.log.Infow("skipping external DNS network", "network", name, "endpoint", ns.def.DNS.Endpoint)
+			continue
+		}
 		zoneID, err := m.dns.EnsureZone(ctx, ns.def.DNS.Endpoint, ns.def.DNS.Zone)
 		if err != nil {
 			m.log.Warnw("failed to ensure DNS zone", "network", name, "zone", ns.def.DNS.Zone, "error", err)
