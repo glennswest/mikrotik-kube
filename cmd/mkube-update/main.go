@@ -70,12 +70,25 @@ type BootstrapContainer struct {
 // WatchEntry defines a single image to watch in the local registry.
 type WatchEntry struct {
 	Repo         string        `yaml:"repo"`
-	Tag          string        `yaml:"tag"`
+	Tag          string        `yaml:"tag"`           // single tag (backward compat)
+	Tags         []string      `yaml:"tags,omitempty"` // ordered preference list; first found wins
 	Container    string        `yaml:"container,omitempty"`  // single container
 	Containers   []string      `yaml:"containers,omitempty"` // multiple containers
 	SelfUpdate   bool          `yaml:"selfUpdate,omitempty"`
 	Rolling      bool          `yaml:"rolling,omitempty"`
 	RollingDelay time.Duration `yaml:"rollingDelay,omitempty"`
+}
+
+// ResolvedTags returns the tag preference list. If Tags is set, it takes
+// priority. Otherwise falls back to the single Tag field.
+func (w WatchEntry) ResolvedTags() []string {
+	if len(w.Tags) > 0 {
+		return w.Tags
+	}
+	if w.Tag != "" {
+		return []string{w.Tag}
+	}
+	return []string{"latest"}
 }
 
 // Targets returns the list of container names for this watch entry.
@@ -186,18 +199,28 @@ func (u *Updater) run(ctx context.Context) {
 
 func (u *Updater) poll(ctx context.Context) {
 	for _, w := range u.cfg.Watches {
-		digest, err := u.getDigest(ctx, w.Repo, w.Tag)
-		if err != nil {
-			u.log.Warnw("failed to get digest", "repo", w.Repo, "tag", w.Tag, "error", err)
+		// Search tags in preference order — first found wins.
+		tags := w.ResolvedTags()
+		var resolvedTag, digest string
+		var err error
+		for _, t := range tags {
+			digest, err = u.getDigest(ctx, w.Repo, t)
+			if err == nil {
+				resolvedTag = t
+				break
+			}
+		}
+		if resolvedTag == "" {
+			u.log.Warnw("no tag found in registry", "repo", w.Repo, "tried", tags, "last_error", err)
 			continue
 		}
 
-		key := w.Repo + ":" + w.Tag
+		key := w.Repo // keyed by repo, not repo:tag — tag may change across polls
 		prev, seen := u.digests[key]
 		u.digests[key] = digest
 
 		if !seen {
-			u.log.Infow("initial digest recorded", "repo", w.Repo, "tag", w.Tag, "digest", digest)
+			u.log.Infow("initial digest recorded", "repo", w.Repo, "tag", resolvedTag, "digest", digest)
 			continue
 		}
 
@@ -205,7 +228,7 @@ func (u *Updater) poll(ctx context.Context) {
 			continue
 		}
 
-		u.log.Infow("digest changed", "repo", w.Repo, "tag", w.Tag,
+		u.log.Infow("digest changed", "repo", w.Repo, "tag", resolvedTag,
 			"old", prev, "new", digest)
 
 		targets := w.Targets()
@@ -215,7 +238,7 @@ func (u *Updater) poll(ctx context.Context) {
 		}
 
 		imageRef := fmt.Sprintf("%s/%s:%s",
-			trimScheme(u.cfg.RegistryURL), w.Repo, w.Tag)
+			trimScheme(u.cfg.RegistryURL), w.Repo, resolvedTag)
 
 		if w.SelfUpdate {
 			// Self-update: ask mkube to replace us

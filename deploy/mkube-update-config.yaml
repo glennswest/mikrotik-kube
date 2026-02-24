@@ -21,18 +21,18 @@ bootstrap:
     dns: "192.168.200.199"
     logging: "yes"
     startOnBoot: "yes"
-    mountLists: "kube.gt.lo.config"
+    mountLists: "kube.gt.lo.config,kube.gt.lo.registry,kube.gt.lo.cache,kube.gt.lo.data"
 
 watches:
   - repo: mkube
-    tag: latest
+    tags: [edge, latest]
     container: kube.gt.lo
   - repo: mkube-update
-    tag: latest
+    tags: [edge, latest]
     container: mkube-update-updater
     selfUpdate: true
   - repo: microdns
-    tag: latest
+    tags: [edge, latest]
     containers:
       - gw_dns_microdns
       - g10_dns_microdns

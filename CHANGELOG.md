@@ -29,6 +29,8 @@
 - **fix:** Root-readonly persistent mounts — root image is treated as readonly (like docker/podman). All writable data (`/raid1/cache` for tarballs+digests, `/data` for ConfigMaps) now lives on persistent mounts that survive container recreation. Prevents cascade recreation of ALL pods on mkube restart (syncConfigMapsToDisk saw missing files as "changed"). New `persistentMounts` config maps container paths to host-visible paths, replacing hardcoded `selfRootDir` translations.
 - **fix:** gb10 DHCP reservation IPs — moved gb10 from `.30`/`.40` (server30's addresses) to `.50`/`.51`. gb10 is a 100gig Mellanox device, not server30 (25gig Dell).
 - **fix:** DZO bootstrap stale state — persisted state had `.199` for g10/g11 DNS endpoints but actual servers are at `.252`. Bootstrap only created new entries, never updated existing ones. Now syncs IP/endpoint from config on every boot, so stale state is corrected automatically. Root cause of the 9s DZO bootstrap timeout.
+- **fix:** mkube-update tag search — was hardcoded to `tag: latest` but all images use `edge`. Added `tags` field with ordered preference list (e.g. `[edge, latest]`). Searches in order, first match wins. Backward compatible with single `tag` field.
+- **fix:** mkube-update bootstrap mountLists — was only `kube.gt.lo.config`, missing registry/cache/data mounts. Container recreation would lose persistent mounts.
 
 ### 2026-02-23
 - **fix:** Consistency checker crash-looping containers — orphan detection only checked `p.pods` (tracked pods), not NATS store or boot-order manifest. NATS-sourced pods like ipmiserial were incorrectly flagged as orphaned and killed. Now checks all desired sources (tracked + NATS + boot-order) and skips cleanup entirely when NATS isn't connected yet.
