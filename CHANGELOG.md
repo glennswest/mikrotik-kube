@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### 2026-02-24
+- **fix:** Handle orphaned pods in NATS during delete — `GetPod` now falls back to NATS store when pod isn't tracked in memory. `handleDeletePod` can delete orphaned pods (e.g., `infra/registry`) that exist in NATS but never got tracked because `CreatePod` failed. Cleaned stale `infra/registry` entry from NATS.
+- **feat:** `boot_file_efi` support for UEFI PXE boot — new `bootFileEfi` field in `DHCPConfig`, TOML generation in `buildDHCPSection()`. g10 serves `ipxe.efi` to UEFI clients.
+- **fix:** Add server30 DHCP reservations on g10 — MACs `50:6B:4B:B1:9E:26`/`27` (Mellanox 25G SFP28) → `.30`/`.31` with DNS A records.
+- **fix:** Add macmini DHCP reservation on g10 — MAC `D0:11:E5:A0:1A:A4` → `.190`.
 - **feat:** Extract registry into standalone container (`cmd/registry/main.go`) — solves the chicken-and-egg problem where mkube needs the registry to pull its own image. Registry now boots at priority 3 (before NATS at 5) on static IP 192.168.200.3:5000.
 - **feat:** New `mkube-installer` one-shot bootstrap binary (`cmd/installer/main.go`) — creates registry container via RouterOS REST API, seeds required images from GHCR, and starts mkube-update. Automates the full first-boot sequence.
 - **refactor:** Remove embedded registry from mkube — registry startup, ImageWatcher, UpstreamSyncer, and `/registry/poll` endpoint removed from `cmd/mkube/main.go`. Push events now arrive via existing `POST /api/v1/registry/push-notify` webhook.
