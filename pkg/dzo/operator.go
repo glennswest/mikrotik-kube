@@ -67,7 +67,9 @@ func (o *Operator) Bootstrap(ctx context.Context) error {
 		o.state = NewState()
 	}
 
-	// 2. Import zones from network config
+	// 2. Import zones from network config.
+	// Always update IP/endpoint from config — persisted state may be stale
+	// if the DNS server moved (e.g. from .199 to .252).
 	for _, net := range o.networks {
 		if net.DNS.Endpoint == "" || net.DNS.Zone == "" {
 			continue
@@ -75,9 +77,18 @@ func (o *Operator) Bootstrap(ctx context.Context) error {
 
 		zoneName := net.DNS.Zone
 
-		// Register instance if not known
+		// Register or update instance from config
 		instanceName := instanceNameFromEndpoint(net.DNS.Endpoint, net.Name)
-		if _, exists := o.state.Instances[instanceName]; !exists {
+		if inst, exists := o.state.Instances[instanceName]; exists {
+			if inst.IP != net.DNS.Server || inst.Endpoint != net.DNS.Endpoint {
+				o.log.Infow("updating instance from config",
+					"instance", instanceName,
+					"old_ip", inst.IP, "new_ip", net.DNS.Server,
+					"old_endpoint", inst.Endpoint, "new_endpoint", net.DNS.Endpoint)
+				inst.IP = net.DNS.Server
+				inst.Endpoint = net.DNS.Endpoint
+			}
+		} else {
 			o.state.Instances[instanceName] = &MicroDNSInstance{
 				Name:     instanceName,
 				Network:  net.Name,
@@ -88,8 +99,15 @@ func (o *Operator) Bootstrap(ctx context.Context) error {
 			}
 		}
 
-		// Register zone if not known
-		if _, exists := o.state.Zones[zoneName]; !exists {
+		// Register or update zone endpoint from config
+		if z, exists := o.state.Zones[zoneName]; exists {
+			if z.Endpoint != net.DNS.Endpoint {
+				o.log.Infow("updating zone endpoint from config",
+					"zone", zoneName,
+					"old_endpoint", z.Endpoint, "new_endpoint", net.DNS.Endpoint)
+				z.Endpoint = net.DNS.Endpoint
+			}
+		} else {
 			o.state.Zones[zoneName] = &Zone{
 				Name:     zoneName,
 				Endpoint: net.DNS.Endpoint,
