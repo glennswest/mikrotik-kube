@@ -91,7 +91,7 @@ func testOperator(t *testing.T, mdnsURL string, statePath string) *Operator {
 	cfg := config.DZOConfig{
 		Enabled:       true,
 		StatePath:     statePath,
-		MicroDNSImage: "192.168.200.2:5000/microdns:latest",
+		MicroDNSImage: "192.168.200.3:5000/microdns:latest",
 		DefaultMode:   "nested",
 	}
 

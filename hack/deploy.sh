@@ -30,6 +30,12 @@ VOLUME_DIR="/raid1/volumes"
 REMOTE_TARBALL="${TARBALL_DIR}/${CONTAINER_NAME}.tar"
 DNS_SERVER="192.168.200.199"
 
+# Registry container config
+REGISTRY_VETH="veth-registry"
+REGISTRY_IP="192.168.200.3/24"
+REGISTRY_NAME="registry.gt.lo"
+REGISTRY_ROOT_DIR="/raid1/images/${REGISTRY_NAME}"
+
 ros() {
     ${SSH} "$1" | tr -d '\r'
 }
@@ -92,14 +98,16 @@ if [ "${BRIDGE_EXISTS}" = "0" ]; then
 fi
 echo "  ✓ Bridge '${BRIDGE_NAME}' exists"
 
-# ── Step 4: Create management veth ───────────────────────────────────────────
+# ── Step 4: Create management veths ─────────────────────────────────────────
 echo ""
-echo "▸ Configuring management veth '${MGMT_VETH}'..."
+echo "▸ Configuring management veths..."
 
-ros "/interface/veth/add name=${MGMT_VETH} address=${MGMT_IP} gateway=${MGMT_GW}" >/dev/null 2>&1 && echo "  ✓ Veth created" || echo "  ✓ Veth already exists"
+ros "/interface/veth/add name=${MGMT_VETH} address=${MGMT_IP} gateway=${MGMT_GW}" >/dev/null 2>&1 && echo "  ✓ Veth ${MGMT_VETH} created" || echo "  ✓ Veth ${MGMT_VETH} already exists"
+ros "/interface/bridge/port/add bridge=${BRIDGE_NAME} interface=${MGMT_VETH}" >/dev/null 2>&1 && echo "  ✓ Bridge port ${MGMT_VETH} added" || echo "  ✓ Bridge port ${MGMT_VETH} already configured"
 
-# Add veth to bridge
-ros "/interface/bridge/port/add bridge=${BRIDGE_NAME} interface=${MGMT_VETH}" >/dev/null 2>&1 && echo "  ✓ Bridge port added" || echo "  ✓ Bridge port already configured"
+# Registry veth
+ros "/interface/veth/add name=${REGISTRY_VETH} address=${REGISTRY_IP} gateway=${MGMT_GW}" >/dev/null 2>&1 && echo "  ✓ Veth ${REGISTRY_VETH} created" || echo "  ✓ Veth ${REGISTRY_VETH} already exists"
+ros "/interface/bridge/port/add bridge=${BRIDGE_NAME} interface=${REGISTRY_VETH}" >/dev/null 2>&1 && echo "  ✓ Bridge port ${REGISTRY_VETH} added" || echo "  ✓ Bridge port ${REGISTRY_VETH} already configured"
 
 # ── Step 5: Create volume directories ─────────────────────────────────────────
 echo ""
@@ -112,12 +120,16 @@ sftp ${SSH_OPTS} "${SSH_USER}@${DEVICE}" <<SFTP_EOF 2>/dev/null || true
 -mkdir ${VOLUME_DIR}/${CONTAINER_NAME}/registry
 -mkdir ${VOLUME_DIR}/${CONTAINER_NAME}/data
 -mkdir ${VOLUME_DIR}/${CONTAINER_NAME}/data/configmaps
+-mkdir ${VOLUME_DIR}/${REGISTRY_NAME}
+-mkdir ${VOLUME_DIR}/${REGISTRY_NAME}/config
+-mkdir ${VOLUME_DIR}/${REGISTRY_NAME}/data
 SFTP_EOF
 
 # Tarball cache lives on a dedicated mount so it persists across root-dir recreations.
 # /raid1/cache is a top-level directory, not under any container's root-dir.
 sftp ${SSH_OPTS} "${SSH_USER}@${DEVICE}" <<SFTP_EOF 2>/dev/null || true
 -mkdir /raid1/cache
+-mkdir /raid1/registry
 SFTP_EOF
 
 echo "  ✓ Volume directories ready"
@@ -142,11 +154,20 @@ else
     echo "  ✓ Config uploaded (no boot-order.yaml)"
 fi
 
+# Upload registry config
+REGISTRY_CONFIG="deploy/registry-config.yaml"
+if [ -f "${REGISTRY_CONFIG}" ]; then
+    scp ${SSH_OPTS} "${REGISTRY_CONFIG}" "${SSH_USER}@${DEVICE}:${VOLUME_DIR}/${REGISTRY_NAME}/config/config.yaml"
+    echo "  ✓ Registry config uploaded"
+fi
+
 # ── Step 7: Create mount points ──────────────────────────────────────────────
 echo ""
 echo "▸ Creating container mounts..."
 
 # Only create mounts if they don't already exist (prevents duplicates on re-deploy)
+
+# mkube mounts
 EXISTING_CONFIG=$(ros "/container/mounts/print count-only where list=${CONTAINER_NAME}.config and dst=/etc/mkube")
 if [ "${EXISTING_CONFIG}" = "0" ] || [ -z "${EXISTING_CONFIG}" ]; then
     ros "/container/mounts/add list=${CONTAINER_NAME}.config src=/${VOLUME_DIR}/${CONTAINER_NAME}/config dst=/etc/mkube" 2>/dev/null
@@ -158,10 +179,10 @@ fi
 # Registry blob store — persistent volume so data survives container redeploy
 EXISTING_REGISTRY=$(ros "/container/mounts/print count-only where list=${CONTAINER_NAME}.registry and dst=/raid1/registry")
 if [ "${EXISTING_REGISTRY}" = "0" ] || [ -z "${EXISTING_REGISTRY}" ]; then
-    ros "/container/mounts/add list=${CONTAINER_NAME}.registry src=/${VOLUME_DIR}/${CONTAINER_NAME}/registry dst=/raid1/registry" 2>/dev/null
-    echo "  ✓ Registry mount created"
+    ros "/container/mounts/add list=${CONTAINER_NAME}.registry src=/raid1/registry dst=/raid1/registry" 2>/dev/null
+    echo "  ✓ mkube registry mount created (legacy)"
 else
-    echo "  ✓ Registry mount already exists"
+    echo "  ✓ mkube registry mount already exists"
 fi
 
 # Tarball cache — persistent so .tar and .digest files survive container recreation.
@@ -182,6 +203,23 @@ if [ "${EXISTING_DATA}" = "0" ] || [ -z "${EXISTING_DATA}" ]; then
     echo "  ✓ Data mount created"
 else
     echo "  ✓ Data mount already exists"
+fi
+
+# Registry container mounts
+EXISTING_REG_CONFIG=$(ros "/container/mounts/print count-only where list=${REGISTRY_NAME}.config and dst=/etc/registry")
+if [ "${EXISTING_REG_CONFIG}" = "0" ] || [ -z "${EXISTING_REG_CONFIG}" ]; then
+    ros "/container/mounts/add list=${REGISTRY_NAME}.config src=/${VOLUME_DIR}/${REGISTRY_NAME}/config dst=/etc/registry" 2>/dev/null
+    echo "  ✓ Registry config mount created"
+else
+    echo "  ✓ Registry config mount already exists"
+fi
+
+EXISTING_REG_DATA=$(ros "/container/mounts/print count-only where list=${REGISTRY_NAME}.data and dst=/raid1/registry")
+if [ "${EXISTING_REG_DATA}" = "0" ] || [ -z "${EXISTING_REG_DATA}" ]; then
+    ros "/container/mounts/add list=${REGISTRY_NAME}.data src=/raid1/registry dst=/raid1/registry" 2>/dev/null
+    echo "  ✓ Registry data mount created"
+else
+    echo "  ✓ Registry data mount already exists"
 fi
 
 echo "  ✓ Mounts configured"
@@ -244,8 +282,12 @@ echo ""
 echo "  Device:    ${DEVICE}"
 echo "  Container: ${CONTAINER_NAME}"
 echo "  Network:   ${MGMT_IP} on bridge ${BRIDGE_NAME}"
+echo "  Registry:  ${REGISTRY_IP} on bridge ${BRIDGE_NAME}"
 echo "  DNS:       ${DNS_SERVER} (MicroDNS gt.lo)"
 echo "  REST API:  https://${MGMT_GW}/rest"
+echo ""
+echo "  To bootstrap from scratch (first install):"
+echo "    make deploy-installer DEVICE=${DEVICE}"
 echo ""
 echo "  Monitor logs:"
 echo "    ssh ${SSH_USER}@${DEVICE} '/log/print where topics~\"container\"'"

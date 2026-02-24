@@ -5,7 +5,9 @@ ARCH      ?= arm64
 DEVICE    ?= rose1.gw.lo
 GOFLAGS   := -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)"
 
-.PHONY: build build-local tarball deploy test lint clean mocks
+.PHONY: build build-local tarball deploy test lint clean mocks \
+        build-registry build-installer build-update build-all \
+        deploy-update deploy-installer
 
 ## Build the Go binary for the target architecture
 build:
@@ -14,6 +16,21 @@ build:
 ## Build for the host platform (development)
 build-local:
 	go build $(GOFLAGS) -o dist/$(BINARY) ./cmd/mkube/
+
+## Build standalone registry for target architecture
+build-registry:
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build $(GOFLAGS) -o dist/mkube-registry-$(ARCH) ./cmd/registry/
+
+## Build installer for target architecture
+build-installer:
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build $(GOFLAGS) -o dist/mkube-installer-$(ARCH) ./cmd/installer/
+
+## Build mkube-update for the target architecture
+build-update:
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build $(GOFLAGS) -o dist/mkube-update-$(ARCH) ./cmd/mkube-update/
+
+## Build all binaries for the target architecture
+build-all: build build-registry build-installer build-update
 
 ## Create RouterOS-compatible docker-save tarball (no Docker needed)
 tarball: build
@@ -40,9 +57,9 @@ clean:
 deploy-update:
 	bash hack/pull-and-deploy.sh $(DEVICE)
 
-## Build mkube-update for the target architecture (only needed for development)
-build-update:
-	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build $(GOFLAGS) -o dist/mkube-update-$(ARCH) ./cmd/mkube-update/
+## Deploy mkube-installer to bootstrap a fresh device
+deploy-installer:
+	bash hack/deploy-installer.sh $(DEVICE)
 
 ## Generate mocks for testing
 mocks:

@@ -34,6 +34,8 @@ networks:
           ip: "192.168.200.10"
         - name: mkube
           ip: "192.168.200.2"
+        - name: registry
+          ip: "192.168.200.3"
   - name: g10
     bridge: bridge
     cidr: "192.168.10.0/24"
@@ -204,7 +206,7 @@ dzo:
   enabled: true
   listenAddr: ":8082"
   statePath: /etc/mkube/dzo-state.yaml
-  microdnsImage: "192.168.200.2:5000/microdns:latest"
+  microdnsImage: "192.168.200.3:5000/microdns:latest"
   defaultMode: "nested"
 
 namespace:
@@ -224,42 +226,10 @@ bmh:
   dhcpLeaseURL: "http://192.168.11.252:8080"
   watchInterval: 30
 
+# Registry runs as a standalone container (mkube-registry) at 192.168.200.3:5000.
+# mkube no longer runs the embedded registry — it receives push notifications
+# via the webhook endpoint POST /api/v1/registry/push-notify.
 registry:
-  enabled: true
-  listenAddr: ":5000"
-  storePath: /raid1/registry
+  enabled: false
   localAddresses:
-    - "192.168.200.2:5000"
-  pullThrough: true
-  upstreamRegistries:
-    # docker.io removed — not used, paywalled, returns HTML for API requests
-    - "ghcr.io"
-  # Poll GHCR for new image digests every 2 minutes.
-  # New images are mirrored locally and trigger rolling updates
-  # for pods with vkube.io/image-policy: auto.
-  watchPollSeconds: 120
-  watchImages:
-    - upstream: "ghcr.io/glennswest/mkube:edge"
-      localRepo: "mkube"
-    - upstream: "ghcr.io/glennswest/mkube-update:edge"
-      localRepo: "mkube-update"
-    - upstream: "ghcr.io/glennswest/microdns:edge"
-      localRepo: "microdns"
-    - upstream: "ghcr.io/glennswest/micrologs:edge"
-      localRepo: "micrologs"
-    - upstream: "ghcr.io/glennswest/micrologs-collector-routeros:edge"
-      localRepo: "micrologs-collector-routeros"
-    - upstream: "ghcr.io/glennswest/fastregistry:edge"
-      localRepo: "fastregistry"
-    - upstream: "ghcr.io/glennswest/agent-monitor:edge"
-      localRepo: "agent-monitor"
-    - upstream: "ghcr.io/glennswest/ipmiserial:edge"
-      localRepo: "ipmiserial"
-    - upstream: "ghcr.io/glennswest/mkube-console:edge"
-      localRepo: "mkube-console"
-    - upstream: "ghcr.io/glennswest/nats:edge"
-      localRepo: "nats"
-  # Upstream sync: push locally-pushed images to GHCR as backup.
-  # Requires a GHCR PAT with write:packages scope.
-  # upstreamSyncEnabled: true
-  # upstreamTokenFile: /etc/mkube/ghcr-token
+    - "192.168.200.3:5000"

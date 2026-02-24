@@ -20,7 +20,7 @@ type MicroDNSInstance struct {
 	VethName    string   `json:"vethName" yaml:"vethName"`       // "veth-mdns-kube-gt"
 	ContainerID string   `json:"containerId" yaml:"containerId"` // RouterOS .id
 	Managed     bool     `json:"managed" yaml:"managed"`         // true if DZO created it
-	Image       string   `json:"image" yaml:"image"`             // "192.168.200.2:5000/microdns:latest"
+	Image       string   `json:"image" yaml:"image"`             // "192.168.200.3:5000/microdns:latest"
 }
 
 // State is the persisted DZO state, serialized to YAML.

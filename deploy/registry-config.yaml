@@ -1,0 +1,42 @@
+# Standalone registry configuration for mkube-registry container.
+# Mounted at /etc/registry/config.yaml inside the container.
+
+listenAddr: ":5000"
+storePath: /raid1/registry
+notifyURL: "http://192.168.200.2:8082/api/v1/registry/push-notify"
+pullThrough: true
+upstreamRegistries:
+  - "ghcr.io"
+
+# Poll GHCR for new image digests every 2 minutes.
+# New images are mirrored locally and trigger push notifications
+# to mkube for pods with vkube.io/image-policy: auto.
+watchPollSeconds: 120
+watchImages:
+  - upstream: "ghcr.io/glennswest/mkube:edge"
+    localRepo: "mkube"
+  - upstream: "ghcr.io/glennswest/mkube-update:edge"
+    localRepo: "mkube-update"
+  - upstream: "ghcr.io/glennswest/mkube-registry:edge"
+    localRepo: "mkube-registry"
+  - upstream: "ghcr.io/glennswest/microdns:edge"
+    localRepo: "microdns"
+  - upstream: "ghcr.io/glennswest/micrologs:edge"
+    localRepo: "micrologs"
+  - upstream: "ghcr.io/glennswest/micrologs-collector-routeros:edge"
+    localRepo: "micrologs-collector-routeros"
+  - upstream: "ghcr.io/glennswest/fastregistry:edge"
+    localRepo: "fastregistry"
+  - upstream: "ghcr.io/glennswest/agent-monitor:edge"
+    localRepo: "agent-monitor"
+  - upstream: "ghcr.io/glennswest/ipmiserial:edge"
+    localRepo: "ipmiserial"
+  - upstream: "ghcr.io/glennswest/mkube-console:edge"
+    localRepo: "mkube-console"
+  - upstream: "ghcr.io/glennswest/nats:edge"
+    localRepo: "nats"
+
+# Upstream sync: push locally-pushed images to GHCR as backup.
+# Requires a GHCR PAT with write:packages scope.
+# upstreamSyncEnabled: true
+# upstreamTokenFile: /etc/registry/ghcr-token

@@ -1,0 +1,59 @@
+# mkube-installer configuration for rose1.gw.lo
+# Mounted at /etc/installer/config.yaml inside the container.
+#
+# The installer is a one-shot bootstrap that:
+#   1. Creates the registry container
+#   2. Seeds required images from GHCR
+#   3. Creates mkube-update (which then bootstraps mkube)
+
+routerosURL: "http://192.168.200.1/rest"
+routerosUser: "mkube"
+routerosPassword: "mkube-rest"
+
+tarballDir: "/data"
+selfRootDir: "raid1/images/mkube-installer"
+
+registry:
+  image: "ghcr.io/glennswest/mkube-registry:edge"
+  name: "registry.gt.lo"
+  interface: "veth-registry"
+  rootDir: "/raid1/images/registry.gt.lo"
+  dns: "192.168.200.199"
+  mountLists: "registry.gt.lo.config,registry.gt.lo.data"
+  ip: "192.168.200.3"
+  bridge: "bridge-gt"
+  gateway: "192.168.200.1"
+  healthURL: "http://192.168.200.3:5000/v2/"
+
+mkubeUpdate:
+  localImage: "192.168.200.3:5000/mkube-update:edge"
+  name: "mkube-update-updater"
+  interface: "veth-mkube"
+  rootDir: "/raid1/images/mkube-update-updater"
+  dns: "192.168.200.199"
+  hostname: "mkube-update-updater"
+  mountLists: "mkube-update-updater.config,mkube-update-updater.data"
+
+seedImages:
+  - upstream: "ghcr.io/glennswest/mkube:edge"
+    local: "mkube:edge"
+  - upstream: "ghcr.io/glennswest/mkube-update:edge"
+    local: "mkube-update:edge"
+  - upstream: "ghcr.io/glennswest/mkube-registry:edge"
+    local: "mkube-registry:edge"
+  - upstream: "ghcr.io/glennswest/microdns:edge"
+    local: "microdns:edge"
+  - upstream: "ghcr.io/glennswest/nats:edge"
+    local: "nats:edge"
+  - upstream: "ghcr.io/glennswest/micrologs:edge"
+    local: "micrologs:edge"
+  - upstream: "ghcr.io/glennswest/micrologs-collector-routeros:edge"
+    local: "micrologs-collector-routeros:edge"
+  - upstream: "ghcr.io/glennswest/ipmiserial:edge"
+    local: "ipmiserial:edge"
+  - upstream: "ghcr.io/glennswest/mkube-console:edge"
+    local: "mkube-console:edge"
+  - upstream: "ghcr.io/glennswest/agent-monitor:edge"
+    local: "agent-monitor:edge"
+  - upstream: "ghcr.io/glennswest/fastregistry:edge"
+    local: "fastregistry:edge"

@@ -14,7 +14,7 @@ spec:
   restartPolicy: Always
   containers:
     - name: monitor
-      image: 192.168.200.2:5000/agent-monitor:edge
+      image: 192.168.200.3:5000/agent-monitor:edge
       command: ["/agent-monitor"]
 
 ---

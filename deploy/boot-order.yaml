@@ -16,6 +16,47 @@
 #   g10  — bridge       192.168.10.0/24   dns: g10.lo  (192.168.10.252)
 #   g11  — bridge-boot  192.168.11.0/24   dns: g11.lo  (192.168.11.252)
 #   gw   — bridge-lan   192.168.1.0/24    dns: gw.lo   (192.168.1.199)
+#
+# Registry is at 192.168.200.3:5000 (standalone container, created by mkube-installer).
+# mkube-update is deployed separately by the installer.
+
+# ── OCI Registry (priority 3 — before everything) ─────────────────────────────
+# Standalone registry providing images for all other containers.
+# Created by mkube-installer on first boot, managed by mkube after that.
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: registry
+  namespace: infra
+  annotations:
+    vkube.io/network: gt
+    vkube.io/boot-priority: "3"
+    vkube.io/static-ip: "192.168.200.3"
+spec:
+  restartPolicy: Always
+  containers:
+    - name: registry
+      image: 192.168.200.3:5000/mkube-registry:edge
+      startupProbe:
+        httpGet:
+          path: /v2/
+          port: 5000
+        initialDelaySeconds: 2
+        periodSeconds: 2
+        failureThreshold: 10
+      livenessProbe:
+        httpGet:
+          path: /v2/
+          port: 5000
+        periodSeconds: 30
+        failureThreshold: 3
+      volumeMounts:
+        - name: config
+          mountPath: /etc/registry
+        - name: data
+          mountPath: /raid1/registry
 
 # ── NATS JetStream (priority 5 — before DNS) ─────────────────────────────────
 # Distributed key-value store for persistent pod/configmap state.
@@ -36,7 +77,7 @@ spec:
   restartPolicy: Always
   containers:
     - name: nats
-      image: 192.168.200.2:5000/nats:edge
+      image: 192.168.200.3:5000/nats:edge
       command: ["nats-server", "-js", "--store_dir", "/data", "--addr", "0.0.0.0", "-m", "8222"]
       startupProbe:
         tcpSocket:
@@ -78,7 +119,7 @@ spec:
         name: dns-config
   containers:
     - name: microdns
-      image: 192.168.200.2:5000/microdns:edge
+      image: 192.168.200.3:5000/microdns:edge
       startupProbe:
         httpGet:
           path: /api/v1/zones
@@ -122,7 +163,7 @@ spec:
         name: dns-config
   containers:
     - name: microdns
-      image: 192.168.200.2:5000/microdns:edge
+      image: 192.168.200.3:5000/microdns:edge
       startupProbe:
         httpGet:
           path: /api/v1/zones
@@ -166,7 +207,7 @@ spec:
         name: dns-config
   containers:
     - name: microdns
-      image: 192.168.200.2:5000/microdns:edge
+      image: 192.168.200.3:5000/microdns:edge
       startupProbe:
         httpGet:
           path: /api/v1/zones
@@ -191,6 +232,5 @@ spec:
           mountPath: /data
 
 # ── Update manager ────────────────────────────────────────────────────────
-# mkube-update is deployed separately as a bootstrap init container.
+# mkube-update is deployed by mkube-installer on first boot.
 # It is NOT managed by mkube's boot-order reconciler.
-# Deploy with: make deploy-update

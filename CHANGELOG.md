@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### 2026-02-24
+- **feat:** Extract registry into standalone container (`cmd/registry/main.go`) — solves the chicken-and-egg problem where mkube needs the registry to pull its own image. Registry now boots at priority 3 (before NATS at 5) on static IP 192.168.200.3:5000.
+- **feat:** New `mkube-installer` one-shot bootstrap binary (`cmd/installer/main.go`) — creates registry container via RouterOS REST API, seeds required images from GHCR, and starts mkube-update. Automates the full first-boot sequence.
+- **refactor:** Remove embedded registry from mkube — registry startup, ImageWatcher, UpstreamSyncer, and `/registry/poll` endpoint removed from `cmd/mkube/main.go`. Push events now arrive via existing `POST /api/v1/registry/push-notify` webhook.
+- **feat:** Add `notifyURL` to `RegistryConfig` — standalone registry forwards push events to mkube via HTTP webhook.
+- **feat:** Registry IP configurable — default `192.168.200.3`, all image refs and config updated. User can override via installer config.
+- **feat:** `deploy-installer.sh` and `make-tarball-generic.sh` scripts for bootstrapping fresh devices.
+- **feat:** Makefile targets: `build-registry`, `build-installer`, `build-all`, `deploy-installer`.
+
 ### 2026-02-23
 - **fix:** Remove gw/dns pod from boot-order — gw microdns runs on pvex.gw.lo, not rose1. The conflicting rose1 container caused IP conflict on bridge-lan and "no route to host" errors.
 - **fix:** Remove legacy dnsx.gw.lo references from all network static records — PowerDNS migration is complete, dnsx is no longer used.

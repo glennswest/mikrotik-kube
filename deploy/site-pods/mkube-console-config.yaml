@@ -7,5 +7,5 @@ nodes:
   - name: rose1
     address: "http://192.168.200.2:8082"
 registry:
-  base_url: "http://192.168.200.2:5000"
+  base_url: "http://192.168.200.3:5000"
 logs_url: "http://logging.kube.gt.lo:8084"

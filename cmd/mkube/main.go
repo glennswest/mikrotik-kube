@@ -24,7 +24,6 @@ import (
 	"github.com/glennswest/mkube/pkg/network"
 	netdriver "github.com/glennswest/mkube/pkg/network/driver"
 	"github.com/glennswest/mkube/pkg/provider"
-	"github.com/glennswest/mkube/pkg/registry"
 	"github.com/glennswest/mkube/pkg/routeros"
 	"github.com/glennswest/mkube/pkg/runtime"
 	"github.com/glennswest/mkube/pkg/storage"
@@ -51,7 +50,6 @@ func main() {
 	f.String("kubeconfig", "", "Path to kubeconfig (optional, for standalone mode)")
 	f.String("node-name", "mkube-node", "Kubernetes node name for this device")
 	f.Bool("standalone", false, "Run without a Kubernetes API server (local reconciler only)")
-	f.Bool("enable-registry", true, "Enable embedded Zot OCI registry")
 	f.String("backend", "", "Backend type: routeros (default) or stormbase")
 
 	// RouterOS connection
@@ -340,27 +338,10 @@ func runSharedServices(
 	netMgr.RegisterRoutes(mux)
 	log.Infow("BOOT: DZO/namespace bootstrap", "phase_ms", time.Since(phaseStart).Milliseconds(), "total_ms", time.Since(bootStart).Milliseconds())
 
-	// ── Embedded Registry (optional) ────────────────────────────────
-	phaseStart = time.Now()
-	var reg *registry.Registry
-	if cfg.Registry.Enabled {
-		var err error
-		reg, err = registry.Start(ctx, cfg.Registry, log)
-		if err != nil {
-			return fmt.Errorf("starting embedded registry: %w", err)
-		}
-		defer func() { _ = reg.Shutdown(ctx) }()
-		log.Infow("embedded registry started", "addr", cfg.Registry.ListenAddr)
-	}
-	log.Infow("BOOT: registry started", "phase_ms", time.Since(phaseStart).Milliseconds(), "total_ms", time.Since(bootStart).Milliseconds())
-
 	// ── Provider ────────────────────────────────────────────────────
+	// Registry runs as a separate container (mkube-registry) — push events
+	// arrive via the POST /api/v1/registry/push-notify HTTP webhook.
 	phaseStart = time.Now()
-	var pushEvents <-chan registry.PushEvent
-	if reg != nil {
-		pushEvents = reg.PushEvents
-	}
-
 	p, err := provider.NewMicroKubeProvider(provider.Deps{
 		Config:       cfg,
 		Runtime:      rt,
@@ -369,30 +350,12 @@ func runSharedServices(
 		LifecycleMgr: lcMgr,
 		Namespace:    nsMgr,
 		Store:        kvStore,
-		PushEvents:   pushEvents,
 		Logger:       log,
 	})
 	if err != nil {
 		return fmt.Errorf("creating provider: %w", err)
 	}
 	log.Infow("BOOT: provider created", "phase_ms", time.Since(phaseStart).Milliseconds(), "total_ms", time.Since(bootStart).Milliseconds())
-
-	// ── Image Watcher ───────────────────────────────────────────────
-	var watcher *registry.ImageWatcher
-	if reg != nil && len(cfg.Registry.WatchImages) > 0 {
-		watcher = registry.NewImageWatcher(cfg.Registry, reg.Store(), reg.PushEvents, log)
-		go watcher.Run(ctx)
-		log.Infow("image watcher started", "images", len(cfg.Registry.WatchImages))
-	}
-
-	// ── Upstream Syncer (local → GHCR backup) ───────────────────────
-	if reg != nil && cfg.Registry.UpstreamSyncEnabled {
-		syncer := registry.NewUpstreamSyncer(cfg.Registry, reg.Store(), reg.SyncEvents, log)
-		if syncer != nil {
-			go syncer.Run(ctx)
-			log.Info("upstream syncer started")
-		}
-	}
 
 	// ── Load BMH from store + start DHCP watcher ────────────────────
 	if kvStore != nil {
@@ -404,16 +367,6 @@ func runSharedServices(
 
 	// ── Register routes and start HTTP server ───────────────────────
 	p.RegisterRoutes(mux)
-
-	mux.HandleFunc("POST /api/v1/registry/poll", func(w http.ResponseWriter, r *http.Request) {
-		if watcher == nil {
-			http.NotFound(w, r)
-			return
-		}
-		watcher.TriggerPoll()
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"status":"ok"}` + "\n"))
-	})
 
 	go func() {
 		srv := &http.Server{Addr: listenAddr, Handler: mux}

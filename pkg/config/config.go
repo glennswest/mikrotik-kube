@@ -44,7 +44,7 @@ type DZOConfig struct {
 	Enabled       bool   `yaml:"enabled"`
 	ListenAddr    string `yaml:"listenAddr"`    // e.g. ":8082"
 	StatePath     string `yaml:"statePath"`     // e.g. "/etc/mkube/dzo-state.yaml"
-	MicroDNSImage string `yaml:"microdnsImage"` // e.g. "192.168.200.2:5000/microdns:latest"
+	MicroDNSImage string `yaml:"microdnsImage"` // e.g. "192.168.200.3:5000/microdns:latest"
 	DefaultMode   string `yaml:"defaultMode"`   // "open" or "nested"
 }
 
@@ -220,7 +220,9 @@ type RegistryConfig struct {
 	PullThrough        bool     `yaml:"pullThrough"`
 	UpstreamRegistries []string `yaml:"upstreamRegistries"` // e.g. ["docker.io", "ghcr.io"]
 	// Local addresses that resolve to this registry (used by storage manager)
-	LocalAddresses []string `yaml:"localAddresses"` // e.g. ["192.168.200.2:5000"]
+	LocalAddresses []string `yaml:"localAddresses"` // e.g. ["192.168.200.3:5000"]
+	// Webhook URL for push notifications (standalone registry → mkube)
+	NotifyURL string `yaml:"notifyURL"` // e.g. "http://192.168.200.2:8082/api/v1/registry/push-notify"
 	// Image watcher: poll upstream registries for new digests and auto-pull
 	WatchImages      []WatchImage `yaml:"watchImages"`
 	WatchPollSeconds int          `yaml:"watchPollSeconds"` // default 120
@@ -390,8 +392,5 @@ func applyFlagOverrides(cfg *Config, flags *pflag.FlagSet) {
 	}
 	if flags.Changed("gc-interval-minutes") {
 		cfg.Storage.GCIntervalMinutes, _ = flags.GetInt("gc-interval-minutes")
-	}
-	if flags.Changed("enable-registry") {
-		cfg.Registry.Enabled, _ = flags.GetBool("enable-registry")
 	}
 }

@@ -553,7 +553,7 @@ func (p *MicroKubeProvider) handlePushNotify(w http.ResponseWriter, r *http.Requ
 
 // redeployRequest is the JSON body for POST /api/v1/images/redeploy.
 type redeployRequest struct {
-	Image string `json:"image"` // e.g. "microdns:edge" or "192.168.200.2:5000/microdns:edge"
+	Image string `json:"image"` // e.g. "microdns:edge" or "192.168.200.3:5000/microdns:edge"
 }
 
 // handleListImages returns the current state of the image cache including
@@ -633,18 +633,18 @@ func (p *MicroKubeProvider) handleImageRedeploy(w http.ResponseWriter, r *http.R
 }
 
 // imageMatches checks if a container image ref matches the requested image.
-// Handles both full refs (192.168.200.2:5000/microdns:edge) and short names (microdns:edge).
+// Handles both full refs (192.168.200.3:5000/microdns:edge) and short names (microdns:edge).
 func imageMatches(containerImage, requested string) bool {
 	if containerImage == requested {
 		return true
 	}
 	// Extract repo:tag from full ref
-	// e.g. "192.168.200.2:5000/microdns:edge" contains "microdns:edge"
+	// e.g. "192.168.200.3:5000/microdns:edge" contains "microdns:edge"
 	if strings.HasSuffix(containerImage, "/"+requested) {
 		return true
 	}
 	// Match just the repo name without tag
-	// "microdns:edge" matches container "192.168.200.2:5000/microdns:edge"
+	// "microdns:edge" matches container "192.168.200.3:5000/microdns:edge"
 	reqRepo := requested
 	if idx := strings.LastIndex(requested, ":"); idx > 0 {
 		reqRepo = requested[:idx]

@@ -380,7 +380,7 @@ func (o *Operator) createMicroDNSInstance(ctx context.Context, zoneName, network
 
 	image := o.cfg.MicroDNSImage
 	if image == "" {
-		image = "192.168.200.2:5000/microdns:latest"
+		image = "192.168.200.3:5000/microdns:latest"
 	}
 
 	// Create RouterOS container
