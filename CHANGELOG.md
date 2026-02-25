@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-02-24
+- **fix:** Add retry with backoff to container start — MikroTik REST API returns EOF when previous container hasn't fully torn down. Both `CreatePod` and `replaceContainer` (rolling update) now retry up to 7 times with 2-5s backoff, re-fetching container ID between attempts.
 - **fix:** Increase veth name truncation from 8 to 15 characters — prevents collisions for pods with shared name prefixes in the same namespace (e.g. `fastregistry` and `fastregistry-replica`).
 - **feat:** Deployment controller — new lightweight Deployment resource that manages pod replicas with auto-recreation on delete, scale up/down, rolling image updates, and DNS round-robin load balancing. Deployment-owned pods survive deletion (recreated within 10s by reconciler). CRUD API at `/api/v1/namespaces/{ns}/deployments`. Persisted in NATS JetStream. Consistency checks verify replica counts. Export/import support included.
 - **feat:** Tarball-based container updates — mkube-update now pre-pulls images as docker-save tarballs from registry while old container is still running, then swaps using `file=` parameter instead of `remote-image`. Eliminates the chicken-and-egg problem where registry can't pull its own update. Works for all containers: registry, mkube, microdns, etc. New config fields `tarballDir` and `tarballROSPath`.

@@ -331,8 +331,32 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 		if err != nil {
 			return fmt.Errorf("waiting for container %s to be ready: %w", name, err)
 		}
-		if err := p.deps.Runtime.StartContainer(ctx, ct.ID); err != nil {
-			return fmt.Errorf("starting container %s: %w", name, err)
+
+		// Start with retry — MikroTik REST API can return EOF if the
+		// previous container hasn't fully torn down yet (race between
+		// delete and create).
+		startBackoffs := []time.Duration{
+			2 * time.Second, 2 * time.Second,
+			3 * time.Second, 3 * time.Second,
+			5 * time.Second, 5 * time.Second,
+		}
+		var startErr error
+		for attempt := 0; attempt <= len(startBackoffs); attempt++ {
+			if startErr = p.deps.Runtime.StartContainer(ctx, ct.ID); startErr == nil {
+				break
+			}
+			if attempt < len(startBackoffs) {
+				log.Warnw("container start failed, retrying",
+					"name", name, "attempt", attempt+1, "error", startErr)
+				time.Sleep(startBackoffs[attempt])
+				// Re-fetch container in case ID changed
+				if updated, err := p.deps.Runtime.GetContainer(ctx, name); err == nil {
+					ct = updated
+				}
+			}
+		}
+		if startErr != nil {
+			return fmt.Errorf("starting container %s after %d attempts: %w", name, len(startBackoffs)+1, startErr)
 		}
 
 		// 8. Register with lifecycle manager for boot ordering / health probes
@@ -1609,9 +1633,30 @@ func (p *MicroKubeProvider) replaceContainer(ctx context.Context, name, newTag, 
 		return fmt.Errorf("waiting for container %s after create: %w", name, err)
 	}
 
+	// Start with retry — MikroTik REST API can return EOF if the
+	// previous container hasn't fully torn down yet.
 	log.Infow("starting container", "name", name)
-	if err := p.deps.Runtime.StartContainer(ctx, newCt.ID); err != nil {
-		return fmt.Errorf("starting container %s: %w", name, err)
+	replaceBackoffs := []time.Duration{
+		2 * time.Second, 2 * time.Second,
+		3 * time.Second, 3 * time.Second,
+		5 * time.Second, 5 * time.Second,
+	}
+	var startErr error
+	for attempt := 0; attempt <= len(replaceBackoffs); attempt++ {
+		if startErr = p.deps.Runtime.StartContainer(ctx, newCt.ID); startErr == nil {
+			break
+		}
+		if attempt < len(replaceBackoffs) {
+			log.Warnw("container start failed, retrying",
+				"name", name, "attempt", attempt+1, "error", startErr)
+			time.Sleep(replaceBackoffs[attempt])
+			if updated, gerr := p.deps.Runtime.GetContainer(ctx, name); gerr == nil {
+				newCt = updated
+			}
+		}
+	}
+	if startErr != nil {
+		return fmt.Errorf("starting container %s after %d attempts: %w", name, len(replaceBackoffs)+1, startErr)
 	}
 
 	return nil
