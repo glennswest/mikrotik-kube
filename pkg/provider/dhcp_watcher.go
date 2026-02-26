@@ -235,6 +235,19 @@ func (p *MicroKubeProvider) processDHCPLease(ctx context.Context, ip, mac, event
 		return
 	}
 
+	// Cross-namespace dedup: skip if any BMH already has this MAC or hostname
+	for _, existing := range p.bareMetalHosts {
+		if mac != "" && strings.EqualFold(existing.Spec.BootMACAddress, mac) {
+			return
+		}
+		if mac != "" && strings.EqualFold(existing.Spec.BMC.MAC, mac) {
+			return
+		}
+		if existing.Name == hostname && existing.Namespace != network {
+			return
+		}
+	}
+
 	log.Infow("auto-discovered host from DHCP",
 		"name", hostname,
 		"network", network,
