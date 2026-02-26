@@ -357,9 +357,11 @@ func runSharedServices(
 	}
 	log.Infow("BOOT: provider created", "phase_ms", time.Since(phaseStart).Milliseconds(), "total_ms", time.Since(bootStart).Milliseconds())
 
-	// ── Load BMH from store + start DHCP watcher ────────────────────
+	// ── Load resources from store ────────────────────────────────────
 	if kvStore != nil {
 		p.LoadBMHFromStore(ctx)
+		p.LoadNetworksFromStore(ctx)
+		p.MigrateNetworkConfig(ctx)
 	}
 	go p.RunDHCPWatcher(ctx)
 	go p.RunSubnetScanner(ctx)
