@@ -101,6 +101,7 @@ go test ./...
 - DHCP end-to-end (relay + microdns)
 - PXE/UEFI boot support
 - PVC support (persistent volumes surviving container recreation/redeploy)
+- PVC/Deployment NATS load on boot (were only loaded in deferred path, vanished on every restart)
 - Network CRD (cluster-scoped dynamic network definitions in NATS, TOML config generation, migration from config.yaml)
 - BMH → Network CRD sync (DHCP reservations auto-synced from BMH to Network CRD on create/update/delete, both data and IPMI networks, per-reservation PXE fields in TOML)
 - Cross-namespace BMH dedup (DHCP watcher checks boot MAC, BMC MAC, hostname across all namespaces before creating discovered entries)
