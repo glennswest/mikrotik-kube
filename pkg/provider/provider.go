@@ -1657,6 +1657,15 @@ func (p *MicroKubeProvider) replaceContainer(ctx context.Context, name, newTag, 
 		return fmt.Errorf("removing container %s: %w", name, removeErr)
 	}
 
+	// Wait for RouterOS to fully release the root-dir after removal.
+	// The container may be gone from the list but the directory lock isn't released yet.
+	for i := 0; i < 15; i++ {
+		if _, gerr := p.deps.Runtime.GetContainer(ctx, name); gerr != nil {
+			break // container truly gone
+		}
+		time.Sleep(time.Second)
+	}
+
 	// Recreate with new image, preserving config.
 	// Prefer tarball (file=) over remote-image (tag=) when available.
 	spec := runtime.ContainerSpec{
@@ -1679,8 +1688,22 @@ func (p *MicroKubeProvider) replaceContainer(ctx context.Context, name, newTag, 
 		spec.Tag = newTag // maps to RouterOS remote-image= parameter
 		log.Infow("creating container with remote-image", "name", name, "tag", newTag)
 	}
-	if err := p.deps.Runtime.CreateContainer(ctx, spec); err != nil {
-		return fmt.Errorf("creating container %s: %w", name, err)
+	// Retry create — RouterOS may still hold the root-dir lock briefly after removal
+	var createErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		createErr = p.deps.Runtime.CreateContainer(ctx, spec)
+		if createErr == nil {
+			break
+		}
+		if strings.Contains(createErr.Error(), "root-dir overlap") {
+			log.Warnw("root-dir overlap, waiting for cleanup", "name", name, "attempt", attempt+1)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		break // non-retryable error
+	}
+	if createErr != nil {
+		return fmt.Errorf("creating container %s: %w", name, createErr)
 	}
 
 	// Wait for extraction then start
