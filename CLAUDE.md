@@ -146,6 +146,8 @@ go test ./...
 9. **microdns resilience**: DNS containers must survive mkube failures without going down. DNS is critical infrastructure. Currently mkube going down (update, crash) can cascade — DNS pods get deleted and recreation fails if API is slow. Need: DNS containers with `start-on-boot=yes` and independent of mkube lifecycle.
 10. **gw.lo DNS forward zone**: Re-enable forwarding to gw.lo DNS at 192.168.1.52 once routing from gt/g10/g11 networks to gw network is verified working.
 11. **Registry HTTP/2 proper fix**: Currently h2 is disabled as workaround. Need high-speed registry — either find root cause in Go's h2 server (GOAWAY under blob upload load), switch to a production registry lib (e.g. `distribution/distribution`), or use a reverse proxy (caddy/nginx) in front that handles h2 correctly.
+12. **microdns health-checked DNS load balancing**: Add SSE-style health check to microdns round-robin — probe backends, remove dead ones from DNS responses until recovered. General-purpose pattern for any service.
+13. **mkube HA (2-node)**: Two mkube instances behind microdns health-checked round-robin. NATS is already shared state. Needs leader election or active/passive coordination for the reconcile loop (avoid two reconcilers creating/deleting simultaneously). microdns health check auto-removes dead mkube from DNS.
 
 ### In Progress
 <!-- - [ ] (started YYYY-MM-DD) Task description -->
