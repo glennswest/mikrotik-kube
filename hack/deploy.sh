@@ -130,6 +130,7 @@ SFTP_EOF
 sftp ${SSH_OPTS} "${SSH_USER}@${DEVICE}" <<SFTP_EOF 2>/dev/null || true
 -mkdir /raid1/cache
 -mkdir /raid1/registry
+-mkdir /raid1/iso
 SFTP_EOF
 
 echo "  ✓ Volume directories ready"
@@ -205,6 +206,15 @@ else
     echo "  ✓ Data mount already exists"
 fi
 
+# ISO storage — persistent so iSCSI CDROM ISO files survive container recreation.
+EXISTING_ISO=$(ros "/container/mounts/print count-only where list=${CONTAINER_NAME}.iso and dst=/raid1/iso")
+if [ "${EXISTING_ISO}" = "0" ] || [ -z "${EXISTING_ISO}" ]; then
+    ros "/container/mounts/add list=${CONTAINER_NAME}.iso src=/raid1/iso dst=/raid1/iso" 2>/dev/null
+    echo "  ✓ ISO mount created"
+else
+    echo "  ✓ ISO mount already exists"
+fi
+
 # Registry container mounts
 EXISTING_REG_CONFIG=$(ros "/container/mounts/print count-only where list=${REGISTRY_NAME}.config and dst=/etc/registry")
 if [ "${EXISTING_REG_CONFIG}" = "0" ] || [ -z "${EXISTING_REG_CONFIG}" ]; then
@@ -256,7 +266,7 @@ fi
 echo ""
 echo "▸ Creating container '${CONTAINER_NAME}'..."
 
-ros "/container/add file=${REMOTE_TARBALL} interface=${MGMT_VETH} root-dir=${ROOT_DIR} name=${CONTAINER_NAME} start-on-boot=yes logging=yes dns=${DNS_SERVER} hostname=${CONTAINER_NAME} mountlists=${CONTAINER_NAME}.config,${CONTAINER_NAME}.registry,${CONTAINER_NAME}.cache,${CONTAINER_NAME}.data"
+ros "/container/add file=${REMOTE_TARBALL} interface=${MGMT_VETH} root-dir=${ROOT_DIR} name=${CONTAINER_NAME} start-on-boot=yes logging=yes dns=${DNS_SERVER} hostname=${CONTAINER_NAME} mountlists=${CONTAINER_NAME}.config,${CONTAINER_NAME}.registry,${CONTAINER_NAME}.cache,${CONTAINER_NAME}.data,${CONTAINER_NAME}.iso"
 
 echo "  ✓ Container created"
 
