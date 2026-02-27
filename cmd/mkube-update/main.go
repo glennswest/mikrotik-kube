@@ -445,7 +445,7 @@ func saveRouterOSTarball(img v1.Image, repoTag, outputPath string) error {
 			return fmt.Errorf("getting uncompressed layer %d: %w", i, err)
 		}
 
-		tmpFile, err := os.CreateTemp("", "layer-*.tar")
+		tmpFile, err := os.CreateTemp(filepath.Dir(outputPath), "layer-*.tar")
 		if err != nil {
 			rc.Close()
 			return fmt.Errorf("creating temp file for layer %d: %w", i, err)
@@ -743,9 +743,19 @@ func (u *Updater) bootstrap(ctx context.Context) error {
 	bc := u.cfg.Bootstrap
 	log := u.log.With("bootstrap", bc.Container.Name)
 
-	// Check if container already exists
-	ct, err := u.rosGetContainer(ctx, bc.Container.Name)
-	if err == nil {
+	// Check if container already exists — retry a few times since the REST API
+	// may not be reachable immediately after container start.
+	var ct *rosContainerFull
+	for attempt := 0; attempt < 5; attempt++ {
+		var err error
+		ct, err = u.rosGetContainer(ctx, bc.Container.Name)
+		if err == nil {
+			break
+		}
+		log.Warnw("bootstrap: could not query containers, retrying", "attempt", attempt+1, "error", err)
+		time.Sleep(3 * time.Second)
+	}
+	if ct != nil {
 		// Container exists
 		if ct.isRunning() {
 			log.Info("mkube already running, skipping bootstrap")

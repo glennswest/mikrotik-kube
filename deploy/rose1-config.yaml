@@ -179,16 +179,16 @@ networks:
     bridge: bridge-lan
     cidr: "192.168.1.0/24"
     gateway: "192.168.1.88"
-    externalDNS: true  # DNS server runs on pvex.gw.lo, not managed by mkube
+    externalDNS: true  # DNS server runs on pvex.gw.lo (CT 117), not managed by mkube
     dns:
-      endpoint: "http://192.168.1.199:8080"
+      endpoint: "http://192.168.1.52:8080"
       zone: "gw.lo"
-      server: "192.168.1.199"
+      server: "192.168.1.52"
       staticRecords:
         - name: rose1
           ip: "192.168.1.88"
         - name: dns
-          ip: "192.168.1.199"
+          ip: "192.168.1.52"
 
 storage:
   basePath: /raid1/images
