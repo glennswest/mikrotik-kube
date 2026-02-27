@@ -116,6 +116,10 @@ go test ./...
 - Registry TLS cert mismatch (installer regenerated CA+server certs but registry wasn't restarted — stale cert served)
 - gw DNS address fix (192.168.1.199 → 192.168.1.52, CT 117 on pvex)
 - BootConfig CRD (cluster-scoped, NATS-backed, CRUD API, watch, table format, source IP lookup, BMH bootConfigRef linkage with assignedTo sync, delete protection, consistency checks). Serves ignition/cloud-init/kickstart configs to booting servers via source IP → BMH → BootConfig lookup.
+- Registry HTTP/2 GOAWAY crash fix (Go h2 sends GOAWAY during large blob uploads, killing registry. Disabled h2 via TLSNextProto, forced HTTP/1.1)
+- Registry panic recovery middleware (recover() on all handlers, log stack trace, return 500 instead of crashing)
+- Infrastructure health check (mkube checks registry :5001/healthz every reconcile, restarts after 3 failures. Catches zombie state where RouterOS says RUNNING but process is dead)
+- mkube-update poll interval 60s → 15s (code default + installer template + live config)
 
 ### TODO (priority order)
 1. **BareMetalHost Operator (BMO)**: Owns ALL host state and state machines. pxemanager becomes GUI-only (no SQLite state). Architecture:

@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### 2026-02-27
+- **fix:** Registry HTTP/2 GOAWAY crash — disabled HTTP/2 on registry server (TLSNextProto). Go's h2 implementation sends GOAWAY during large blob uploads, killing the registry process. HTTP/1.1 is sufficient for internal use.
+- **feat:** Registry panic recovery middleware — all registry HTTP handlers wrapped with `recover()`. A single request panic no longer crashes the entire registry process; instead logs the stack trace and returns 500.
+- **feat:** Infrastructure health check — mkube reconcile loop now checks registry.gt.lo health via HTTP GET to `:5001/healthz` every 10s. After 3 consecutive failures, automatically restarts the container via RouterOS API. Catches zombie state where RouterOS shows RUNNING but process is dead.
+- **fix:** mkube-update poll interval default changed from 60s to 15s. Installer template and code default both updated.
 - **feat:** BootConfig CRD — cluster-scoped resource for managing boot configuration templates (ignition, cloud-init, kickstart, custom). Full CRUD API at `/api/v1/bootconfigs/{name}` with watch support, table format. Source IP lookup endpoint at `GET /api/v1/bootconfig` (singular) — servers fetch their config during PXE boot by source IP → BMH match → bootConfigRef → data content. Content-Type auto-set by format (ignition JSON, cloud-init YAML, kickstart plain text). BMHSpec extended with `bootConfigRef` field. BootConfig status tracks `assignedTo` BMH list (auto-synced on BMH create/update/patch/delete). Delete protected (409 if BMHs reference it). Consistency checks verify memory↔NATS sync and assignedTo validity. NATS JetStream persistence in BOOTCONFIGS bucket. Both immediate and deferred boot paths load from store.
 - **docs:** Updated README with complete API reference for all resource types (Networks, PVCs, BMH, iSCSI CDROMs, ConfigMaps, Registries, Events). Added oc/kubectl commands section with resource table, short names, and common usage examples.
 - **feat:** Added `scripts/setup-iscsi-cdrom.sh` helper — creates iSCSI CDROM, uploads ISO, cleans up previous CDROM with same name (unsubscribes all, deletes with ISO cleanup). Tested 10/10 passes.
