@@ -329,41 +329,58 @@ func (p *MicroKubeProvider) handleUploadISCSICdrom(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Parse multipart form — limit to 16 GB
-	if err := r.ParseMultipartForm(16 << 30); err != nil {
-		http.Error(w, fmt.Sprintf("parsing multipart form: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	file, _, err := r.FormFile("iso")
-	if err != nil {
-		http.Error(w, fmt.Sprintf("reading iso form field: %v", err), http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
-
 	// Ensure ISO directory exists
 	if err := os.MkdirAll(isoBasePath, 0o755); err != nil {
 		http.Error(w, fmt.Sprintf("creating ISO directory: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	// Update phase
-	cdrom.Status.Phase = "Uploading"
-
-	// Stream file to disk
-	isoPath := cdrom.Status.ISOPath
-	dst, err := os.Create(isoPath)
+	// Stream multipart data directly to disk — no memory buffering.
+	mr, err := r.MultipartReader()
 	if err != nil {
-		http.Error(w, fmt.Sprintf("creating ISO file: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("reading multipart stream: %v", err), http.StatusBadRequest)
 		return
 	}
 
-	written, err := io.Copy(dst, file)
-	dst.Close()
-	if err != nil {
-		os.Remove(isoPath)
-		http.Error(w, fmt.Sprintf("writing ISO file: %v", err), http.StatusInternalServerError)
+	var written int64
+	isoPath := cdrom.Status.ISOPath
+
+	for {
+		part, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			http.Error(w, fmt.Sprintf("reading multipart part: %v", err), http.StatusBadRequest)
+			return
+		}
+		if part.FormName() != "iso" {
+			part.Close()
+			continue
+		}
+
+		cdrom.Status.Phase = "Uploading"
+
+		dst, err := os.Create(isoPath)
+		if err != nil {
+			part.Close()
+			http.Error(w, fmt.Sprintf("creating ISO file: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		written, err = io.Copy(dst, part)
+		dst.Close()
+		part.Close()
+		if err != nil {
+			os.Remove(isoPath)
+			http.Error(w, fmt.Sprintf("writing ISO file: %v", err), http.StatusInternalServerError)
+			return
+		}
+		break
+	}
+
+	if written == 0 {
+		http.Error(w, "no iso field found in multipart form", http.StatusBadRequest)
 		return
 	}
 
