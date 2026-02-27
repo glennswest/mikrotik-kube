@@ -367,6 +367,7 @@ func runSharedServices(
 		p.LoadRegistriesFromStore(ctx)
 		p.MigrateRegistryConfig(ctx)
 		p.LoadISCSICdromsFromStore(ctx)
+		p.LoadBootConfigsFromStore(ctx)
 	}
 	go p.RunDHCPWatcher(ctx)
 	go p.RunSubnetScanner(ctx)
