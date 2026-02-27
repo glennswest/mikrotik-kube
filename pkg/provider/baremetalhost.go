@@ -96,6 +96,15 @@ func (p *MicroKubeProvider) handleCreateBMH(w http.ResponseWriter, r *http.Reque
 	if bmh.Status.Phase == "" {
 		bmh.Status.Phase = "Registering"
 	}
+	// Default IPMI credentials if not provided
+	if bmh.Spec.BMC.Address != "" {
+		if bmh.Spec.BMC.Username == "" {
+			bmh.Spec.BMC.Username = "ADMIN"
+		}
+		if bmh.Spec.BMC.Password == "" {
+			bmh.Spec.BMC.Password = "ADMIN"
+		}
+	}
 
 	key := ns + "/" + bmh.Name
 
@@ -247,6 +256,13 @@ func (p *MicroKubeProvider) handleUpdateBMH(w http.ResponseWriter, r *http.Reque
 	bmh.TypeMeta = metav1.TypeMeta{APIVersion: "v1", Kind: "BareMetalHost"}
 	if bmh.CreationTimestamp.IsZero() {
 		bmh.CreationTimestamp = existing.CreationTimestamp
+	}
+	// Preserve existing credentials if not provided in the update
+	if bmh.Spec.BMC.Username == "" && existing.Spec.BMC.Username != "" {
+		bmh.Spec.BMC.Username = existing.Spec.BMC.Username
+	}
+	if bmh.Spec.BMC.Password == "" && existing.Spec.BMC.Password != "" {
+		bmh.Spec.BMC.Password = existing.Spec.BMC.Password
 	}
 
 	p.reconcileBMHChanges(r.Context(), existing, &bmh)
