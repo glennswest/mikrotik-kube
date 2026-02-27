@@ -195,6 +195,86 @@ PUT    /api/v1/namespaces/{ns}/deployments/{name}      # Update deployment
 DELETE /api/v1/namespaces/{ns}/deployments/{name}      # Delete deployment
 ```
 
+### Networks (cluster-scoped)
+```
+GET    /api/v1/networks                                # List all networks
+GET    /api/v1/networks/{name}                         # Get network (enriched with status)
+POST   /api/v1/networks                                # Create network
+PUT    /api/v1/networks/{name}                         # Update network
+PATCH  /api/v1/networks/{name}                         # Patch network (merge)
+DELETE /api/v1/networks/{name}                         # Delete (409 if pods reference it)
+GET    /api/v1/networks/{name}/config                  # Generate microdns TOML config
+```
+
+### PersistentVolumeClaims
+```
+GET    /api/v1/persistentvolumeclaims                  # List all PVCs
+GET    /api/v1/namespaces/{ns}/persistentvolumeclaims  # List in namespace
+GET    /api/v1/namespaces/{ns}/persistentvolumeclaims/{name}  # Get PVC
+POST   /api/v1/namespaces/{ns}/persistentvolumeclaims  # Create PVC
+PUT    /api/v1/namespaces/{ns}/persistentvolumeclaims/{name}  # Update PVC
+DELETE /api/v1/namespaces/{ns}/persistentvolumeclaims/{name}  # Delete PVC
+```
+
+### BareMetalHosts
+```
+GET    /api/v1/baremetalhosts                          # List all BMH
+GET    /api/v1/namespaces/{ns}/baremetalhosts          # List in namespace
+GET    /api/v1/namespaces/{ns}/baremetalhosts/{name}   # Get BMH
+POST   /api/v1/namespaces/{ns}/baremetalhosts          # Create BMH
+PUT    /api/v1/namespaces/{ns}/baremetalhosts/{name}   # Update BMH
+PATCH  /api/v1/namespaces/{ns}/baremetalhosts/{name}   # Patch BMH (merge)
+DELETE /api/v1/namespaces/{ns}/baremetalhosts/{name}    # Delete BMH
+```
+
+### iSCSI CDROMs (cluster-scoped)
+```
+GET    /api/v1/iscsi-cdroms                            # List all CDROMs
+GET    /api/v1/iscsi-cdroms/{name}                     # Get CDROM
+POST   /api/v1/iscsi-cdroms                            # Create CDROM (phase=Pending)
+PUT    /api/v1/iscsi-cdroms/{name}                     # Update CDROM
+PATCH  /api/v1/iscsi-cdroms/{name}                     # Patch CDROM
+DELETE /api/v1/iscsi-cdroms/{name}                     # Delete (409 if subscribers exist)
+POST   /api/v1/iscsi-cdroms/{name}/upload              # Upload ISO (multipart, field: "iso")
+POST   /api/v1/iscsi-cdroms/{name}/subscribe           # Subscribe host
+POST   /api/v1/iscsi-cdroms/{name}/unsubscribe         # Unsubscribe host
+```
+
+**iSCSI CDROM workflow:**
+1. Create the CDROM object (returns phase=Pending)
+2. Upload the ISO file via multipart POST (streams to `/raid1/iso/`, configures RouterOS iSCSI target)
+3. Subscribe hosts to get iSCSI connection details (targetIQN, portalIP, portalPort)
+4. Unsubscribe when done; delete CDROM with `?deleteISO=true` to remove the ISO file
+
+Use the helper script for create+upload+cleanup in one step:
+```bash
+scripts/setup-iscsi-cdrom.sh <name> <iso-file> [description]
+```
+
+### ConfigMaps
+```
+GET    /api/v1/namespaces/{ns}/configmaps              # List in namespace
+GET    /api/v1/namespaces/{ns}/configmaps/{name}       # Get ConfigMap
+POST   /api/v1/namespaces/{ns}/configmaps              # Create ConfigMap
+PUT    /api/v1/namespaces/{ns}/configmaps/{name}       # Update ConfigMap
+DELETE /api/v1/namespaces/{ns}/configmaps/{name}        # Delete ConfigMap
+```
+
+### Registries (cluster-scoped)
+```
+GET    /api/v1/registries                              # List all registries
+GET    /api/v1/registries/{name}                       # Get registry
+POST   /api/v1/registries                              # Create registry
+PUT    /api/v1/registries/{name}                       # Update registry
+DELETE /api/v1/registries/{name}                       # Delete registry
+```
+
+### Events
+```
+GET    /api/v1/events                                  # List all events
+GET    /api/v1/namespaces/{ns}/events                  # List events in namespace
+```
+
 ### Operations
 ```
 GET    /api/v1/consistency                             # Consistency report
@@ -209,6 +289,62 @@ GET    /healthz                                        # Health check
 ```
 POST   /api/v1/apply                                   # Apply YAML manifest
 GET    /api/v1/export                                  # Export all as YAML
+```
+
+## oc / kubectl Commands
+
+All resources support `oc` (or `kubectl`) with `--server=http://192.168.200.2:8082`. Table format output is supported for all resource types.
+
+### Resource Types
+
+| Resource | Short Name | Namespaced | Kind |
+|----------|-----------|------------|------|
+| baremetalhosts | bmh | yes | BareMetalHost |
+| configmaps | | yes | ConfigMap |
+| deployments | deploy | yes | Deployment |
+| events | | yes | Event |
+| iscsi-cdroms | icd | no | ISCSICdrom |
+| namespaces | | no | Namespace |
+| networks | net | no | Network |
+| nodes | | no | Node |
+| persistentvolumeclaims | pvc | yes | PersistentVolumeClaim |
+| pods | | yes | Pod |
+| registries | reg | no | Registry |
+| services | | yes | Service |
+
+### Common Commands
+
+```bash
+# Set server for convenience
+export KUBECONFIG=/dev/null
+alias mk='oc --server=http://192.168.200.2:8082'
+
+# List resources
+mk get pods -A                    # All pods across namespaces
+mk get deploy -A                  # All deployments
+mk get networks                   # All networks (cluster-scoped)
+mk get pvc -A                     # All PVCs
+mk get bmh -A                     # All bare metal hosts
+mk get icd                        # All iSCSI CDROMs (short name)
+mk get registries                 # All registries
+mk get events -A                  # All events
+mk get configmaps -n g10          # ConfigMaps in g10 namespace
+
+# Get specific resource
+mk get pod pxe -n g10             # Specific pod
+mk get network gt                 # Specific network
+mk get bmh server1 -n default     # Specific BMH
+
+# Apply manifests
+mk apply -f pod.yaml              # Create/update from YAML
+mk apply -f deployment.yaml
+
+# Delete resources
+mk delete pod mypod -n default
+mk delete bmh server1 -n default
+
+# API discovery
+mk api-resources                  # List all available resource types
 ```
 
 ## Custom Annotations

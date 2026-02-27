@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 ### 2026-02-27
+- **docs:** Updated README with complete API reference for all resource types (Networks, PVCs, BMH, iSCSI CDROMs, ConfigMaps, Registries, Events). Added oc/kubectl commands section with resource table, short names, and common usage examples.
+- **feat:** Added `scripts/setup-iscsi-cdrom.sh` helper — creates iSCSI CDROM, uploads ISO, cleans up previous CDROM with same name (unsubscribes all, deletes with ISO cleanup). Tested 10/10 passes.
 - **fix:** mkube-update tarball format — replaced `crane.Save` (OCI format: compressed layers, no repositories file, no VERSION/json per layer) with custom `saveRouterOSTarball` that produces the exact docker-save v1 format RouterOS expects. Matches `hack/make-tarball.sh` structure: `manifest.json`, `repositories`, `{configHash}.json`, `{layerHash}/layer.tar` (uncompressed), `{layerHash}/VERSION`, `{layerHash}/json`. Verified end-to-end: mkube-update successfully detects digest change, pulls image, creates correct 43MB tarball, and replaces mkube container.
 - **feat:** mkube-update GHCR fallback — when local registry pull fails, automatically falls back to `ghcr.io/glennswest/{repo}:{tag}`.
 - **fix:** mkube-update scratch container /tmp — `os.CreateTemp` defaults to /tmp which doesn't exist in scratch containers. Now uses the staging directory for temp files.
