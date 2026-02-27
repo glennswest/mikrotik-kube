@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -113,11 +114,24 @@ func (p *MicroKubeProvider) MigrateRegistryConfig(ctx context.Context) {
 	}
 
 	cfg := p.deps.Config.Registry
-	if !cfg.Enabled {
+
+	// Migration runs if there's any registry config — the "enabled" flag
+	// controls the embedded registry binary, not the external standalone one.
+	// LocalAddresses being set means a registry exists on the network.
+	if !cfg.Enabled && len(cfg.LocalAddresses) == 0 {
 		return
 	}
 
 	p.deps.Logger.Infow("migrating config.yaml registry to Registry CRD")
+
+	// Derive StaticIP from first local address (e.g. "192.168.200.3:5000" → "192.168.200.3")
+	staticIP := "192.168.200.3"
+	if len(cfg.LocalAddresses) > 0 {
+		addr := cfg.LocalAddresses[0]
+		if host, _, err := net.SplitHostPort(addr); err == nil {
+			staticIP = host
+		}
+	}
 
 	reg := Registry{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Registry"},
@@ -127,7 +141,7 @@ func (p *MicroKubeProvider) MigrateRegistryConfig(ctx context.Context) {
 		},
 		Spec: RegistrySpec{
 			Network:            "gt",
-			StaticIP:           "192.168.200.3",
+			StaticIP:           staticIP,
 			Hostname:           "registry.gt.lo",
 			StorePath:          cfg.StorePath,
 			ListenAddr:         cfg.ListenAddr,
