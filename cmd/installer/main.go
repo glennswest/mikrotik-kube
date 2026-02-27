@@ -431,7 +431,7 @@ routerosURL: "http://%s/rest"
 routerosUser: "%s"
 routerosPassword: "%s"
 mkubeAPI: "http://%s:8080"
-pollSeconds: 60
+pollSeconds: 15
 
 bootstrap:
   enabled: true

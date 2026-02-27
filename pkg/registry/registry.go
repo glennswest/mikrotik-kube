@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	goruntime "runtime"
 	"strings"
 	"time"
 
@@ -61,14 +62,18 @@ func Start(ctx context.Context, cfg config.RegistryConfig, log *zap.SugaredLogge
 
 	mux := http.NewServeMux()
 
-	// OCI Distribution Spec v2 endpoints
-	mux.HandleFunc("/v2/", r.handleV2)
-	mux.HandleFunc("/v2/_catalog", r.handleCatalog)
-	mux.HandleFunc("POST /v2/_pull", r.handlePull)
+	// OCI Distribution Spec v2 endpoints — wrapped with panic recovery
+	mux.HandleFunc("/v2/", r.recoverMiddleware(r.handleV2))
+	mux.HandleFunc("/v2/_catalog", r.recoverMiddleware(r.handleCatalog))
+	mux.HandleFunc("POST /v2/_pull", r.recoverMiddleware(r.handlePull))
 
 	r.server = &http.Server{
 		Addr:    cfg.ListenAddr,
 		Handler: mux,
+		// Disable HTTP/2: Go's h2 implementation sends GOAWAY frames under load
+		// which can crash the server during large blob uploads (crane copy).
+		// HTTP/1.1 is sufficient for an internal registry serving a few clients.
+		TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
 	}
 
 	// Try loading TLS cert from disk (installed by mkube-installer).
@@ -132,6 +137,27 @@ func (r *Registry) Store() *BlobStore {
 func (r *Registry) Shutdown(ctx context.Context) error {
 	r.log.Info("shutting down registry")
 	return r.server.Shutdown(ctx)
+}
+
+// recoverMiddleware wraps an HTTP handler with panic recovery so that a
+// single request panic does not crash the entire registry process.
+func (r *Registry) recoverMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				buf := make([]byte, 4096)
+				n := goruntime.Stack(buf, false)
+				r.log.Errorw("handler panic recovered",
+					"panic", rec,
+					"method", req.Method,
+					"path", req.URL.Path,
+					"stack", string(buf[:n]),
+				)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+			}
+		}()
+		next(w, req)
+	}
 }
 
 // handleV2 routes OCI distribution spec requests.

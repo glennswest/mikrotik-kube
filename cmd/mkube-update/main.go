@@ -130,7 +130,7 @@ func main() {
 	}
 
 	if cfg.PollSeconds <= 0 {
-		cfg.PollSeconds = 60
+		cfg.PollSeconds = 15
 	}
 	if cfg.TarballDir == "" {
 		cfg.TarballDir = "/data/staging"

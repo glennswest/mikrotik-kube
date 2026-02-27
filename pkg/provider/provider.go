@@ -95,6 +95,7 @@ type MicroKubeProvider struct {
 	pushNotify      chan registry.PushEvent       // internal channel for API push notifications
 	redeploying        map[string]bool              // pod keys currently being redeployed (skip in reconciler)
 	networkFailures    map[string]int               // pod key -> consecutive network health failures
+	infraFailures      map[string]int               // container name -> consecutive health check failures
 	consistencyRunning atomic.Bool                  // guards CheckConsistencyAsync against goroutine leaks
 }
 
@@ -133,6 +134,7 @@ func NewMicroKubeProvider(deps Deps) (*MicroKubeProvider, error) {
 		pushNotify:      make(chan registry.PushEvent, 16),
 		redeploying:     make(map[string]bool),
 		networkFailures: make(map[string]int),
+		infraFailures:   make(map[string]int),
 	}
 
 	// Load built-in default ConfigMaps derived from mkube config
@@ -1164,6 +1166,9 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 
 	// 8. Async consistency check for orphaned veths/IPAM
 	p.CheckConsistencyAsync("reconcile")
+
+	// 9. Infrastructure health checks (registry, mkube-update)
+	p.checkInfraHealth(ctx)
 
 	log.Infow("RECONCILE: complete", "total_ms", time.Since(reconcileStart).Milliseconds(), "tracked_pods", len(p.pods))
 	return nil
