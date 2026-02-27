@@ -109,7 +109,7 @@ go test ./...
 - Network PATCH handler merge fix (DeepCopy + json.Unmarshal instead of replace)
 - Auto-deploy microdns on managed Network CRD create (ConfigMap + pod auto-created, auto-teardown on delete, managed transitions on update/patch, backend-agnostic via ContainerRuntime)
 - Registry CRD (cluster-scoped, NATS-backed, CRUD API, watch, table format, config generation, managed auto-deploy/teardown, migration from config.yaml, consistency checks, export/import)
-- iSCSI CDROM CRD (cluster-scoped, NATS-backed, CRUD API, watch, table format, ISO upload, subscribe/unsubscribe, ROSE /disk API for iSCSI export, consistency checks, export/import). Verified end-to-end: create → upload → iSCSI export → subscribe → unsubscribe → delete.
+- iSCSI CDROM CRD (cluster-scoped, NATS-backed, CRUD API, watch, table format, ISO upload via streaming, subscribe/unsubscribe, ROSE /disk API for iSCSI export, consistency checks, export/import). In production — routine bare-metal boots via iSCSI ISO.
 - mkube-update tarball format fix (crane.Save produced OCI format with compressed layers; RouterOS needs docker-save v1 with uncompressed layers, repositories file, VERSION/json per layer). Verified: mkube-update successfully replaces mkube via registry push.
 - mkube-update scratch container fix (/tmp doesn't exist, bootstrap retry on API unreachable)
 - mkube-update GHCR fallback (tries local registry first, falls back to ghcr.io/glennswest/ if local pull fails)
