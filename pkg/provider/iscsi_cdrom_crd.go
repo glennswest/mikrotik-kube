@@ -344,6 +344,7 @@ func (p *MicroKubeProvider) handleUploadISCSICdrom(w http.ResponseWriter, r *htt
 
 	var written int64
 	isoPath := cdrom.Status.ISOPath
+	tmpPath := isoPath + ".uploading"
 
 	for {
 		part, err := mr.NextPart()
@@ -361,7 +362,8 @@ func (p *MicroKubeProvider) handleUploadISCSICdrom(w http.ResponseWriter, r *htt
 
 		cdrom.Status.Phase = "Uploading"
 
-		dst, err := os.Create(isoPath)
+		// Write to temp file first, rename on success (atomic)
+		dst, err := os.Create(tmpPath)
 		if err != nil {
 			part.Close()
 			http.Error(w, fmt.Sprintf("creating ISO file: %v", err), http.StatusInternalServerError)
@@ -369,13 +371,50 @@ func (p *MicroKubeProvider) handleUploadISCSICdrom(w http.ResponseWriter, r *htt
 		}
 
 		written, err = io.Copy(dst, part)
-		dst.Close()
 		part.Close()
+
 		if err != nil {
-			os.Remove(isoPath)
+			dst.Close()
+			os.Remove(tmpPath)
 			http.Error(w, fmt.Sprintf("writing ISO file: %v", err), http.StatusInternalServerError)
 			return
 		}
+
+		// Flush all data to stable storage before closing
+		if err := dst.Sync(); err != nil {
+			dst.Close()
+			os.Remove(tmpPath)
+			http.Error(w, fmt.Sprintf("syncing ISO file to disk: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		if err := dst.Close(); err != nil {
+			os.Remove(tmpPath)
+			http.Error(w, fmt.Sprintf("closing ISO file: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Verify written size matches file on disk
+		fi, err := os.Stat(tmpPath)
+		if err != nil {
+			os.Remove(tmpPath)
+			http.Error(w, fmt.Sprintf("stat ISO file: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if fi.Size() != written {
+			os.Remove(tmpPath)
+			http.Error(w, fmt.Sprintf("ISO file size mismatch: wrote %d bytes but file is %d bytes", written, fi.Size()), http.StatusInternalServerError)
+			return
+		}
+
+		// Atomic rename from temp to final path
+		if err := os.Rename(tmpPath, isoPath); err != nil {
+			os.Remove(tmpPath)
+			http.Error(w, fmt.Sprintf("renaming ISO file: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		p.deps.Logger.Infow("ISO upload complete", "name", name, "bytes", written, "path", isoPath)
 		break
 	}
 
