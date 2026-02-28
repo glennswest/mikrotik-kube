@@ -29,7 +29,7 @@ go test ./...
 ### Binaries
 | Binary | Location | Runs on | Purpose |
 |--------|----------|---------|---------|
-| mkube | `cmd/mkube/` | RouterOS (ARM64) | Main controller |
+| mkube | `cmd/mkube/` | RouterOS (ARM64), Proxmox (x86_64), StormBase | Main controller |
 | mkube-update | `cmd/mkube-update/` | RouterOS (ARM64) | Image update watcher |
 | mkube-registry | `cmd/registry/` | RouterOS (ARM64) | Standalone OCI registry |
 | installer | `cmd/installer/` | Mac (local) | One-shot bootstrap CLI |
@@ -46,13 +46,22 @@ go test ./...
 | `pkg/lifecycle/` | Boot ordering, health checks, watchdog |
 | `pkg/registry/` | OCI registry implementation |
 | `pkg/routeros/` | RouterOS REST API client |
-| `pkg/runtime/` | Container runtime abstraction |
+| `pkg/proxmox/` | Proxmox VE REST API client, VMID allocator, OCI→LXC template converter |
+| `pkg/stormbase/` | StormBase gRPC client |
+| `pkg/runtime/` | Container runtime abstraction (RouterOS, StormBase, Proxmox adapters) |
+
+### Backends
+| Backend | Config key | Runtime adapter | Network driver | Init function |
+|---------|-----------|-----------------|----------------|---------------|
+| RouterOS | `backend: routeros` (default) | `pkg/runtime/routeros.go` | `pkg/network/driver/routeros.go` | `runRouterOS()` |
+| StormBase | `backend: stormbase` | `pkg/stormbase/client.go` | `pkg/network/driver/stormbase.go` | `runStormBase()` |
+| Proxmox | `backend: proxmox` | `pkg/runtime/proxmox.go` | `pkg/network/driver/proxmox.go` | `runProxmox()` |
 
 ### Infrastructure
 | Host | IP | Role |
 |------|-----|------|
-| rose1.gw.lo | 192.168.1.88 | MikroTik ARM64, runs mkube + all containers |
-| pvex.gw.lo | 192.168.1.160 | Proxmox node, runs gw microdns (CT 117) |
+| rose1.gw.lo | 192.168.1.88 | MikroTik ARM64, runs mkube + all containers (RouterOS backend) |
+| pvex.gw.lo | 192.168.1.160 | Proxmox node, runs gw microdns (CT 117), Proxmox backend target |
 
 ### Container IPs (gt network)
 | Container | IP | Notes |
@@ -76,11 +85,12 @@ go test ./...
 
 - **Naming**: `{namespace}_{pod}_{container}` for RouterOS containers, `veth_{ns}_{pod}_{i}` for veths
 - **Persistence**: All pod/deployment/configmap state persists in NATS JetStream KV
-- **Reconcile**: 10s loop — loads desired state from NATS + boot-order, compares with actual RouterOS containers
+- **Reconcile**: 10s loop — loads desired state from NATS + boot-order, compares with actual containers
 - **Staggered restarts**: Pods sharing the same image are restarted one at a time with liveness verification (DNS probes port 53)
 - **Image updates**: `vkube.io/image-policy: auto` — reconciler checks registry digest, rolling update on change
 - **DNS**: Automatic registration via microdns REST API; aliases, static records, DHCP reservations
 - **RouterOS**: Use `remote-image` param for container creation (NOT `tag` — read-only metadata)
+- **Proxmox**: LXC containers via REST API, PVE API token auth, VMID range allocation (e.g. 200-299), mounts accumulated and applied at creation time, OCI→rootfs .tar.gz conversion for vztmpl upload, async task polling for all mutating ops
 - **Scratch containers**: No system root CAs — can't make HTTPS to public registries. Use local registry.
 - **kubectl/oc**: `kubectl` hangs against mkube API — use `curl` with JSON or `oc apply`
 
@@ -121,6 +131,8 @@ go test ./...
 - Infrastructure health check (mkube checks registry :5001/healthz every reconcile, restarts after 3 failures. Catches zombie state where RouterOS says RUNNING but process is dead)
 - mkube-update poll interval 60s → 15s (code default + installer template + live config)
 - Zero-downtime blue-green container updates: UpdatePod pre-extracts new image in staging container while old serves traffic. Fast cutover (~5-8s) uses pre-extracted root-dir (RouterOS skips extraction). Alternating root-dir pattern. Staging health check with fallback to destructive update.
+- Proxmox VE LXC backend: Third backend provider. REST API client with PVE API token auth, async task polling (UPID), VMID range allocator, OCI→rootfs template converter, ContainerRuntime adapter with mount accumulator, NetworkDriver for pre-existing bridges, discovery module. Config: `backend: proxmox`. Deploy config: `deploy/proxmox-config.yaml`. 17 tests.
+- ISCSICdrom `version` field: Tracks ISO version in spec, shown in table output, inherited on derive.
 
 ### TODO (priority order)
 1. **BareMetalHost Operator (BMO)**: Owns ALL host state and state machines. pxemanager becomes GUI-only (no SQLite state). Architecture:
@@ -149,6 +161,8 @@ go test ./...
 11. **Registry HTTP/2 proper fix**: Currently h2 is disabled as workaround. Need high-speed registry — either find root cause in Go's h2 server (GOAWAY under blob upload load), switch to a production registry lib (e.g. `distribution/distribution`), or use a reverse proxy (caddy/nginx) in front that handles h2 correctly.
 12. **microdns health-checked DNS load balancing**: Add SSE-style health check to microdns round-robin — probe backends, remove dead ones from DNS responses until recovered. General-purpose pattern for any service.
 13. **mkube HA (2-node)**: Two mkube instances behind microdns health-checked round-robin. NATS is already shared state. Needs leader election or active/passive coordination for the reconcile loop (avoid two reconcilers creating/deleting simultaneously). microdns health check auto-removes dead mkube from DNS.
+14. **Proxmox integration test**: Deploy mkube with `backend: proxmox` against pvex.gw.lo. Smoke test: create pod via API, verify LXC container appears, test start/stop/restart, verify IPAM + DNS, verify OCI→template conversion + upload.
+15. **Proxmox PVE 9.1+ native OCI**: Detect PVE version and pass OCI image ref directly to `pct create` (skip rootfs conversion). Requires PVE 9.1+ with native OCI support.
 
 ### In Progress
 <!-- - [ ] (started YYYY-MM-DD) Task description -->
@@ -161,6 +175,9 @@ go test ./...
 
 # Provider tests only
 go test ./pkg/provider/...
+
+# Proxmox client + VMID allocator tests
+go test ./pkg/proxmox/...
 
 # With verbose output
 go test -v ./pkg/provider/...
