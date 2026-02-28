@@ -62,7 +62,7 @@ type NATSConfig struct {
 
 // BMHConfig configures BareMetalHost management.
 type BMHConfig struct {
-	PXEManagerURL string `yaml:"pxeManagerURL"` // default: http://pxe.g10.lo:8080
+	PXEManagerURL string `yaml:"pxeManagerURL"` // default: http://pxe.g10.lo
 	DHCPLeaseURL  string `yaml:"dhcpLeaseURL"`  // default: http://dns.g11.lo:8080
 	WatchInterval int    `yaml:"watchInterval"`  // seconds, default: 30
 }
@@ -300,7 +300,7 @@ func Load(flags *pflag.FlagSet) (*Config, error) {
 			StorePath:  "/raid1/registry",
 		},
 		BMH: BMHConfig{
-			PXEManagerURL: "http://pxe.g10.lo:8080",
+			PXEManagerURL: "http://pxe.g10.lo",
 			DHCPLeaseURL:  "http://dns.g11.lo:8080",
 			WatchInterval: 30,
 		},
