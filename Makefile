@@ -3,9 +3,12 @@ VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo de
 COMMIT    ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 ARCH      ?= arm64
 DEVICE    ?= rose1.g10.lo
+REGISTRY  ?= registry.gt.lo:5000
+IMAGE     := $(REGISTRY)/$(BINARY):edge
+MKUBE_API ?= http://192.168.200.2:8082
 GOFLAGS   := -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)"
 
-.PHONY: build build-local tarball deploy test lint clean mocks \
+.PHONY: build build-local tarball deploy deploy-tarball test lint clean mocks \
         build-registry build-installer build-update build-all \
         deploy-update deploy-installer
 
@@ -37,8 +40,17 @@ tarball: build
 	@mkdir -p dist
 	@bash hack/make-tarball.sh dist/$(BINARY)-$(ARCH) deploy/config.yaml dist/$(BINARY)-$(ARCH).tar
 
-## Deploy to a MikroTik device (build + upload + configure)
-deploy: tarball
+## Deploy via local registry — build container, push, mkube-update picks it up
+deploy: build
+	cp dist/$(BINARY)-$(ARCH) mkube
+	podman build --platform linux/$(ARCH) -f Dockerfile.scratch -t $(IMAGE) .
+	rm -f mkube
+	podman push --tls-verify=false $(IMAGE)
+	@echo "Pushed $(IMAGE) — mkube-update will auto-update"
+	@curl -sf -X POST $(MKUBE_API)/api/v1/images/redeploy && echo "Redeploy triggered" || echo "(mkube API not reachable, update will happen on next poll)"
+
+## Deploy via tarball + SCP (bootstrap / fallback)
+deploy-tarball: tarball
 	bash hack/deploy.sh $(DEVICE) dist/$(BINARY)-$(ARCH).tar
 
 ## Run tests
