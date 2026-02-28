@@ -15,11 +15,13 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 
+	"github.com/glennswest/mkube/pkg/cluster"
 	"github.com/glennswest/mkube/pkg/config"
 	"github.com/glennswest/mkube/pkg/discovery"
 	"github.com/glennswest/mkube/pkg/dns"
 	"github.com/glennswest/mkube/pkg/dzo"
 	"github.com/glennswest/mkube/pkg/lifecycle"
+	embeddednats "github.com/glennswest/mkube/pkg/nats"
 	"github.com/glennswest/mkube/pkg/namespace"
 	"github.com/glennswest/mkube/pkg/network"
 	netdriver "github.com/glennswest/mkube/pkg/network/driver"
@@ -412,6 +414,23 @@ func runSharedServices(
 ) error {
 	phaseStart := time.Now()
 
+	// ── Embedded NATS (optional) ─────────────────────────────────────
+	var embeddedNATS *embeddednats.EmbeddedServer
+	if cfg.NATS.Embedded {
+		var err error
+		embeddedNATS, err = embeddednats.NewEmbedded(embeddednats.EmbeddedConfig{
+			Host:     "0.0.0.0",
+			Port:     cfg.NATS.Port,
+			StoreDir: cfg.NATS.StoreDir,
+		}, log)
+		if err != nil {
+			return fmt.Errorf("starting embedded NATS: %w", err)
+		}
+		defer embeddedNATS.Shutdown()
+		cfg.NATS.URL = embeddedNATS.ClientURL()
+		log.Infow("BOOT: embedded NATS started", "url", cfg.NATS.URL)
+	}
+
 	// ── NATS State Store (optional, deferred if NATS not ready yet) ──
 	var kvStore *store.Store
 	natsDeferred := false
@@ -498,6 +517,16 @@ func runSharedServices(
 	go p.RunSubnetScanner(ctx)
 	go p.RunBMHReconciler(ctx)
 	p.StartInfraHealthWatchers(ctx)
+	p.StartISOScanner(ctx, 30*time.Second)
+
+	// ── Cluster Manager (optional) ──────────────────────────────────
+	if cfg.Cluster.Enabled && kvStore != nil {
+		clusterMgr := cluster.New(cfg.NodeName, cfg.Cluster, kvStore, log)
+		clusterMgr.Start(ctx)
+		p.SetClusterManager(clusterMgr)
+		clusterMgr.RegisterRoutes(mux)
+		log.Infow("BOOT: cluster manager started", "peers", len(cfg.Cluster.Peers))
+	}
 
 	// ── Register routes and start HTTP server ───────────────────────
 	p.RegisterRoutes(mux)

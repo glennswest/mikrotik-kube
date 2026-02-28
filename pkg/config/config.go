@@ -28,6 +28,7 @@ type Config struct {
 	Namespace  NamespaceConfig `yaml:"namespace"`
 	Logging    LoggingConfig   `yaml:"logging"`
 	NATS       NATSConfig      `yaml:"nats"`
+	Cluster    ClusterConfig   `yaml:"cluster"`
 	BMH        BMHConfig       `yaml:"bmh"`
 
 	// Deprecated: single-network config for backward compatibility.
@@ -64,6 +65,22 @@ type LoggingConfig struct {
 type NATSConfig struct {
 	URL      string `yaml:"url"`      // e.g. "nats://nats.gt.lo:4222"
 	Replicas int    `yaml:"replicas"` // 1 for single-node, 3 for cluster
+	Embedded bool   `yaml:"embedded"` // start in-process NATS server
+	StoreDir string `yaml:"storeDir"` // JetStream data directory (embedded mode)
+	Port     int    `yaml:"port"`     // listen port for embedded NATS (default 4222)
+}
+
+// ClusterConfig configures multi-node clustering.
+type ClusterConfig struct {
+	Enabled          bool         `yaml:"enabled"`
+	Peers            []PeerConfig `yaml:"peers"`
+	FailoverTimeout  int          `yaml:"failoverTimeout"`  // seconds before rescheduling failed node pods (default 300)
+}
+
+// PeerConfig defines a cluster peer node.
+type PeerConfig struct {
+	Name    string `yaml:"name"`    // peer node name, e.g. "pvex"
+	Address string `yaml:"address"` // peer HTTP address, e.g. "http://192.168.1.160:8082"
 }
 
 // BMHConfig configures BareMetalHost management.

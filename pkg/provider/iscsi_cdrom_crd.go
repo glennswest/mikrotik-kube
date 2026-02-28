@@ -229,6 +229,26 @@ func (p *MicroKubeProvider) handleUpdateISCSICdrom(w http.ResponseWriter, r *htt
 		cdrom.Status = old.Status
 	}
 
+	// If isoFile changed, update status and reconfigure iSCSI target
+	if cdrom.Spec.ISOFile != old.Spec.ISOFile {
+		p.deps.Logger.Infow("iSCSI CDROM isoFile changed, reconfiguring",
+			"name", name, "old", old.Spec.ISOFile, "new", cdrom.Spec.ISOFile)
+		// Remove old target
+		p.removeISCSITarget(r.Context(), old)
+		// Update status for new file
+		cdrom.Status.ISOPath = filepath.Join(isoBasePath, cdrom.Spec.ISOFile)
+		if fi, err := os.Stat(cdrom.Status.ISOPath); err == nil {
+			cdrom.Status.ISOSize = fi.Size()
+		}
+		// Create new target
+		if err := p.configureISCSITarget(r.Context(), &cdrom); err != nil {
+			p.deps.Logger.Warnw("failed to reconfigure iSCSI target", "name", name, "error", err)
+			cdrom.Status.Phase = "Error"
+		} else {
+			cdrom.Status.Phase = "Ready"
+		}
+	}
+
 	if p.deps.Store != nil && p.deps.Store.ISCSICdroms != nil {
 		if _, err := p.deps.Store.ISCSICdroms.PutJSON(r.Context(), name, &cdrom); err != nil {
 			http.Error(w, fmt.Sprintf("persisting iSCSI CDROM update: %v", err), http.StatusInternalServerError)
@@ -611,6 +631,222 @@ func (p *MicroKubeProvider) removeISCSITarget(ctx context.Context, cdrom *ISCSIC
 	if err := rosClient.RemoveISCSITarget(ctx, cdrom.Status.RouterOSID); err != nil {
 		p.deps.Logger.Warnw("failed to remove iSCSI disk", "id", cdrom.Status.RouterOSID, "error", err)
 	}
+}
+
+// ─── ISO Directory Scanner ──────────────────────────────────────────────────
+
+// StartISOScanner runs a background goroutine that scans /raid1/iso/ for ISO
+// files and auto-creates/updates ISCSICdrom entries. It detects new files,
+// changed files (size mismatch), and extracts version info from filenames.
+func (p *MicroKubeProvider) StartISOScanner(ctx context.Context, interval time.Duration) {
+	go func() {
+		// Initial scan after short delay (let iSCSI targets load first)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(10 * time.Second):
+		}
+		p.scanISODirectory(ctx)
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				p.scanISODirectory(ctx)
+			}
+		}
+	}()
+}
+
+// scanISODirectory lists ISO files in the base path and reconciles ISCSICdrom entries.
+func (p *MicroKubeProvider) scanISODirectory(ctx context.Context) {
+	entries, err := os.ReadDir(isoBasePath)
+	if err != nil {
+		p.deps.Logger.Warnw("ISO scanner: failed to read directory", "path", isoBasePath, "error", err)
+		return
+	}
+
+	// Build set of ISO files on disk
+	isoFiles := map[string]os.FileInfo{} // filename → FileInfo
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".iso" {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			continue
+		}
+		isoFiles[e.Name()] = fi
+	}
+
+	// Check existing CDROMs — update if file changed
+	for _, cdrom := range p.iscsiCdroms {
+		fi, onDisk := isoFiles[cdrom.Spec.ISOFile]
+		if !onDisk {
+			// ISO file missing from disk
+			if cdrom.Status.Phase == "Ready" {
+				p.deps.Logger.Warnw("ISO scanner: ISO file missing for CDROM",
+					"name", cdrom.Name, "file", cdrom.Spec.ISOFile)
+			}
+			continue
+		}
+		// Check if file size changed (ISO was replaced)
+		if fi.Size() != cdrom.Status.ISOSize && cdrom.Status.ISOSize > 0 {
+			p.deps.Logger.Infow("ISO scanner: ISO file size changed, reconfiguring",
+				"name", cdrom.Name, "file", cdrom.Spec.ISOFile,
+				"oldSize", cdrom.Status.ISOSize, "newSize", fi.Size())
+			cdrom.Status.ISOSize = fi.Size()
+			// Remove old target and reconfigure
+			p.removeISCSITarget(ctx, cdrom)
+			cdrom.Status.ISOPath = filepath.Join(isoBasePath, cdrom.Spec.ISOFile)
+			if err := p.configureISCSITarget(ctx, cdrom); err != nil {
+				p.deps.Logger.Warnw("ISO scanner: reconfigure failed", "name", cdrom.Name, "error", err)
+				cdrom.Status.Phase = "Error"
+			} else {
+				cdrom.Status.Phase = "Ready"
+			}
+			p.persistISCSICdrom(ctx, cdrom)
+		}
+	}
+
+	// Check for new ISO files not tracked by any CDROM
+	for filename, fi := range isoFiles {
+		tracked := false
+		for _, cdrom := range p.iscsiCdroms {
+			if cdrom.Spec.ISOFile == filename {
+				tracked = true
+				break
+			}
+		}
+		if tracked {
+			continue
+		}
+
+		// Derive CDROM name and version from filename
+		// e.g. "stormbase-0.2.3-x86_64.iso" → name="stormbase", version="0.2.3"
+		cdromName, version := parseISOFilename(filename)
+		if cdromName == "" {
+			continue
+		}
+
+		// Skip if name already exists (different file)
+		if _, exists := p.iscsiCdroms[cdromName]; exists {
+			continue
+		}
+
+		p.deps.Logger.Infow("ISO scanner: auto-creating CDROM for new ISO",
+			"name", cdromName, "file", filename, "version", version, "size", fi.Size())
+
+		desc := cdromName
+		if version != "" {
+			desc = fmt.Sprintf("%s v%s", cdromName, version)
+		}
+
+		cdrom := &ISCSICdrom{
+			TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "ISCSICdrom"},
+			ObjectMeta: metav1.ObjectMeta{Name: cdromName, CreationTimestamp: metav1.Now()},
+			Spec: ISCSICdromSpec{
+				ISOFile:     filename,
+				Description: desc,
+				Version:     version,
+				ReadOnly:    true,
+			},
+			Status: ISCSICdromStatus{
+				Phase:      "Pending",
+				ISOPath:    filepath.Join(isoBasePath, filename),
+				ISOSize:    fi.Size(),
+				PortalPort: iscsiDefaultPort,
+			},
+		}
+		if len(p.deps.Config.Networks) > 0 {
+			cdrom.Status.PortalIP = p.deps.Config.Networks[0].Gateway
+		}
+
+		if err := p.configureISCSITarget(ctx, cdrom); err != nil {
+			p.deps.Logger.Warnw("ISO scanner: failed to configure target", "name", cdromName, "error", err)
+			cdrom.Status.Phase = "Error"
+		} else {
+			cdrom.Status.Phase = "Ready"
+		}
+
+		p.iscsiCdroms[cdromName] = cdrom
+		p.persistISCSICdrom(ctx, cdrom)
+	}
+}
+
+// persistISCSICdrom saves an ISCSICdrom to the NATS store.
+func (p *MicroKubeProvider) persistISCSICdrom(ctx context.Context, cdrom *ISCSICdrom) {
+	if p.deps.Store != nil && p.deps.Store.ISCSICdroms != nil {
+		if _, err := p.deps.Store.ISCSICdroms.PutJSON(ctx, cdrom.Name, cdrom); err != nil {
+			p.deps.Logger.Warnw("failed to persist iSCSI CDROM", "name", cdrom.Name, "error", err)
+		}
+	}
+}
+
+// parseISOFilename extracts a CDROM name and version from an ISO filename.
+// Examples:
+//
+//	"stormbase-0.2.3-x86_64.iso"  → ("stormbase", "0.2.3")
+//	"coreos-live.iso"             → ("coreos-live", "")
+//	"fedora-netinst.iso"          → ("fedora-netinst", "")
+func parseISOFilename(filename string) (name, version string) {
+	base := filename[:len(filename)-len(".iso")] // strip .iso
+
+	// Try to find a version pattern: name-X.Y.Z-arch
+	// Look for a segment that starts with a digit
+	parts := splitDash(base)
+	for i, part := range parts {
+		if len(part) > 0 && part[0] >= '0' && part[0] <= '9' {
+			name = joinDash(parts[:i])
+			// Check if next parts are arch identifiers
+			verParts := []string{part}
+			for j := i + 1; j < len(parts); j++ {
+				if isArchSuffix(parts[j]) {
+					break
+				}
+				verParts = append(verParts, parts[j])
+			}
+			version = joinDash(verParts)
+			return
+		}
+	}
+	// No version found
+	return base, ""
+}
+
+func splitDash(s string) []string {
+	var parts []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '-' {
+			parts = append(parts, s[start:i])
+			start = i + 1
+		}
+	}
+	parts = append(parts, s[start:])
+	return parts
+}
+
+func joinDash(parts []string) string {
+	result := ""
+	for i, p := range parts {
+		if i > 0 {
+			result += "-"
+		}
+		result += p
+	}
+	return result
+}
+
+func isArchSuffix(s string) bool {
+	switch s {
+	case "x86_64", "amd64", "aarch64", "arm64", "x86", "i386", "i686":
+		return true
+	}
+	return false
 }
 
 // ─── Watch ──────────────────────────────────────────────────────────────────
