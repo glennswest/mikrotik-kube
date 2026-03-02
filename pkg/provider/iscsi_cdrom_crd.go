@@ -191,6 +191,17 @@ func (p *MicroKubeProvider) handleCreateISCSICdrom(w http.ResponseWriter, r *htt
 		cdrom.Status.PortalIP = p.deps.Config.Networks[0].Gateway
 	}
 
+	// If the ISO file already exists on disk, configure iSCSI target immediately
+	if fi, err := os.Stat(cdrom.Status.ISOPath); err == nil {
+		cdrom.Status.ISOSize = fi.Size()
+		if err := p.configureISCSITarget(r.Context(), &cdrom); err != nil {
+			p.deps.Logger.Warnw("failed to configure iSCSI target on create", "name", cdrom.Name, "error", err)
+			cdrom.Status.Phase = "Error"
+		} else {
+			cdrom.Status.Phase = "Ready"
+		}
+	}
+
 	// Persist to NATS
 	if p.deps.Store != nil && p.deps.Store.ISCSICdroms != nil {
 		if _, err := p.deps.Store.ISCSICdroms.PutJSON(r.Context(), cdrom.Name, &cdrom); err != nil {
