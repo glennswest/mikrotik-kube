@@ -239,7 +239,7 @@ func (p *MicroKubeProvider) publishDHCPEvent(eventType, network, ip, mac, hostna
 	// Look up network type
 	networkType := ""
 	if net, ok := p.networks[network]; ok {
-		networkType = net.Spec.Type
+		networkType = string(net.Spec.Type)
 	}
 
 	evt := mkubeDHCPEvent{

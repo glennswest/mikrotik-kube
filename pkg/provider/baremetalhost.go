@@ -51,13 +51,35 @@ type BMCDetails struct {
 }
 
 type BMHStatus struct {
-	Phase           string   `json:"phase"`
-	PoweredOn       bool     `json:"poweredOn"`
-	IP              string   `json:"ip,omitempty"`
-	LastBoot        string   `json:"lastBoot,omitempty"`
-	BootCount       int      `json:"bootCount,omitempty"`
-	ErrorMessage    string   `json:"errorMessage,omitempty"`
-	AvailableImages []string `json:"availableImages,omitempty"`
+	Phase             string             `json:"phase"`
+	PoweredOn         bool               `json:"poweredOn"`
+	IP                string             `json:"ip,omitempty"`
+	LastBoot          string             `json:"lastBoot,omitempty"`
+	BootCount         int                `json:"bootCount,omitempty"`
+	ErrorMessage      string             `json:"errorMessage,omitempty"`
+	AvailableImages   []string           `json:"availableImages,omitempty"`
+	Hardware          *HardwareDetails   `json:"hardware,omitempty"`
+	NetworkInterfaces map[string]NICInfo `json:"networkInterfaces,omitempty"`
+}
+
+// HardwareDetails holds full hardware inventory for a bare metal host.
+type HardwareDetails struct {
+	Manufacturer  string  `json:"manufacturer,omitempty"`
+	ProductName   string  `json:"productName,omitempty"`
+	SerialNumber  string  `json:"serialNumber,omitempty"`
+	BIOSVersion   string  `json:"biosVersion,omitempty"`
+	CPUModel      string  `json:"cpuModel,omitempty"`
+	CPUCount      int     `json:"cpuCount,omitempty"`
+	TotalMemoryGB float64 `json:"totalMemoryGB,omitempty"`
+	DiskInfo      string  `json:"diskInfo,omitempty"`
+	LastInventory string  `json:"lastInventory,omitempty"`
+}
+
+// NICInfo describes a network interface on a bare metal host.
+type NICInfo struct {
+	MAC     string `json:"mac"`
+	Network string `json:"network,omitempty"`
+	IP      string `json:"ip,omitempty"`
 }
 
 type BareMetalHostList struct {
@@ -72,6 +94,17 @@ func (b *BareMetalHost) DeepCopy() *BareMetalHost {
 	if b.Spec.Online != nil {
 		v := *b.Spec.Online
 		out.Spec.Online = &v
+	}
+	if b.Status.Hardware != nil {
+		hw := *b.Status.Hardware
+		out.Status.Hardware = &hw
+	}
+	if b.Status.NetworkInterfaces != nil {
+		nics := make(map[string]NICInfo, len(b.Status.NetworkInterfaces))
+		for k, v := range b.Status.NetworkInterfaces {
+			nics[k] = v
+		}
+		out.Status.NetworkInterfaces = nics
 	}
 	return &out
 }
@@ -971,6 +1004,11 @@ func bmhReferencesNetwork(bmh *BareMetalHost, network string) bool {
 	}
 	if bmh.Spec.BMC.Network != "" && bmh.Spec.BMC.Network == network {
 		return true
+	}
+	for _, nic := range bmh.Status.NetworkInterfaces {
+		if nic.Network == network {
+			return true
+		}
 	}
 	return false
 }
