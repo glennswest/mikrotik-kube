@@ -51,12 +51,13 @@ type BMCDetails struct {
 }
 
 type BMHStatus struct {
-	Phase        string `json:"phase"`
-	PoweredOn    bool   `json:"poweredOn"`
-	IP           string `json:"ip,omitempty"`
-	LastBoot     string `json:"lastBoot,omitempty"`
-	BootCount    int    `json:"bootCount,omitempty"`
-	ErrorMessage string `json:"errorMessage,omitempty"`
+	Phase           string   `json:"phase"`
+	PoweredOn       bool     `json:"poweredOn"`
+	IP              string   `json:"ip,omitempty"`
+	LastBoot        string   `json:"lastBoot,omitempty"`
+	BootCount       int      `json:"bootCount,omitempty"`
+	ErrorMessage    string   `json:"errorMessage,omitempty"`
+	AvailableImages []string `json:"availableImages,omitempty"`
 }
 
 type BareMetalHostList struct {
@@ -792,7 +793,12 @@ func pxeGetHost(ctx context.Context, pxeURL, mac string) (*pxeHost, error) {
 
 // LoadBMHFromStore loads BMH objects from NATS store into the in-memory map.
 func (p *MicroKubeProvider) LoadBMHFromStore(ctx context.Context) {
-	if p.deps.Store == nil || p.deps.Store.BareMetalHosts == nil {
+	if p.deps.Store == nil {
+		p.deps.Logger.Warnw("LoadBMHFromStore: store is nil")
+		return
+	}
+	if p.deps.Store.BareMetalHosts == nil {
+		p.deps.Logger.Warnw("LoadBMHFromStore: BareMetalHosts bucket is nil")
 		return
 	}
 
@@ -802,6 +808,9 @@ func (p *MicroKubeProvider) LoadBMHFromStore(ctx context.Context) {
 		return
 	}
 
+	p.deps.Logger.Infow("LoadBMHFromStore: found keys", "count", len(keys))
+
+	loaded := 0
 	for _, key := range keys {
 		var bmh BareMetalHost
 		if _, err := p.deps.Store.BareMetalHosts.GetJSON(ctx, key, &bmh); err != nil {
@@ -810,11 +819,55 @@ func (p *MicroKubeProvider) LoadBMHFromStore(ctx context.Context) {
 		}
 		mapKey := bmh.Namespace + "/" + bmh.Name
 		p.bareMetalHosts[mapKey] = &bmh
+		loaded++
 	}
 
-	if len(keys) > 0 {
-		p.deps.Logger.Infow("loaded BMH from store", "count", len(keys))
+	p.deps.Logger.Infow("loaded BMH from store", "keys", len(keys), "loaded", loaded, "mapSize", len(p.bareMetalHosts))
+}
+
+// handleReloadBMH is a debug endpoint that reloads BMH from NATS store.
+func (p *MicroKubeProvider) handleReloadBMH(w http.ResponseWriter, r *http.Request) {
+	storeNil := p.deps.Store == nil
+	bucketNil := storeNil || p.deps.Store.BareMetalHosts == nil
+	beforeCount := len(p.bareMetalHosts)
+
+	// Directly try Keys and report
+	var keysErr string
+	var keysList []string
+	var getErrors []string
+	if !storeNil && !bucketNil {
+		keys, err := p.deps.Store.BareMetalHosts.Keys(r.Context(), "")
+		if err != nil {
+			keysErr = err.Error()
+		} else {
+			keysList = keys
+			// Try reading first few
+			for i, key := range keys {
+				if i >= 3 {
+					break
+				}
+				var bmh BareMetalHost
+				if _, err := p.deps.Store.BareMetalHosts.GetJSON(r.Context(), key, &bmh); err != nil {
+					getErrors = append(getErrors, key+": "+err.Error())
+				}
+			}
+		}
 	}
+
+	p.LoadBMHFromStore(r.Context())
+	afterCount := len(p.bareMetalHosts)
+
+	resp := map[string]interface{}{
+		"storeNil":    storeNil,
+		"bucketNil":   bucketNil,
+		"beforeCount": beforeCount,
+		"afterCount":  afterCount,
+		"keysErr":     keysErr,
+		"keysCount":   len(keysList),
+		"keysSample":  keysList,
+		"getErrors":   getErrors,
+	}
+	podWriteJSON(w, http.StatusOK, resp)
 }
 
 // handleWatchBMH streams BMH events as newline-delimited JSON (K8s watch format).
