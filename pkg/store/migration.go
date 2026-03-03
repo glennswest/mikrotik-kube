@@ -212,6 +212,62 @@ func (s *Store) ExportYAML(ctx context.Context) ([]byte, error) {
 		}
 	}
 
+	// Export BareMetalHosts
+	if s.BareMetalHosts != nil {
+		bmhKeys, err := s.BareMetalHosts.Keys(ctx, "")
+		if err != nil {
+			return nil, fmt.Errorf("listing baremetalhosts: %w", err)
+		}
+		for _, key := range bmhKeys {
+			raw, _, err := s.BareMetalHosts.Get(ctx, key)
+			if err != nil {
+				continue
+			}
+			var doc map[string]interface{}
+			if err := json.Unmarshal(raw, &doc); err != nil {
+				continue
+			}
+			doc["apiVersion"] = "v1"
+			doc["kind"] = "BareMetalHost"
+			delete(doc, "status")
+			data, err := json.MarshalIndent(doc, "", "  ")
+			if err != nil {
+				continue
+			}
+			buf.WriteString("---\n")
+			buf.Write(data)
+			buf.WriteString("\n")
+		}
+	}
+
+	// Export BootConfigs
+	if s.BootConfigs != nil {
+		bcKeys, err := s.BootConfigs.Keys(ctx, "")
+		if err != nil {
+			return nil, fmt.Errorf("listing bootconfigs: %w", err)
+		}
+		for _, key := range bcKeys {
+			raw, _, err := s.BootConfigs.Get(ctx, key)
+			if err != nil {
+				continue
+			}
+			var doc map[string]interface{}
+			if err := json.Unmarshal(raw, &doc); err != nil {
+				continue
+			}
+			doc["apiVersion"] = "v1"
+			doc["kind"] = "BootConfig"
+			delete(doc, "status")
+			data, err := json.MarshalIndent(doc, "", "  ")
+			if err != nil {
+				continue
+			}
+			buf.WriteString("---\n")
+			buf.Write(data)
+			buf.WriteString("\n")
+		}
+	}
+
 	// Export PVCs
 	if s.PersistentVolumeClaims != nil {
 		pvcKeys, err := s.PersistentVolumeClaims.Keys(ctx, "")

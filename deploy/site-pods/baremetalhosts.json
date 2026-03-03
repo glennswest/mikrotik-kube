@@ -1,0 +1,215 @@
+[
+  {
+    "apiVersion": "v1",
+    "kind": "BareMetalHost",
+    "metadata": {
+      "creationTimestamp": "2026-02-26T19:10:40Z",
+      "name": "server5",
+      "namespace": "default"
+    },
+    "spec": {
+      "bmc": {
+        "address": "192.168.11.14",
+        "hostname": "server5",
+        "mac": "0C:C4:7A:02:6B:1E",
+        "network": "g11",
+        "password": "ADMIN",
+        "username": "ADMIN"
+      },
+      "bootMACAddress": "AC:1F:6B:8A:A3:1A",
+      "hostname": "server5",
+      "ip": "192.168.10.14",
+      "network": "g10"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "BareMetalHost",
+    "metadata": {
+      "creationTimestamp": "2026-02-26T19:11:00Z",
+      "name": "server6",
+      "namespace": "default"
+    },
+    "spec": {
+      "bmc": {
+        "address": "192.168.11.15",
+        "hostname": "server6",
+        "mac": "0C:C4:7A:02:6C:A6",
+        "network": "g11",
+        "password": "ADMIN",
+        "username": "ADMIN"
+      },
+      "bootMACAddress": "AC:1F:6B:8D:90:13",
+      "hostname": "server6",
+      "ip": "192.168.10.15",
+      "network": "g10"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "BareMetalHost",
+    "metadata": {
+      "creationTimestamp": "2026-02-26T19:11:20Z",
+      "name": "server7",
+      "namespace": "default"
+    },
+    "spec": {
+      "bmc": {
+        "address": "192.168.11.16",
+        "hostname": "server7",
+        "mac": "00:00:00:00:00:00",
+        "network": "g11",
+        "password": "ADMIN",
+        "username": "ADMIN"
+      },
+      "bootMACAddress": "00:00:00:00:00:00",
+      "hostname": "server7",
+      "ip": "192.168.10.16",
+      "network": "g10"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "BareMetalHost",
+    "metadata": {
+      "creationTimestamp": "2026-02-26T19:11:40Z",
+      "name": "server8",
+      "namespace": "default"
+    },
+    "spec": {
+      "bmc": {
+        "address": "192.168.11.17",
+        "hostname": "server8",
+        "mac": "0C:C4:7A:02:6B:2E",
+        "network": "g11",
+        "password": "ADMIN",
+        "username": "ADMIN"
+      },
+      "bootMACAddress": "AC:1F:6B:8A:A3:96",
+      "hostname": "server8",
+      "ip": "192.168.10.17",
+      "network": "g10"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "BareMetalHost",
+    "metadata": {
+      "creationTimestamp": "2026-02-26T19:12:00Z",
+      "name": "server30",
+      "namespace": "default"
+    },
+    "spec": {
+      "bmc": {
+        "address": "192.168.11.30",
+        "hostname": "server30",
+        "mac": "14:18:77:62:5D:0C",
+        "network": "g11",
+        "password": "admin",
+        "username": "root"
+      },
+      "bootMACAddress": "50:6B:4B:B1:9E:26",
+      "hostname": "server30",
+      "ip": "192.168.10.30",
+      "network": "g10"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "BareMetalHost",
+    "metadata": {
+      "creationTimestamp": "2026-02-26T19:09:40Z",
+      "name": "server2",
+      "namespace": "default"
+    },
+    "spec": {
+      "bmc": {
+        "address": "192.168.11.11",
+        "hostname": "server2",
+        "mac": "0C:C4:7A:02:6B:2A",
+        "network": "g11",
+        "password": "ADMIN",
+        "username": "ADMIN"
+      },
+      "bootMACAddress": "AC:1F:6B:8B:11:5D",
+      "hostname": "server2",
+      "ip": "192.168.10.11",
+      "network": "g10"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "BareMetalHost",
+    "metadata": {
+      "creationTimestamp": "2026-02-26T19:10:20Z",
+      "name": "server4",
+      "namespace": "default"
+    },
+    "spec": {
+      "bmc": {
+        "address": "192.168.11.13",
+        "hostname": "server4",
+        "mac": "0C:C4:7A:02:6B:C0",
+        "network": "g11",
+        "password": "ADMIN",
+        "username": "ADMIN"
+      },
+      "bootMACAddress": "AC:1F:6B:8A:9B:E2",
+      "hostname": "server4",
+      "image": "fedora-netinst",
+      "ip": "192.168.10.13",
+      "network": "g10"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "BareMetalHost",
+    "metadata": {
+      "creationTimestamp": "2026-02-26T19:09:23Z",
+      "name": "server1",
+      "namespace": "default"
+    },
+    "spec": {
+      "bmc": {
+        "address": "192.168.11.10",
+        "hostname": "server1",
+        "mac": "0C:C4:7A:02:6B:90",
+        "network": "g11",
+        "password": "ADMIN",
+        "username": "ADMIN"
+      },
+      "bootConfigRef": "coreos-builder",
+      "bootMACAddress": "AC:1F:6B:8A:A7:9C",
+      "hostname": "server1",
+      "image": "localboot",
+      "ip": "192.168.10.10",
+      "network": "g10"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "BareMetalHost",
+    "metadata": {
+      "creationTimestamp": "2026-02-26T19:10:00Z",
+      "name": "server3",
+      "namespace": "default"
+    },
+    "spec": {
+      "bmc": {
+        "address": "192.168.11.12",
+        "hostname": "server3",
+        "mac": "0C:C4:7A:02:6B:37",
+        "network": "g11",
+        "password": "ADMIN",
+        "username": "ADMIN"
+      },
+      "bootConfigRef": "install",
+      "bootMACAddress": "AC:1F:6B:8A:A4:5C",
+      "hostname": "server3",
+      "image": "stormbase",
+      "ip": "192.168.10.12",
+      "network": "g10",
+      "online": true
+    }
+  }
+]

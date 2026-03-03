@@ -3,7 +3,7 @@
 # Deploy: pve-deploy --config deploy/pvex-registry.yaml
 # Destroy: pve-deploy --config deploy/pvex-registry.yaml --destroy
 
-pveHost: pvex.gw.lo
+pveHost: 192.168.1.160
 pveUser: root
 pveAPIUser: mkube@pve!mkube-token
 pveAPIToken: $PVE_API_TOKEN

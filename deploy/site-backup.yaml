@@ -1,0 +1,1388 @@
+---
+{
+  "kind": "ConfigMap",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "fastregistry-config",
+    "namespace": "g10",
+    "creationTimestamp": null,
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"data\":{\"config.yaml\":\"server:\\n  addr: \\\":5000\\\"\\n\\nstorage:\\n  path: /data/registry\\n  cache_size_mb: 2048\\n  gc:\\n    enabled: true\\n    schedule: \\\"0 3 * * *\\\"\\n    keep_recent: 20\\n\\nmirrors:\\n  - name: docker.io\\n    upstream: https://registry-1.docker.io\\n    cache_ttl: 24h\\n  - name: quay.io\\n    upstream: https://quay.io\\n    cache_ttl: 24h\\n  - name: gcr.io\\n    upstream: https://gcr.io\\n    cache_ttl: 24h\\n  - name: ghcr.io\\n    upstream: https://ghcr.io\\n    cache_ttl: 24h\\n  - name: registry.k8s.io\\n    upstream: https://registry.k8s.io\\n    cache_ttl: 24h\\n\\nauth:\\n  type: none\\n\\nreleases:\\n  enabled: true\\n  pull_secret: /secrets/pull-secret.json\\n\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{},\"name\":\"fastregistry-config\",\"namespace\":\"g10\"}}\n"
+    }
+  },
+  "data": {
+    "config.yaml": "server:\n  addr: \":5000\"\n\nstorage:\n  path: /data/registry\n  cache_size_mb: 2048\n  gc:\n    enabled: true\n    schedule: \"0 3 * * *\"\n    keep_recent: 20\n\nmirrors:\n  - name: docker.io\n    upstream: https://registry-1.docker.io\n    cache_ttl: 24h\n  - name: quay.io\n    upstream: https://quay.io\n    cache_ttl: 24h\n  - name: gcr.io\n    upstream: https://gcr.io\n    cache_ttl: 24h\n  - name: ghcr.io\n    upstream: https://ghcr.io\n    cache_ttl: 24h\n  - name: registry.k8s.io\n    upstream: https://registry.k8s.io\n    cache_ttl: 24h\n\nauth:\n  type: none\n\nreleases:\n  enabled: true\n  pull_secret: /secrets/pull-secret.json\n"
+  }
+}
+---
+{
+  "kind": "ConfigMap",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "registry-stormbase-config",
+    "namespace": "gt",
+    "creationTimestamp": null
+  },
+  "data": {
+    "config.yaml": "{\n  \"registry\": {\n    \"enabled\": true,\n    \"listenAddr\": \":5000\",\n    \"notifyURL\": \"http://192.168.200.2:8082/api/v1/registry/push-notify\",\n    \"pullThrough\": true,\n    \"storePath\": \"/raid1/registry/stormbase\",\n    \"upstreamRegistries\": [\n      \"ghcr.io\"\n    ],\n    \"watchImages\": [\n      {\n        \"Upstream\": \"ghcr.io/glennswest/stormbase:edge\",\n        \"LocalRepo\": \"stormbase\"\n      }\n    ],\n    \"watchPollSeconds\": 120\n  }\n}"
+  }
+}
+---
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "nats",
+    "namespace": "infra",
+    "creationTimestamp": null,
+    "annotations": {
+      "vkube.io/boot-priority": "5",
+      "vkube.io/image-policy": "auto",
+      "vkube.io/network": "gt",
+      "vkube.io/node": "rose1",
+      "vkube.io/static-ip": "192.168.200.10"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "nats",
+        "image": "192.168.200.3:5000/nats:edge",
+        "command": [
+          "nats-server",
+          "-js",
+          "--store_dir",
+          "/data",
+          "--addr",
+          "0.0.0.0",
+          "-m",
+          "8222"
+        ],
+        "resources": {},
+        "volumeMounts": [
+          {
+            "name": "data",
+            "mountPath": "/data"
+          }
+        ],
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/healthz",
+            "port": 8222
+          },
+          "periodSeconds": 30,
+          "failureThreshold": 3
+        },
+        "startupProbe": {
+          "tcpSocket": {
+            "port": 4222
+          },
+          "initialDelaySeconds": 2,
+          "periodSeconds": 2,
+          "failureThreshold": 10
+        }
+      }
+    ],
+    "restartPolicy": "Always"
+  },
+  "status": {}
+}
+---
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "dns",
+    "namespace": "g10",
+    "creationTimestamp": null,
+    "annotations": {
+      "vkube.io/boot-priority": "11",
+      "vkube.io/image-policy": "auto",
+      "vkube.io/network": "g10",
+      "vkube.io/node": "rose1",
+      "vkube.io/static-ip": "192.168.10.252"
+    }
+  },
+  "spec": {
+    "volumes": [
+      {
+        "name": "config",
+        "configMap": {
+          "name": "dns-config"
+        }
+      }
+    ],
+    "containers": [
+      {
+        "name": "microdns",
+        "image": "192.168.200.3:5000/microdns:edge",
+        "resources": {},
+        "volumeMounts": [
+          {
+            "name": "config",
+            "mountPath": "/etc/microdns"
+          },
+          {
+            "name": "data",
+            "mountPath": "/data"
+          }
+        ],
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/api/v1/zones",
+            "port": 8080
+          },
+          "periodSeconds": 30,
+          "failureThreshold": 3
+        },
+        "readinessProbe": {
+          "tcpSocket": {
+            "port": 53
+          },
+          "periodSeconds": 10
+        },
+        "startupProbe": {
+          "httpGet": {
+            "path": "/api/v1/zones",
+            "port": 8080
+          },
+          "initialDelaySeconds": 5,
+          "periodSeconds": 3,
+          "failureThreshold": 10
+        }
+      }
+    ],
+    "restartPolicy": "Always"
+  },
+  "status": {}
+}
+---
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "dns",
+    "namespace": "g11",
+    "creationTimestamp": null,
+    "annotations": {
+      "vkube.io/boot-priority": "12",
+      "vkube.io/image-policy": "auto",
+      "vkube.io/network": "g11",
+      "vkube.io/node": "rose1",
+      "vkube.io/static-ip": "192.168.11.252"
+    }
+  },
+  "spec": {
+    "volumes": [
+      {
+        "name": "config",
+        "configMap": {
+          "name": "dns-config"
+        }
+      }
+    ],
+    "containers": [
+      {
+        "name": "microdns",
+        "image": "192.168.200.3:5000/microdns:edge",
+        "resources": {},
+        "volumeMounts": [
+          {
+            "name": "config",
+            "mountPath": "/etc/microdns"
+          },
+          {
+            "name": "data",
+            "mountPath": "/data"
+          }
+        ],
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/api/v1/zones",
+            "port": 8080
+          },
+          "periodSeconds": 30,
+          "failureThreshold": 3
+        },
+        "readinessProbe": {
+          "tcpSocket": {
+            "port": 53
+          },
+          "periodSeconds": 10
+        },
+        "startupProbe": {
+          "httpGet": {
+            "path": "/api/v1/zones",
+            "port": 8080
+          },
+          "initialDelaySeconds": 5,
+          "periodSeconds": 3,
+          "failureThreshold": 10
+        }
+      }
+    ],
+    "restartPolicy": "Always"
+  },
+  "status": {}
+}
+---
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "dns",
+    "namespace": "gt",
+    "creationTimestamp": null,
+    "annotations": {
+      "vkube.io/boot-priority": "13",
+      "vkube.io/image-policy": "auto",
+      "vkube.io/network": "gt",
+      "vkube.io/node": "rose1",
+      "vkube.io/static-ip": "192.168.200.199"
+    }
+  },
+  "spec": {
+    "volumes": [
+      {
+        "name": "config",
+        "configMap": {
+          "name": "dns-config"
+        }
+      }
+    ],
+    "containers": [
+      {
+        "name": "microdns",
+        "image": "192.168.200.3:5000/microdns:edge",
+        "resources": {},
+        "volumeMounts": [
+          {
+            "name": "config",
+            "mountPath": "/etc/microdns"
+          },
+          {
+            "name": "data",
+            "mountPath": "/data"
+          }
+        ],
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/api/v1/zones",
+            "port": 8080
+          },
+          "periodSeconds": 30,
+          "failureThreshold": 3
+        },
+        "readinessProbe": {
+          "tcpSocket": {
+            "port": 53
+          },
+          "periodSeconds": 10
+        },
+        "startupProbe": {
+          "httpGet": {
+            "path": "/api/v1/zones",
+            "port": 8080
+          },
+          "initialDelaySeconds": 5,
+          "periodSeconds": 3,
+          "failureThreshold": 10
+        }
+      }
+    ],
+    "restartPolicy": "Always"
+  },
+  "status": {}
+}
+---
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "registry-stormbase",
+    "namespace": "gt",
+    "creationTimestamp": null,
+    "annotations": {
+      "vkube.io/image-policy": "auto",
+      "vkube.io/network": "gt",
+      "vkube.io/node": "rose1",
+      "vkube.io/static-ip": "192.168.200.6"
+    }
+  },
+  "spec": {
+    "volumes": [
+      {
+        "name": "config",
+        "configMap": {
+          "name": "registry-stormbase-config"
+        }
+      }
+    ],
+    "containers": [
+      {
+        "name": "registry",
+        "image": "192.168.200.3:5000/mkube-registry:edge",
+        "resources": {},
+        "volumeMounts": [
+          {
+            "name": "config",
+            "mountPath": "/etc/registry"
+          },
+          {
+            "name": "data",
+            "mountPath": "/raid1/registry/stormbase"
+          }
+        ],
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/v2/",
+            "port": 5000
+          },
+          "periodSeconds": 30,
+          "failureThreshold": 3
+        },
+        "readinessProbe": {
+          "tcpSocket": {
+            "port": 5000
+          },
+          "periodSeconds": 10
+        },
+        "startupProbe": {
+          "httpGet": {
+            "path": "/v2/",
+            "port": 5000
+          },
+          "initialDelaySeconds": 5,
+          "periodSeconds": 3,
+          "failureThreshold": 10
+        }
+      }
+    ],
+    "restartPolicy": "Always"
+  },
+  "status": {}
+}
+---
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "agentmonitor-g10",
+    "namespace": "monitoring",
+    "creationTimestamp": "2026-03-02T03:23:05Z",
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{\"vkube.io/image-policy\":\"auto\",\"vkube.io/network\":\"g10\"},\"name\":\"agentmonitor-g10\",\"namespace\":\"monitoring\"},\"spec\":{\"containers\":[{\"command\":[\"/agent-monitor\"],\"image\":\"192.168.200.3:5000/agent-monitor:edge\",\"name\":\"monitor\"}],\"restartPolicy\":\"Always\"}}\n",
+      "vkube.io/image-policy": "auto",
+      "vkube.io/network": "g10",
+      "vkube.io/node": "rose1"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "monitor",
+        "image": "192.168.200.3:5000/agent-monitor:edge",
+        "command": [
+          "/agent-monitor"
+        ],
+        "resources": {}
+      }
+    ],
+    "restartPolicy": "Always"
+  },
+  "status": {}
+}
+---
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "dashboard",
+    "namespace": "infra",
+    "creationTimestamp": "2026-03-02T03:23:13Z",
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{\"vkube.io/aliases\":\"dashboard\",\"vkube.io/image-policy\":\"auto\",\"vkube.io/network\":\"gt\"},\"name\":\"dashboard\",\"namespace\":\"infra\"},\"spec\":{\"containers\":[{\"image\":\"192.168.200.3:5000/mkube-dashboard:edge\",\"livenessProbe\":{\"failureThreshold\":3,\"httpGet\":{\"path\":\"/healthz\",\"port\":8080},\"periodSeconds\":30},\"name\":\"dashboard\",\"startupProbe\":{\"failureThreshold\":10,\"httpGet\":{\"path\":\"/healthz\",\"port\":8080},\"initialDelaySeconds\":2,\"periodSeconds\":2},\"volumeMounts\":[{\"mountPath\":\"/etc/dashboard\",\"name\":\"config\"}]}],\"restartPolicy\":\"Always\",\"volumes\":[{\"configMap\":{\"name\":\"dashboard-config\"},\"name\":\"config\"}]}}\n",
+      "vkube.io/aliases": "dashboard",
+      "vkube.io/image-policy": "auto",
+      "vkube.io/network": "gt",
+      "vkube.io/node": "rose1"
+    }
+  },
+  "spec": {
+    "volumes": [
+      {
+        "name": "config",
+        "configMap": {
+          "name": "dashboard-config"
+        }
+      }
+    ],
+    "containers": [
+      {
+        "name": "dashboard",
+        "image": "192.168.200.3:5000/mkube-dashboard:edge",
+        "resources": {},
+        "volumeMounts": [
+          {
+            "name": "config",
+            "mountPath": "/etc/dashboard"
+          }
+        ],
+        "livenessProbe": {
+          "httpGet": {
+            "path": "/healthz",
+            "port": 8080
+          },
+          "periodSeconds": 30,
+          "failureThreshold": 3
+        },
+        "startupProbe": {
+          "httpGet": {
+            "path": "/healthz",
+            "port": 8080
+          },
+          "initialDelaySeconds": 2,
+          "periodSeconds": 2,
+          "failureThreshold": 10
+        }
+      }
+    ],
+    "restartPolicy": "Always"
+  },
+  "status": {}
+}
+---
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "mkube-console",
+    "namespace": "infra",
+    "creationTimestamp": "2026-03-02T03:23:00Z",
+    "annotations": {
+      "vkube.io/node": "rose1"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "console",
+        "image": "192.168.200.3:5000/mkube-console:edge",
+        "resources": {}
+      }
+    ]
+  },
+  "status": {}
+}
+---
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "ipmiserial",
+    "namespace": "infra",
+    "creationTimestamp": "2026-03-02T03:23:06Z",
+    "annotations": {
+      "vkube.io/node": "rose1"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "ipmiserial",
+        "image": "192.168.200.3:5000/ipmiserial:edge",
+        "resources": {}
+      }
+    ]
+  },
+  "status": {}
+}
+---
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "ipmiserial",
+    "namespace": "g11",
+    "creationTimestamp": "2026-03-02T03:22:52Z",
+    "annotations": {
+      "vkube.io/node": "rose1"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "ipmiserial",
+        "image": "192.168.200.3:5000/ipmiserial:edge",
+        "resources": {}
+      }
+    ]
+  },
+  "status": {}
+}
+---
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "pxe",
+    "namespace": "g10",
+    "creationTimestamp": "2026-03-02T03:22:48Z",
+    "annotations": {
+      "vkube.io/node": "rose1"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "pxe",
+        "image": "192.168.200.3:5000/pxemanager:edge",
+        "resources": {}
+      }
+    ]
+  },
+  "status": {}
+}
+---
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "fastregistry",
+    "namespace": "g10",
+    "creationTimestamp": "2026-03-02T03:22:53Z",
+    "annotations": {
+      "vkube.io/node": "rose1"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "fastregistry",
+        "image": "192.168.200.3:5000/fastregistry:edge",
+        "resources": {}
+      }
+    ]
+  },
+  "status": {}
+}
+---
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "cloudid",
+    "namespace": "infra",
+    "creationTimestamp": "2026-03-02T03:23:14Z",
+    "annotations": {
+      "vkube.io/node": "rose1"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "cloudid",
+        "image": "192.168.200.3:5000/cloudid:edge",
+        "resources": {}
+      }
+    ]
+  },
+  "status": {}
+}
+---
+{
+  "kind": "Pod",
+  "apiVersion": "v1",
+  "metadata": {
+    "name": "rosecicd",
+    "namespace": "default",
+    "creationTimestamp": "2026-03-02T03:22:53Z",
+    "annotations": {
+      "vkube.io/node": "rose1"
+    }
+  },
+  "spec": {
+    "containers": [
+      {
+        "name": "rosecicd",
+        "image": "192.168.200.3:5000/rosecicd:edge",
+        "resources": {}
+      }
+    ]
+  },
+  "status": {}
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Network",
+  "metadata": {
+    "creationTimestamp": "2026-03-02T03:11:35Z",
+    "name": "gt"
+  },
+  "spec": {
+    "bridge": "bridge-gt",
+    "cidr": "192.168.200.0/24",
+    "dhcp": {
+      "enabled": false
+    },
+    "dns": {
+      "endpoint": "http://192.168.200.199:8080",
+      "server": "192.168.200.199",
+      "zone": "gt.lo"
+    },
+    "gateway": "192.168.200.1",
+    "ipam": {},
+    "router": {},
+    "staticRecords": [
+      {
+        "ip": "192.168.200.1",
+        "name": "rose1"
+      },
+      {
+        "ip": "192.168.200.199",
+        "name": "dns"
+      },
+      {
+        "ip": "192.168.200.10",
+        "name": "nats"
+      },
+      {
+        "ip": "192.168.200.2",
+        "name": "mkube"
+      },
+      {
+        "ip": "192.168.200.3",
+        "name": "registry"
+      }
+    ],
+    "type": "data"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Network",
+  "metadata": {
+    "creationTimestamp": "2026-03-02T03:11:35Z",
+    "name": "gw"
+  },
+  "spec": {
+    "bridge": "bridge-lan",
+    "cidr": "192.168.1.0/24",
+    "dhcp": {
+      "enabled": false
+    },
+    "dns": {
+      "endpoint": "http://192.168.1.52:8080",
+      "server": "192.168.1.52",
+      "zone": "gw.lo"
+    },
+    "externalDNS": true,
+    "gateway": "192.168.1.88",
+    "ipam": {},
+    "router": {},
+    "staticRecords": [
+      {
+        "ip": "192.168.1.88",
+        "name": "rose1"
+      },
+      {
+        "ip": "192.168.1.52",
+        "name": "dns"
+      }
+    ],
+    "type": "external"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Network",
+  "metadata": {
+    "creationTimestamp": "2026-03-02T03:11:35Z",
+    "name": "g10"
+  },
+  "spec": {
+    "bridge": "bridge",
+    "cidr": "192.168.10.0/24",
+    "dhcp": {
+      "bootFile": "undionly.kpxe",
+      "bootFileEfi": "ipxe.efi",
+      "enabled": true,
+      "leaseTime": 600,
+      "nextServer": "192.168.10.200",
+      "rangeEnd": "192.168.10.199",
+      "rangeStart": "192.168.10.100",
+      "reservations": [
+        {
+          "hostname": "server1",
+          "ip": "192.168.10.10",
+          "mac": "AC:1F:6B:8A:A7:9C"
+        },
+        {
+          "hostname": "server1b",
+          "ip": "192.168.10.20",
+          "mac": "F4:52:14:84:B7:E0"
+        },
+        {
+          "hostname": "server2",
+          "ip": "192.168.10.11",
+          "mac": "AC:1F:6B:8B:11:5D"
+        },
+        {
+          "hostname": "server2b",
+          "ip": "192.168.10.21",
+          "mac": "F4:52:14:84:BC:C0"
+        },
+        {
+          "hostname": "server3",
+          "ip": "192.168.10.12",
+          "mac": "AC:1F:6B:8A:A4:5C"
+        },
+        {
+          "hostname": "server3b",
+          "ip": "192.168.10.22",
+          "mac": "F4:52:14:84:86:F0"
+        },
+        {
+          "hostname": "server4",
+          "ip": "192.168.10.13",
+          "mac": "AC:1F:6B:8A:9B:E2"
+        },
+        {
+          "hostname": "server4b",
+          "ip": "192.168.10.23",
+          "mac": "F4:52:14:84:5F:A0"
+        },
+        {
+          "hostname": "server5",
+          "ip": "192.168.10.14",
+          "mac": "AC:1F:6B:8A:A3:1A"
+        },
+        {
+          "hostname": "server5b",
+          "ip": "192.168.10.24",
+          "mac": "F4:52:14:84:6F:F0"
+        },
+        {
+          "hostname": "server6",
+          "ip": "192.168.10.15",
+          "mac": "AC:1F:6B:8D:90:13"
+        },
+        {
+          "hostname": "server6b",
+          "ip": "192.168.10.25",
+          "mac": "F4:52:14:84:B7:D0"
+        },
+        {
+          "hostname": "server7",
+          "ip": "192.168.10.16",
+          "mac": "00:00:00:00:00:00"
+        },
+        {
+          "hostname": "server7b",
+          "ip": "192.168.10.26",
+          "mac": "00:00:00:00:00:01"
+        },
+        {
+          "hostname": "server8",
+          "ip": "192.168.10.17",
+          "mac": "AC:1F:6B:8A:A3:96"
+        },
+        {
+          "hostname": "server8b",
+          "ip": "192.168.10.27",
+          "mac": "F4:52:14:84:AE:30"
+        },
+        {
+          "hostname": "gb10",
+          "ip": "192.168.10.50",
+          "mac": "FC:4C:EA:F9:4F:2F"
+        },
+        {
+          "hostname": "gb10b",
+          "ip": "192.168.10.51",
+          "mac": "FC:4C:EA:F9:4F:33"
+        },
+        {
+          "hostname": "server30",
+          "ip": "192.168.10.30",
+          "mac": "50:6B:4B:B1:9E:26"
+        },
+        {
+          "hostname": "server30b",
+          "ip": "192.168.10.31",
+          "mac": "50:6B:4B:B1:9E:27"
+        },
+        {
+          "hostname": "macmini",
+          "ip": "192.168.10.190",
+          "mac": "D0:11:E5:A0:1A:A4"
+        }
+      ]
+    },
+    "dns": {
+      "endpoint": "http://192.168.10.252:8080",
+      "server": "192.168.10.252",
+      "zone": "g10.lo"
+    },
+    "gateway": "192.168.10.1",
+    "ipam": {
+      "end": "192.168.10.250",
+      "start": "192.168.10.200"
+    },
+    "router": {},
+    "staticRecords": [
+      {
+        "ip": "192.168.10.1",
+        "name": "rose1"
+      },
+      {
+        "ip": "192.168.10.252",
+        "name": "dns"
+      },
+      {
+        "ip": "192.168.10.200",
+        "name": "pxe"
+      }
+    ],
+    "type": "data"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Network",
+  "metadata": {
+    "creationTimestamp": "2026-03-02T03:11:35Z",
+    "name": "g11"
+  },
+  "spec": {
+    "bridge": "bridge-boot",
+    "cidr": "192.168.11.0/24",
+    "dhcp": {
+      "bootFile": "pxelinux.0",
+      "enabled": true,
+      "leaseTime": 600,
+      "nextServer": "192.168.10.9",
+      "rangeEnd": "192.168.11.180",
+      "rangeStart": "192.168.11.150",
+      "reservations": [
+        {
+          "hostname": "server1",
+          "ip": "192.168.11.10",
+          "mac": "0C:C4:7A:02:6B:90"
+        },
+        {
+          "hostname": "server2",
+          "ip": "192.168.11.11",
+          "mac": "0C:C4:7A:02:6B:2A"
+        },
+        {
+          "hostname": "server3",
+          "ip": "192.168.11.12",
+          "mac": "0C:C4:7A:02:6B:37"
+        },
+        {
+          "hostname": "server4",
+          "ip": "192.168.11.13",
+          "mac": "0C:C4:7A:02:6B:C0"
+        },
+        {
+          "hostname": "server5",
+          "ip": "192.168.11.14",
+          "mac": "0C:C4:7A:02:6B:1E"
+        },
+        {
+          "hostname": "server6",
+          "ip": "192.168.11.15",
+          "mac": "0C:C4:7A:02:6C:A6"
+        },
+        {
+          "hostname": "server7",
+          "ip": "192.168.11.16",
+          "mac": "00:00:00:00:00:00"
+        },
+        {
+          "hostname": "server8",
+          "ip": "192.168.11.17",
+          "mac": "0C:C4:7A:02:6B:2E"
+        },
+        {
+          "hostname": "server30",
+          "ip": "192.168.11.30",
+          "mac": "14:18:77:62:5D:0C"
+        }
+      ]
+    },
+    "dns": {
+      "endpoint": "http://192.168.11.252:8080",
+      "server": "192.168.11.252",
+      "zone": "g11.lo"
+    },
+    "gateway": "192.168.11.1",
+    "ipam": {
+      "end": "192.168.11.250",
+      "start": "192.168.11.200"
+    },
+    "router": {},
+    "staticRecords": [
+      {
+        "ip": "192.168.11.1",
+        "name": "rose1"
+      },
+      {
+        "ip": "192.168.11.252",
+        "name": "dns"
+      }
+    ],
+    "type": "data"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Registry",
+  "metadata": {
+    "creationTimestamp": "2026-03-02T03:11:35Z",
+    "name": "default"
+  },
+  "spec": {
+    "hostname": "registry.gt.lo",
+    "listenAddr": ":5000",
+    "network": "gt",
+    "staticIP": "192.168.200.3",
+    "storePath": "/raid1/registry"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "Registry",
+  "metadata": {
+    "annotations": {
+      "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Registry\",\"metadata\":{\"annotations\":{},\"name\":\"stormbase\"},\"spec\":{\"hostname\":\"registry-stormbase.gt.lo\",\"listenAddr\":\":5000\",\"managed\":true,\"network\":\"gt\",\"notifyURL\":\"http://192.168.200.2:8082/api/v1/registry/push-notify\",\"pullThrough\":true,\"staticIP\":\"192.168.200.6\",\"storePath\":\"/raid1/registry/stormbase\",\"upstreamRegistries\":[\"ghcr.io\"],\"watchImages\":[{\"localRepo\":\"stormbase\",\"upstream\":\"ghcr.io/glennswest/stormbase:edge\"}],\"watchPollSeconds\":120}}\n"
+    },
+    "creationTimestamp": "2026-03-02T03:22:59Z",
+    "name": "stormbase"
+  },
+  "spec": {
+    "hostname": "registry-stormbase.gt.lo",
+    "listenAddr": ":5000",
+    "managed": true,
+    "network": "gt",
+    "notifyURL": "http://192.168.200.2:8082/api/v1/registry/push-notify",
+    "pullThrough": true,
+    "staticIP": "192.168.200.6",
+    "storePath": "/raid1/registry/stormbase",
+    "upstreamRegistries": [
+      "ghcr.io"
+    ],
+    "watchImages": [
+      {
+        "LocalRepo": "stormbase",
+        "Upstream": "ghcr.io/glennswest/stormbase:edge"
+      }
+    ],
+    "watchPollSeconds": 120
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "ISCSICdrom",
+  "metadata": {
+    "creationTimestamp": "2026-03-02T03:11:45Z",
+    "name": "fedora-netinst"
+  },
+  "spec": {
+    "description": "fedora-netinst",
+    "isoFile": "fedora-netinst.iso",
+    "readOnly": true
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "ISCSICdrom",
+  "metadata": {
+    "creationTimestamp": "2026-03-02T03:11:47Z",
+    "name": "stormbase"
+  },
+  "spec": {
+    "description": "stormbase v0.3.0",
+    "isoFile": "stormbase-0.3.0-x86_64.iso",
+    "readOnly": true,
+    "version": "0.3.0"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "ISCSICdrom",
+  "metadata": {
+    "creationTimestamp": "2026-03-02T03:11:48Z",
+    "name": "baremetalservices"
+  },
+  "spec": {
+    "description": "baremetalservices",
+    "isoFile": "baremetalservices.iso",
+    "readOnly": true
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "ISCSICdrom",
+  "metadata": {
+    "creationTimestamp": "2026-03-02T03:11:50Z",
+    "name": "coreos-live-serial"
+  },
+  "spec": {
+    "description": "coreos-live-serial",
+    "isoFile": "coreos-live-serial.iso",
+    "readOnly": true
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "ISCSICdrom",
+  "metadata": {
+    "creationTimestamp": "2026-03-02T03:11:52Z",
+    "name": "coreos-live"
+  },
+  "spec": {
+    "description": "coreos-live",
+    "isoFile": "coreos-live.iso",
+    "readOnly": true
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BareMetalHost",
+  "metadata": {
+    "creationTimestamp": "2026-02-26T19:10:40Z",
+    "name": "server5",
+    "namespace": "default"
+  },
+  "spec": {
+    "bmc": {
+      "address": "192.168.11.14",
+      "hostname": "server5",
+      "mac": "0C:C4:7A:02:6B:1E",
+      "network": "g11",
+      "password": "ADMIN",
+      "username": "ADMIN"
+    },
+    "bootMACAddress": "AC:1F:6B:8A:A3:1A",
+    "hostname": "server5",
+    "ip": "192.168.10.14",
+    "network": "g10"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BareMetalHost",
+  "metadata": {
+    "creationTimestamp": "2026-02-26T19:11:00Z",
+    "name": "server6",
+    "namespace": "default"
+  },
+  "spec": {
+    "bmc": {
+      "address": "192.168.11.15",
+      "hostname": "server6",
+      "mac": "0C:C4:7A:02:6C:A6",
+      "network": "g11",
+      "password": "ADMIN",
+      "username": "ADMIN"
+    },
+    "bootMACAddress": "AC:1F:6B:8D:90:13",
+    "hostname": "server6",
+    "ip": "192.168.10.15",
+    "network": "g10"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BareMetalHost",
+  "metadata": {
+    "creationTimestamp": "2026-02-26T19:11:20Z",
+    "name": "server7",
+    "namespace": "default"
+  },
+  "spec": {
+    "bmc": {
+      "address": "192.168.11.16",
+      "hostname": "server7",
+      "mac": "00:00:00:00:00:00",
+      "network": "g11",
+      "password": "ADMIN",
+      "username": "ADMIN"
+    },
+    "bootMACAddress": "00:00:00:00:00:00",
+    "hostname": "server7",
+    "ip": "192.168.10.16",
+    "network": "g10"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BareMetalHost",
+  "metadata": {
+    "creationTimestamp": "2026-02-26T19:11:40Z",
+    "name": "server8",
+    "namespace": "default"
+  },
+  "spec": {
+    "bmc": {
+      "address": "192.168.11.17",
+      "hostname": "server8",
+      "mac": "0C:C4:7A:02:6B:2E",
+      "network": "g11",
+      "password": "ADMIN",
+      "username": "ADMIN"
+    },
+    "bootMACAddress": "AC:1F:6B:8A:A3:96",
+    "hostname": "server8",
+    "ip": "192.168.10.17",
+    "network": "g10"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BareMetalHost",
+  "metadata": {
+    "creationTimestamp": "2026-02-26T19:12:00Z",
+    "name": "server30",
+    "namespace": "default"
+  },
+  "spec": {
+    "bmc": {
+      "address": "192.168.11.30",
+      "hostname": "server30",
+      "mac": "14:18:77:62:5D:0C",
+      "network": "g11",
+      "password": "admin",
+      "username": "root"
+    },
+    "bootMACAddress": "50:6B:4B:B1:9E:26",
+    "hostname": "server30",
+    "ip": "192.168.10.30",
+    "network": "g10"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BareMetalHost",
+  "metadata": {
+    "creationTimestamp": "2026-02-26T19:09:40Z",
+    "name": "server2",
+    "namespace": "default"
+  },
+  "spec": {
+    "bmc": {
+      "address": "192.168.11.11",
+      "hostname": "server2",
+      "mac": "0C:C4:7A:02:6B:2A",
+      "network": "g11",
+      "password": "ADMIN",
+      "username": "ADMIN"
+    },
+    "bootMACAddress": "AC:1F:6B:8B:11:5D",
+    "hostname": "server2",
+    "ip": "192.168.10.11",
+    "network": "g10"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BareMetalHost",
+  "metadata": {
+    "creationTimestamp": "2026-02-26T19:10:20Z",
+    "name": "server4",
+    "namespace": "default"
+  },
+  "spec": {
+    "bmc": {
+      "address": "192.168.11.13",
+      "hostname": "server4",
+      "mac": "0C:C4:7A:02:6B:C0",
+      "network": "g11",
+      "password": "ADMIN",
+      "username": "ADMIN"
+    },
+    "bootMACAddress": "AC:1F:6B:8A:9B:E2",
+    "hostname": "server4",
+    "image": "fedora-netinst",
+    "ip": "192.168.10.13",
+    "network": "g10"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BareMetalHost",
+  "metadata": {
+    "creationTimestamp": "2026-02-26T19:09:23Z",
+    "name": "server1",
+    "namespace": "default"
+  },
+  "spec": {
+    "bmc": {
+      "address": "192.168.11.10",
+      "hostname": "server1",
+      "mac": "0C:C4:7A:02:6B:90",
+      "network": "g11",
+      "password": "ADMIN",
+      "username": "ADMIN"
+    },
+    "bootConfigRef": "coreos-builder",
+    "bootMACAddress": "AC:1F:6B:8A:A7:9C",
+    "hostname": "server1",
+    "image": "localboot",
+    "ip": "192.168.10.10",
+    "network": "g10"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BareMetalHost",
+  "metadata": {
+    "creationTimestamp": "2026-02-26T19:10:00Z",
+    "name": "server3",
+    "namespace": "default"
+  },
+  "spec": {
+    "bmc": {
+      "address": "192.168.11.12",
+      "hostname": "server3",
+      "mac": "0C:C4:7A:02:6B:37",
+      "network": "g11",
+      "password": "ADMIN",
+      "username": "ADMIN"
+    },
+    "bootConfigRef": "install",
+    "bootMACAddress": "AC:1F:6B:8A:A4:5C",
+    "hostname": "server3",
+    "image": "stormbase",
+    "ip": "192.168.10.12",
+    "network": "g10",
+    "online": true
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BootConfig",
+  "metadata": {
+    "creationTimestamp": "2026-02-27T15:58:03Z",
+    "name": "test-config"
+  },
+  "spec": {
+    "data": {
+      "config.ign": "hello world"
+    },
+    "format": "custom"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BootConfig",
+  "metadata": {
+    "creationTimestamp": "2026-02-27T16:34:39Z",
+    "name": "builder-target"
+  },
+  "spec": {
+    "data": {
+      "config.ign": "{\"ignition\":{\"version\":\"3.4.0\"},\"kernelArguments\":{\"shouldExist\":[\"console=tty0\",\"console=ttyS0,115200n8\",\"console=ttyS1,115200n8\"]},\"passwd\":{\"users\":[{\"name\":\"root\",\"passwordHash\":\"$6$Bd4hdMwcRKfCTwGa$dt5sIpVpgPjW83MK2IxD.I9daQwi/kRAsQ8BzNr0Wd5E/uSLGbeVNDpZQgsHEsA/86sOAjgCkPy8WFYu5JtA6.\",\"sshAuthorizedKeys\":[\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWUsb0I159v27vSBuOOyQMX54iD2zuKZOOy+e5GRCJ3yONNr3Mkdyng67BNfsnvlf8kpgSi0yiaVGeXKSjkrY9YPHe0wkVW0UHZ9uZqYqgVdEzSG3Z0NNkrd/zp3jCztPad+q6iWb1R0iFlK7/h8NihOky9HXOustrtDwnvTgONwJnluxQp1zl86deKP0W9xx3Ky/Jobr3dbfOhJVK3qzF6OL6KaNjpT+hDYjh1OISzrx1jWLxFvZ4r7X2wbRhcNRyD5sTrxcs3z5Xdz/KRT0UhIj47CF4Heoiqtl/aQ5kdjpRqlmC2spJ9WZinsqbb6HhZ1i8Yd2ZycDQZF+S8n1n gwest@Glenns-MacBook-Pro.local\"]},{\"groups\":[\"wheel\"],\"name\":\"core\",\"passwordHash\":\"$6$Bd4hdMwcRKfCTwGa$dt5sIpVpgPjW83MK2IxD.I9daQwi/kRAsQ8BzNr0Wd5E/uSLGbeVNDpZQgsHEsA/86sOAjgCkPy8WFYu5JtA6.\",\"sshAuthorizedKeys\":[\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWUsb0I159v27vSBuOOyQMX54iD2zuKZOOy+e5GRCJ3yONNr3Mkdyng67BNfsnvlf8kpgSi0yiaVGeXKSjkrY9YPHe0wkVW0UHZ9uZqYqgVdEzSG3Z0NNkrd/zp3jCztPad+q6iWb1R0iFlK7/h8NihOky9HXOustrtDwnvTgONwJnluxQp1zl86deKP0W9xx3Ky/Jobr3dbfOhJVK3qzF6OL6KaNjpT+hDYjh1OISzrx1jWLxFvZ4r7X2wbRhcNRyD5sTrxcs3z5Xdz/KRT0UhIj47CF4Heoiqtl/aQ5kdjpRqlmC2spJ9WZinsqbb6HhZ1i8Yd2ZycDQZF+S8n1n gwest@Glenns-MacBook-Pro.local\"]}]},\"storage\":{\"files\":[{\"path\":\"/etc/profile.d/builder.sh\",\"contents\":{\"compression\":\"\",\"source\":\"data:,alias%20docker%3Dpodman%0Aexport%20CONTAINER_HOST%3Dtcp%3A%2F%2Flocalhost%3A2375%0A\"},\"mode\":420},{\"path\":\"/etc/firewalld/zones/public.xml\",\"contents\":{\"compression\":\"gzip\",\"source\":\"data:;base64,H4sIAAAAAAAC/4TPwQ6CMAzG8TtP0fSOoEaFZINX8BW0VFkc67INYnx6g8QbCcf++7t8qn0PFiYO0YjTuN+VCOxIOuOeGsf0yCtsm0x9xHGTAajYS0jNdbxbQ6pYrl/nMBlicLeBNcbYY7HSu578dM7JGnZpVZDQy5v/z0tI4IMkIbEaE3mEuWmsyk1Sl/U2OhwvpxmpYpn4DQAA//9iqg3mEQEAAA==\"},\"mode\":420}]},\"systemd\":{\"units\":[{\"enabled\":true,\"name\":\"serial-getty@ttyS0.service\"},{\"enabled\":true,\"name\":\"serial-getty@ttyS1.service\"},{\"enabled\":true,\"name\":\"podman.socket\"},{\"contents\":\"[Unit]\\nDescription=Podman API TCP Socket\\n\\n[Socket]\\nListenStream=2375\\nAccept=no\\n\\n[Install]\\nWantedBy=sockets.target\\n\",\"enabled\":true,\"name\":\"podman-tcp.socket\"},{\"contents\":\"[Unit]\\nDescription=Podman API TCP Service\\nRequires=podman-tcp.socket\\nAfter=podman-tcp.socket\\nBindsTo=podman-tcp.socket\\n\\n[Service]\\nType=exec\\nExecStart=/usr/bin/podman system service --time=0 tcp://0.0.0.0:2375\\nKillMode=process\\nRestart=on-failure\\n\\n[Install]\\nWantedBy=default.target\\n\",\"enabled\":false,\"name\":\"podman-tcp.service\"},{\"contents\":\"[Unit]\\nDescription=Layer buildah, skopeo, and cockpit on first boot\\nAfter=network-online.target\\nWants=network-online.target\\nConditionPathExists=!/var/lib/%N.stamp\\n\\n[Service]\\nType=oneshot\\nRemainAfterExit=yes\\nExecStart=/usr/bin/rpm-ostree install --idempotent --allow-inactive buildah skopeo cockpit cockpit-podman\\nExecStart=/bin/touch /var/lib/%N.stamp\\nExecStart=/usr/bin/systemctl reboot\\n\\n[Install]\\nWantedBy=multi-user.target\\n\",\"enabled\":true,\"name\":\"rpm-ostree-install.service\"},{\"contents\":\"[Unit]\\nDescription=Cockpit Web Service Socket\\n\\n[Socket]\\nListenStream=80\\nExecStartPost=-/usr/sbin/semanage port -a -t websm_port_t -p tcp 80\\nExecStartPost=-/bin/ln -sfn /dev/null /etc/motd.d/cockpit\\nAccept=no\\n\\n[Install]\\nWantedBy=sockets.target\\n\",\"enabled\":true,\"name\":\"cockpit.socket\"}]}}"
+    },
+    "format": "custom"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BootConfig",
+  "metadata": {
+    "creationTimestamp": "2026-02-27T17:56:20Z",
+    "name": "bms-test"
+  },
+  "spec": {
+    "data": {
+      "config.sh": "#!/bin/bash\necho 'BootConfig fetched successfully from mkube'\nhostname\nip addr show | grep 'inet '\necho 'Done.'\n"
+    },
+    "format": "custom"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BootConfig",
+  "metadata": {
+    "creationTimestamp": "2026-02-27T16:34:31Z",
+    "name": "coreos-builder"
+  },
+  "spec": {
+    "data": {
+      "config.ign": "{\"ignition\":{\"version\":\"3.4.0\"},\"passwd\":{\"users\":[{\"name\":\"core\",\"sshAuthorizedKeys\":[\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWUsb0I159v27vSBuOOyQMX54iD2zuKZOOy+e5GRCJ3yONNr3Mkdyng67BNfsnvlf8kpgSi0yiaVGeXKSjkrY9YPHe0wkVW0UHZ9uZqYqgVdEzSG3Z0NNkrd/zp3jCztPad+q6iWb1R0iFlK7/h8NihOky9HXOustrtDwnvTgONwJnluxQp1zl86deKP0W9xx3Ky/Jobr3dbfOhJVK3qzF6OL6KaNjpT+hDYjh1OISzrx1jWLxFvZ4r7X2wbRhcNRyD5sTrxcs3z5Xdz/KRT0UhIj47CF4Heoiqtl/aQ5kdjpRqlmC2spJ9WZinsqbb6HhZ1i8Yd2ZycDQZF+S8n1n gwest@Glenns-MacBook-Pro.local\"]}]},\"systemd\":{\"units\":[{\"name\":\"coreos-installer.service\",\"enabled\":true,\"contents\":\"[Unit]\\nDescription=Install CoreOS to disk\\nAfter=network-online.target\\nWants=network-online.target\\nRequires=network-online.target\\n\\n[Service]\\nType=oneshot\\nExecStart=/usr/bin/coreos-installer install /dev/sda --ignition-url http://192.168.200.2:8082/api/v1/bootconfigs/coreos-base/serve --insecure-ignition --console tty0 --console ttyS0,115200n8 --console ttyS1,115200n8\\nExecStartPost=/usr/bin/curl -s -X POST http://192.168.200.2:8082/api/v1/boot-complete\\nExecStartPost=/usr/bin/systemctl reboot\\nStandardOutput=journal+console\\nStandardError=journal+console\\n\\n[Install]\\nWantedBy=multi-user.target\\n\"},{\"name\":\"serial-getty@ttyS0.service\",\"enabled\":true},{\"name\":\"serial-getty@ttyS1.service\",\"enabled\":true}]}}"
+    },
+    "format": "custom"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BootConfig",
+  "metadata": {
+    "creationTimestamp": "2026-02-28T01:53:37Z",
+    "name": "coreos-base"
+  },
+  "spec": {
+    "data": {
+      "config.ign": "{\"ignition\":{\"version\":\"3.4.0\"},\"passwd\":{\"users\":[{\"name\":\"core\",\"sshAuthorizedKeys\":[\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWUsb0I159v27vSBuOOyQMX54iD2zuKZOOy+e5GRCJ3yONNr3Mkdyng67BNfsnvlf8kpgSi0yiaVGeXKSjkrY9YPHe0wkVW0UHZ9uZqYqgVdEzSG3Z0NNkrd/zp3jCztPad+q6iWb1R0iFlK7/h8NihOky9HXOustrtDwnvTgONwJnluxQp1zl86deKP0W9xx3Ky/Jobr3dbfOhJVK3qzF6OL6KaNjpT+hDYjh1OISzrx1jWLxFvZ4r7X2wbRhcNRyD5sTrxcs3z5Xdz/KRT0UhIj47CF4Heoiqtl/aQ5kdjpRqlmC2spJ9WZinsqbb6HhZ1i8Yd2ZycDQZF+S8n1n gwest@Glenns-MacBook-Pro.local\"]}]},\"systemd\":{\"units\":[{\"name\":\"serial-getty@ttyS0.service\",\"enabled\":true},{\"name\":\"serial-getty@ttyS1.service\",\"enabled\":true},{\"name\":\"cockpit.socket\",\"enabled\":true},{\"name\":\"install-cockpit.service\",\"enabled\":true,\"contents\":\"[Unit]\\nDescription=Install Cockpit\\nAfter=network-online.target\\nWants=network-online.target\\nConditionPathExists=!/var/lib/%N.stamp\\n\\n[Service]\\nType=oneshot\\nExecStart=/usr/bin/rpm-ostree install cockpit-system cockpit-bridge cockpit-ws\\nExecStart=/usr/bin/touch /var/lib/%N.stamp\\nExecStartPost=/usr/bin/systemctl reboot\\n\\n[Install]\\nWantedBy=multi-user.target\\n\"}]}}"
+    },
+    "format": "ignition"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BootConfig",
+  "metadata": {
+    "creationTimestamp": "2026-03-02T01:41:24Z",
+    "name": "live"
+  },
+  "spec": {
+    "data": {
+      "config.ign": "{\"ignition\":{\"version\":\"3.4.0\"},\"passwd\":{\"users\":[{\"name\":\"root\",\"sshAuthorizedKeys\":[\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWUsb0I159v27vSBuOOyQMX54iD2zuKZOOy+e5GRCJ3yONNr3Mkdyng67BNfsnvlf8kpgSi0yiaVGeXKSjkrY9YPHe0wkVW0UHZ9uZqYqgVdEzSG3Z0NNkrd/zp3jCztPad+q6iWb1R0iFlK7/h8NihOky9HXOustrtDwnvTgONwJnluxQp1zl86deKP0W9xx3Ky/Jobr3dbfOhJVK3qzF6OL6KaNjpT+hDYjh1OISzrx1jWLxFvZ4r7X2wbRhcNRyD5sTrxcs3z5Xdz/KRT0UhIj47CF4Heoiqtl/aQ5kdjpRqlmC2spJ9WZinsqbb6HhZ1i8Yd2ZycDQZF+S8n1n gwest@Glenns-MacBook-Pro.local\"]}]},\"storage\":{\"files\":[{\"path\":\"/etc/stormbase/mode\",\"contents\":{\"source\":\"data:,live\"},\"mode\":420}]},\"systemd\":{\"units\":[{\"name\":\"serial-getty@ttyS0.service\",\"enabled\":true},{\"name\":\"serial-getty@ttyS1.service\",\"enabled\":true}]}}"
+    },
+    "format": "ignition"
+  }
+}
+---
+{
+  "apiVersion": "v1",
+  "kind": "BootConfig",
+  "metadata": {
+    "creationTimestamp": "2026-03-02T01:41:19Z",
+    "name": "install"
+  },
+  "spec": {
+    "data": {
+      "config.ign": "{\"ignition\":{\"version\":\"3.4.0\"},\"passwd\":{\"users\":[{\"name\":\"root\",\"sshAuthorizedKeys\":[\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWUsb0I159v27vSBuOOyQMX54iD2zuKZOOy+e5GRCJ3yONNr3Mkdyng67BNfsnvlf8kpgSi0yiaVGeXKSjkrY9YPHe0wkVW0UHZ9uZqYqgVdEzSG3Z0NNkrd/zp3jCztPad+q6iWb1R0iFlK7/h8NihOky9HXOustrtDwnvTgONwJnluxQp1zl86deKP0W9xx3Ky/Jobr3dbfOhJVK3qzF6OL6KaNjpT+hDYjh1OISzrx1jWLxFvZ4r7X2wbRhcNRyD5sTrxcs3z5Xdz/KRT0UhIj47CF4Heoiqtl/aQ5kdjpRqlmC2spJ9WZinsqbb6HhZ1i8Yd2ZycDQZF+S8n1n gwest@Glenns-MacBook-Pro.local\"]}]},\"storage\":{\"files\":[{\"path\":\"/etc/stormbase/mode\",\"contents\":{\"source\":\"data:,install\"},\"mode\":420}]},\"systemd\":{\"units\":[{\"name\":\"serial-getty@ttyS0.service\",\"enabled\":true},{\"name\":\"serial-getty@ttyS1.service\",\"enabled\":true}]}}"
+    },
+    "format": "ignition"
+  }
+}

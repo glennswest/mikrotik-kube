@@ -1,0 +1,100 @@
+[
+  {
+    "apiVersion": "v1",
+    "kind": "BootConfig",
+    "metadata": {
+      "creationTimestamp": "2026-02-27T15:58:03Z",
+      "name": "test-config"
+    },
+    "spec": {
+      "data": {
+        "config.ign": "hello world"
+      },
+      "format": "custom"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "BootConfig",
+    "metadata": {
+      "creationTimestamp": "2026-02-27T16:34:39Z",
+      "name": "builder-target"
+    },
+    "spec": {
+      "data": {
+        "config.ign": "{\"ignition\":{\"version\":\"3.4.0\"},\"kernelArguments\":{\"shouldExist\":[\"console=tty0\",\"console=ttyS0,115200n8\",\"console=ttyS1,115200n8\"]},\"passwd\":{\"users\":[{\"name\":\"root\",\"passwordHash\":\"$6$Bd4hdMwcRKfCTwGa$dt5sIpVpgPjW83MK2IxD.I9daQwi/kRAsQ8BzNr0Wd5E/uSLGbeVNDpZQgsHEsA/86sOAjgCkPy8WFYu5JtA6.\",\"sshAuthorizedKeys\":[\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWUsb0I159v27vSBuOOyQMX54iD2zuKZOOy+e5GRCJ3yONNr3Mkdyng67BNfsnvlf8kpgSi0yiaVGeXKSjkrY9YPHe0wkVW0UHZ9uZqYqgVdEzSG3Z0NNkrd/zp3jCztPad+q6iWb1R0iFlK7/h8NihOky9HXOustrtDwnvTgONwJnluxQp1zl86deKP0W9xx3Ky/Jobr3dbfOhJVK3qzF6OL6KaNjpT+hDYjh1OISzrx1jWLxFvZ4r7X2wbRhcNRyD5sTrxcs3z5Xdz/KRT0UhIj47CF4Heoiqtl/aQ5kdjpRqlmC2spJ9WZinsqbb6HhZ1i8Yd2ZycDQZF+S8n1n gwest@Glenns-MacBook-Pro.local\"]},{\"groups\":[\"wheel\"],\"name\":\"core\",\"passwordHash\":\"$6$Bd4hdMwcRKfCTwGa$dt5sIpVpgPjW83MK2IxD.I9daQwi/kRAsQ8BzNr0Wd5E/uSLGbeVNDpZQgsHEsA/86sOAjgCkPy8WFYu5JtA6.\",\"sshAuthorizedKeys\":[\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWUsb0I159v27vSBuOOyQMX54iD2zuKZOOy+e5GRCJ3yONNr3Mkdyng67BNfsnvlf8kpgSi0yiaVGeXKSjkrY9YPHe0wkVW0UHZ9uZqYqgVdEzSG3Z0NNkrd/zp3jCztPad+q6iWb1R0iFlK7/h8NihOky9HXOustrtDwnvTgONwJnluxQp1zl86deKP0W9xx3Ky/Jobr3dbfOhJVK3qzF6OL6KaNjpT+hDYjh1OISzrx1jWLxFvZ4r7X2wbRhcNRyD5sTrxcs3z5Xdz/KRT0UhIj47CF4Heoiqtl/aQ5kdjpRqlmC2spJ9WZinsqbb6HhZ1i8Yd2ZycDQZF+S8n1n gwest@Glenns-MacBook-Pro.local\"]}]},\"storage\":{\"files\":[{\"path\":\"/etc/profile.d/builder.sh\",\"contents\":{\"compression\":\"\",\"source\":\"data:,alias%20docker%3Dpodman%0Aexport%20CONTAINER_HOST%3Dtcp%3A%2F%2Flocalhost%3A2375%0A\"},\"mode\":420},{\"path\":\"/etc/firewalld/zones/public.xml\",\"contents\":{\"compression\":\"gzip\",\"source\":\"data:;base64,H4sIAAAAAAAC/4TPwQ6CMAzG8TtP0fSOoEaFZINX8BW0VFkc67INYnx6g8QbCcf++7t8qn0PFiYO0YjTuN+VCOxIOuOeGsf0yCtsm0x9xHGTAajYS0jNdbxbQ6pYrl/nMBlicLeBNcbYY7HSu578dM7JGnZpVZDQy5v/z0tI4IMkIbEaE3mEuWmsyk1Sl/U2OhwvpxmpYpn4DQAA//9iqg3mEQEAAA==\"},\"mode\":420}]},\"systemd\":{\"units\":[{\"enabled\":true,\"name\":\"serial-getty@ttyS0.service\"},{\"enabled\":true,\"name\":\"serial-getty@ttyS1.service\"},{\"enabled\":true,\"name\":\"podman.socket\"},{\"contents\":\"[Unit]\\nDescription=Podman API TCP Socket\\n\\n[Socket]\\nListenStream=2375\\nAccept=no\\n\\n[Install]\\nWantedBy=sockets.target\\n\",\"enabled\":true,\"name\":\"podman-tcp.socket\"},{\"contents\":\"[Unit]\\nDescription=Podman API TCP Service\\nRequires=podman-tcp.socket\\nAfter=podman-tcp.socket\\nBindsTo=podman-tcp.socket\\n\\n[Service]\\nType=exec\\nExecStart=/usr/bin/podman system service --time=0 tcp://0.0.0.0:2375\\nKillMode=process\\nRestart=on-failure\\n\\n[Install]\\nWantedBy=default.target\\n\",\"enabled\":false,\"name\":\"podman-tcp.service\"},{\"contents\":\"[Unit]\\nDescription=Layer buildah, skopeo, and cockpit on first boot\\nAfter=network-online.target\\nWants=network-online.target\\nConditionPathExists=!/var/lib/%N.stamp\\n\\n[Service]\\nType=oneshot\\nRemainAfterExit=yes\\nExecStart=/usr/bin/rpm-ostree install --idempotent --allow-inactive buildah skopeo cockpit cockpit-podman\\nExecStart=/bin/touch /var/lib/%N.stamp\\nExecStart=/usr/bin/systemctl reboot\\n\\n[Install]\\nWantedBy=multi-user.target\\n\",\"enabled\":true,\"name\":\"rpm-ostree-install.service\"},{\"contents\":\"[Unit]\\nDescription=Cockpit Web Service Socket\\n\\n[Socket]\\nListenStream=80\\nExecStartPost=-/usr/sbin/semanage port -a -t websm_port_t -p tcp 80\\nExecStartPost=-/bin/ln -sfn /dev/null /etc/motd.d/cockpit\\nAccept=no\\n\\n[Install]\\nWantedBy=sockets.target\\n\",\"enabled\":true,\"name\":\"cockpit.socket\"}]}}"
+      },
+      "format": "custom"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "BootConfig",
+    "metadata": {
+      "creationTimestamp": "2026-02-27T17:56:20Z",
+      "name": "bms-test"
+    },
+    "spec": {
+      "data": {
+        "config.sh": "#!/bin/bash\necho 'BootConfig fetched successfully from mkube'\nhostname\nip addr show | grep 'inet '\necho 'Done.'\n"
+      },
+      "format": "custom"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "BootConfig",
+    "metadata": {
+      "creationTimestamp": "2026-02-27T16:34:31Z",
+      "name": "coreos-builder"
+    },
+    "spec": {
+      "data": {
+        "config.ign": "{\"ignition\":{\"version\":\"3.4.0\"},\"passwd\":{\"users\":[{\"name\":\"core\",\"sshAuthorizedKeys\":[\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWUsb0I159v27vSBuOOyQMX54iD2zuKZOOy+e5GRCJ3yONNr3Mkdyng67BNfsnvlf8kpgSi0yiaVGeXKSjkrY9YPHe0wkVW0UHZ9uZqYqgVdEzSG3Z0NNkrd/zp3jCztPad+q6iWb1R0iFlK7/h8NihOky9HXOustrtDwnvTgONwJnluxQp1zl86deKP0W9xx3Ky/Jobr3dbfOhJVK3qzF6OL6KaNjpT+hDYjh1OISzrx1jWLxFvZ4r7X2wbRhcNRyD5sTrxcs3z5Xdz/KRT0UhIj47CF4Heoiqtl/aQ5kdjpRqlmC2spJ9WZinsqbb6HhZ1i8Yd2ZycDQZF+S8n1n gwest@Glenns-MacBook-Pro.local\"]}]},\"systemd\":{\"units\":[{\"name\":\"coreos-installer.service\",\"enabled\":true,\"contents\":\"[Unit]\\nDescription=Install CoreOS to disk\\nAfter=network-online.target\\nWants=network-online.target\\nRequires=network-online.target\\n\\n[Service]\\nType=oneshot\\nExecStart=/usr/bin/coreos-installer install /dev/sda --ignition-url http://192.168.200.2:8082/api/v1/bootconfigs/coreos-base/serve --insecure-ignition --console tty0 --console ttyS0,115200n8 --console ttyS1,115200n8\\nExecStartPost=/usr/bin/curl -s -X POST http://192.168.200.2:8082/api/v1/boot-complete\\nExecStartPost=/usr/bin/systemctl reboot\\nStandardOutput=journal+console\\nStandardError=journal+console\\n\\n[Install]\\nWantedBy=multi-user.target\\n\"},{\"name\":\"serial-getty@ttyS0.service\",\"enabled\":true},{\"name\":\"serial-getty@ttyS1.service\",\"enabled\":true}]}}"
+      },
+      "format": "custom"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "BootConfig",
+    "metadata": {
+      "creationTimestamp": "2026-02-28T01:53:37Z",
+      "name": "coreos-base"
+    },
+    "spec": {
+      "data": {
+        "config.ign": "{\"ignition\":{\"version\":\"3.4.0\"},\"passwd\":{\"users\":[{\"name\":\"core\",\"sshAuthorizedKeys\":[\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWUsb0I159v27vSBuOOyQMX54iD2zuKZOOy+e5GRCJ3yONNr3Mkdyng67BNfsnvlf8kpgSi0yiaVGeXKSjkrY9YPHe0wkVW0UHZ9uZqYqgVdEzSG3Z0NNkrd/zp3jCztPad+q6iWb1R0iFlK7/h8NihOky9HXOustrtDwnvTgONwJnluxQp1zl86deKP0W9xx3Ky/Jobr3dbfOhJVK3qzF6OL6KaNjpT+hDYjh1OISzrx1jWLxFvZ4r7X2wbRhcNRyD5sTrxcs3z5Xdz/KRT0UhIj47CF4Heoiqtl/aQ5kdjpRqlmC2spJ9WZinsqbb6HhZ1i8Yd2ZycDQZF+S8n1n gwest@Glenns-MacBook-Pro.local\"]}]},\"systemd\":{\"units\":[{\"name\":\"serial-getty@ttyS0.service\",\"enabled\":true},{\"name\":\"serial-getty@ttyS1.service\",\"enabled\":true},{\"name\":\"cockpit.socket\",\"enabled\":true},{\"name\":\"install-cockpit.service\",\"enabled\":true,\"contents\":\"[Unit]\\nDescription=Install Cockpit\\nAfter=network-online.target\\nWants=network-online.target\\nConditionPathExists=!/var/lib/%N.stamp\\n\\n[Service]\\nType=oneshot\\nExecStart=/usr/bin/rpm-ostree install cockpit-system cockpit-bridge cockpit-ws\\nExecStart=/usr/bin/touch /var/lib/%N.stamp\\nExecStartPost=/usr/bin/systemctl reboot\\n\\n[Install]\\nWantedBy=multi-user.target\\n\"}]}}"
+      },
+      "format": "ignition"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "BootConfig",
+    "metadata": {
+      "creationTimestamp": "2026-03-02T01:41:24Z",
+      "name": "live"
+    },
+    "spec": {
+      "data": {
+        "config.ign": "{\"ignition\":{\"version\":\"3.4.0\"},\"passwd\":{\"users\":[{\"name\":\"root\",\"sshAuthorizedKeys\":[\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWUsb0I159v27vSBuOOyQMX54iD2zuKZOOy+e5GRCJ3yONNr3Mkdyng67BNfsnvlf8kpgSi0yiaVGeXKSjkrY9YPHe0wkVW0UHZ9uZqYqgVdEzSG3Z0NNkrd/zp3jCztPad+q6iWb1R0iFlK7/h8NihOky9HXOustrtDwnvTgONwJnluxQp1zl86deKP0W9xx3Ky/Jobr3dbfOhJVK3qzF6OL6KaNjpT+hDYjh1OISzrx1jWLxFvZ4r7X2wbRhcNRyD5sTrxcs3z5Xdz/KRT0UhIj47CF4Heoiqtl/aQ5kdjpRqlmC2spJ9WZinsqbb6HhZ1i8Yd2ZycDQZF+S8n1n gwest@Glenns-MacBook-Pro.local\"]}]},\"storage\":{\"files\":[{\"path\":\"/etc/stormbase/mode\",\"contents\":{\"source\":\"data:,live\"},\"mode\":420}]},\"systemd\":{\"units\":[{\"name\":\"serial-getty@ttyS0.service\",\"enabled\":true},{\"name\":\"serial-getty@ttyS1.service\",\"enabled\":true}]}}"
+      },
+      "format": "ignition"
+    }
+  },
+  {
+    "apiVersion": "v1",
+    "kind": "BootConfig",
+    "metadata": {
+      "creationTimestamp": "2026-03-02T01:41:19Z",
+      "name": "install"
+    },
+    "spec": {
+      "data": {
+        "config.ign": "{\"ignition\":{\"version\":\"3.4.0\"},\"passwd\":{\"users\":[{\"name\":\"root\",\"sshAuthorizedKeys\":[\"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDWUsb0I159v27vSBuOOyQMX54iD2zuKZOOy+e5GRCJ3yONNr3Mkdyng67BNfsnvlf8kpgSi0yiaVGeXKSjkrY9YPHe0wkVW0UHZ9uZqYqgVdEzSG3Z0NNkrd/zp3jCztPad+q6iWb1R0iFlK7/h8NihOky9HXOustrtDwnvTgONwJnluxQp1zl86deKP0W9xx3Ky/Jobr3dbfOhJVK3qzF6OL6KaNjpT+hDYjh1OISzrx1jWLxFvZ4r7X2wbRhcNRyD5sTrxcs3z5Xdz/KRT0UhIj47CF4Heoiqtl/aQ5kdjpRqlmC2spJ9WZinsqbb6HhZ1i8Yd2ZycDQZF+S8n1n gwest@Glenns-MacBook-Pro.local\"]}]},\"storage\":{\"files\":[{\"path\":\"/etc/stormbase/mode\",\"contents\":{\"source\":\"data:,install\"},\"mode\":420}]},\"systemd\":{\"units\":[{\"name\":\"serial-getty@ttyS0.service\",\"enabled\":true},{\"name\":\"serial-getty@ttyS1.service\",\"enabled\":true}]}}"
+      },
+      "format": "ignition"
+    }
+  }
+]

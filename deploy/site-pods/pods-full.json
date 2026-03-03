@@ -1,0 +1,967 @@
+[
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "nats",
+      "namespace": "infra",
+      "creationTimestamp": "2026-03-02T16:22:44Z",
+      "annotations": {
+        "vkube.io/boot-priority": "5",
+        "vkube.io/image-policy": "auto",
+        "vkube.io/network": "gt",
+        "vkube.io/node": "rose1",
+        "vkube.io/static-ip": "192.168.200.10"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "nats",
+          "image": "192.168.200.3:5000/nats:edge",
+          "command": [
+            "nats-server",
+            "-js",
+            "--store_dir",
+            "/data",
+            "--addr",
+            "0.0.0.0",
+            "-m",
+            "8222"
+          ],
+          "resources": {},
+          "volumeMounts": [
+            {
+              "name": "data",
+              "mountPath": "/data"
+            }
+          ],
+          "livenessProbe": {
+            "httpGet": {
+              "path": "/healthz",
+              "port": 8222
+            },
+            "periodSeconds": 30,
+            "failureThreshold": 3
+          },
+          "startupProbe": {
+            "tcpSocket": {
+              "port": 4222
+            },
+            "initialDelaySeconds": 2,
+            "periodSeconds": 2,
+            "failureThreshold": 10
+          }
+        }
+      ],
+      "restartPolicy": "Always"
+    },
+    "status": {
+      "phase": "Running",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        },
+        {
+          "type": "PodScheduled",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        }
+      ],
+      "hostIP": "192.168.200.1",
+      "podIP": "192.168.200.10",
+      "podIPs": [
+        {
+          "ip": "192.168.200.10"
+        }
+      ],
+      "startTime": "2026-03-02T16:22:44Z",
+      "containerStatuses": [
+        {
+          "name": "nats",
+          "state": {
+            "running": {
+              "startedAt": "2026-03-03T13:23:36Z"
+            }
+          },
+          "lastState": {},
+          "ready": true,
+          "restartCount": 0,
+          "image": "192.168.200.3:5000/nats:edge",
+          "imageID": "sha256:dabc0d074642143f5d68685310bf5666f8c12b930386d5201427515d0cccfe71",
+          "containerID": "*3DF"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "dns",
+      "namespace": "gt",
+      "creationTimestamp": "2026-03-02T16:22:44Z",
+      "annotations": {
+        "vkube.io/boot-priority": "13",
+        "vkube.io/image-policy": "auto",
+        "vkube.io/network": "gt",
+        "vkube.io/node": "rose1",
+        "vkube.io/static-ip": "192.168.200.199"
+      }
+    },
+    "spec": {
+      "volumes": [
+        {
+          "name": "config",
+          "configMap": {
+            "name": "dns-config"
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "microdns",
+          "image": "192.168.200.3:5000/microdns:edge",
+          "resources": {},
+          "volumeMounts": [
+            {
+              "name": "config",
+              "mountPath": "/etc/microdns"
+            },
+            {
+              "name": "data",
+              "mountPath": "/data"
+            }
+          ],
+          "livenessProbe": {
+            "httpGet": {
+              "path": "/api/v1/zones",
+              "port": 8080
+            },
+            "periodSeconds": 30,
+            "failureThreshold": 3
+          },
+          "readinessProbe": {
+            "tcpSocket": {
+              "port": 53
+            },
+            "periodSeconds": 10
+          },
+          "startupProbe": {
+            "httpGet": {
+              "path": "/api/v1/zones",
+              "port": 8080
+            },
+            "initialDelaySeconds": 5,
+            "periodSeconds": 3,
+            "failureThreshold": 10
+          }
+        }
+      ],
+      "restartPolicy": "Always"
+    },
+    "status": {
+      "phase": "Running",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        },
+        {
+          "type": "PodScheduled",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        }
+      ],
+      "hostIP": "192.168.200.1",
+      "podIP": "192.168.200.199",
+      "podIPs": [
+        {
+          "ip": "192.168.200.199"
+        }
+      ],
+      "startTime": "2026-03-02T16:22:44Z",
+      "containerStatuses": [
+        {
+          "name": "microdns",
+          "state": {
+            "running": {
+              "startedAt": "2026-03-03T13:23:36Z"
+            }
+          },
+          "lastState": {},
+          "ready": true,
+          "restartCount": 0,
+          "image": "192.168.200.3:5000/microdns:edge",
+          "imageID": "sha256:ac31cf7916f73e08462ae6242f1a5ebad606709b05c9016937238637263a768f",
+          "containerID": "*5D0"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "ipmiserial",
+      "namespace": "g11",
+      "creationTimestamp": "2026-03-02T03:22:52Z"
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "ipmiserial",
+          "image": "192.168.200.3:5000/ipmiserial:edge",
+          "resources": {}
+        }
+      ]
+    },
+    "status": {
+      "phase": "Running",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        },
+        {
+          "type": "PodScheduled",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        }
+      ],
+      "hostIP": "192.168.200.1",
+      "podIP": "192.168.200.13",
+      "podIPs": [
+        {
+          "ip": "192.168.200.13"
+        }
+      ],
+      "startTime": "2026-03-02T16:22:44Z",
+      "containerStatuses": [
+        {
+          "name": "ipmiserial",
+          "state": {
+            "running": {
+              "startedAt": "2026-03-03T13:23:36Z"
+            }
+          },
+          "lastState": {},
+          "ready": false,
+          "restartCount": 0,
+          "image": "192.168.200.3:5000/ipmiserial:edge",
+          "imageID": "sha256:dd544c797fe3b30e03e29e209a1f74dcc05f60f17cfc733e6107cd853c6c6c52",
+          "containerID": "*5E7"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "fastregistry",
+      "namespace": "g10",
+      "creationTimestamp": "2026-03-02T03:22:53Z"
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "fastregistry",
+          "image": "192.168.200.3:5000/fastregistry:edge",
+          "resources": {}
+        }
+      ]
+    },
+    "status": {
+      "phase": "Pending",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "False",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        },
+        {
+          "type": "PodScheduled",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        }
+      ],
+      "hostIP": "192.168.200.1",
+      "podIP": "192.168.200.17",
+      "podIPs": [
+        {
+          "ip": "192.168.200.17"
+        }
+      ],
+      "startTime": "2026-03-02T16:22:44Z",
+      "containerStatuses": [
+        {
+          "name": "fastregistry",
+          "state": {
+            "terminated": {
+              "exitCode": 0,
+              "reason": "Stopped",
+              "startedAt": null,
+              "finishedAt": null
+            }
+          },
+          "lastState": {},
+          "ready": false,
+          "restartCount": 0,
+          "image": "192.168.200.3:5000/fastregistry:edge",
+          "imageID": "sha256:ed5016250ed65cf941f9b59b0d0ad1ab98df2b0e7680319fe413aa526c453f65",
+          "containerID": "*5EB"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "registry-stormbase",
+      "namespace": "gt",
+      "creationTimestamp": "2026-03-02T16:22:44Z",
+      "annotations": {
+        "vkube.io/image-policy": "auto",
+        "vkube.io/network": "gt",
+        "vkube.io/node": "rose1",
+        "vkube.io/static-ip": "192.168.200.6"
+      }
+    },
+    "spec": {
+      "volumes": [
+        {
+          "name": "config",
+          "configMap": {
+            "name": "registry-stormbase-config"
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "registry",
+          "image": "192.168.200.3:5000/mkube-registry:edge",
+          "resources": {},
+          "volumeMounts": [
+            {
+              "name": "config",
+              "mountPath": "/etc/registry"
+            },
+            {
+              "name": "data",
+              "mountPath": "/raid1/registry/stormbase"
+            }
+          ],
+          "livenessProbe": {
+            "httpGet": {
+              "path": "/v2/",
+              "port": 5000
+            },
+            "periodSeconds": 30,
+            "failureThreshold": 3
+          },
+          "readinessProbe": {
+            "tcpSocket": {
+              "port": 5000
+            },
+            "periodSeconds": 10
+          },
+          "startupProbe": {
+            "httpGet": {
+              "path": "/v2/",
+              "port": 5000
+            },
+            "initialDelaySeconds": 5,
+            "periodSeconds": 3,
+            "failureThreshold": 10
+          }
+        }
+      ],
+      "restartPolicy": "Always"
+    },
+    "status": {
+      "phase": "Running",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        },
+        {
+          "type": "PodScheduled",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        }
+      ],
+      "hostIP": "192.168.200.1",
+      "podIP": "192.168.200.6",
+      "podIPs": [
+        {
+          "ip": "192.168.200.6"
+        }
+      ],
+      "startTime": "2026-03-02T16:22:44Z",
+      "containerStatuses": [
+        {
+          "name": "registry",
+          "state": {
+            "running": {
+              "startedAt": "2026-03-03T13:23:36Z"
+            }
+          },
+          "lastState": {},
+          "ready": true,
+          "restartCount": 0,
+          "image": "192.168.200.3:5000/mkube-registry:edge",
+          "imageID": "sha256:b238092c0c6d6f8fdf3bc4f58c9f9b729d31d0a1d801fa1a67470fd57270c29a",
+          "containerID": "*5DF"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "rosecicd",
+      "namespace": "default",
+      "creationTimestamp": "2026-03-02T03:22:53Z",
+      "annotations": {
+        "vkube.io/node": "rose1"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "rosecicd",
+          "image": "192.168.200.3:5000/rosecicd:edge",
+          "resources": {}
+        }
+      ]
+    },
+    "status": {
+      "phase": "Running",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        },
+        {
+          "type": "PodScheduled",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        }
+      ],
+      "hostIP": "192.168.200.1",
+      "podIP": "192.168.200.20",
+      "podIPs": [
+        {
+          "ip": "192.168.200.20"
+        }
+      ],
+      "startTime": "2026-03-02T16:22:44Z",
+      "containerStatuses": [
+        {
+          "name": "rosecicd",
+          "state": {
+            "running": {
+              "startedAt": "2026-03-03T13:23:36Z"
+            }
+          },
+          "lastState": {},
+          "ready": false,
+          "restartCount": 0,
+          "image": "192.168.200.3:5000/rosecicd:edge",
+          "imageID": "sha256:9a1e4cfce289dd3453ebb1e33b897928db322b3ddea647ddea313de8352d012e",
+          "containerID": "*5ED"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "dns",
+      "namespace": "g10",
+      "creationTimestamp": "2026-03-02T16:22:44Z",
+      "annotations": {
+        "vkube.io/boot-priority": "11",
+        "vkube.io/image-policy": "auto",
+        "vkube.io/network": "g10",
+        "vkube.io/node": "rose1",
+        "vkube.io/static-ip": "192.168.10.252"
+      }
+    },
+    "spec": {
+      "volumes": [
+        {
+          "name": "config",
+          "configMap": {
+            "name": "dns-config"
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "microdns",
+          "image": "192.168.200.3:5000/microdns:edge",
+          "resources": {},
+          "volumeMounts": [
+            {
+              "name": "config",
+              "mountPath": "/etc/microdns"
+            },
+            {
+              "name": "data",
+              "mountPath": "/data"
+            }
+          ],
+          "livenessProbe": {
+            "httpGet": {
+              "path": "/api/v1/zones",
+              "port": 8080
+            },
+            "periodSeconds": 30,
+            "failureThreshold": 3
+          },
+          "readinessProbe": {
+            "tcpSocket": {
+              "port": 53
+            },
+            "periodSeconds": 10
+          },
+          "startupProbe": {
+            "httpGet": {
+              "path": "/api/v1/zones",
+              "port": 8080
+            },
+            "initialDelaySeconds": 5,
+            "periodSeconds": 3,
+            "failureThreshold": 10
+          }
+        }
+      ],
+      "restartPolicy": "Always"
+    },
+    "status": {
+      "phase": "Running",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        },
+        {
+          "type": "PodScheduled",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        }
+      ],
+      "hostIP": "192.168.200.1",
+      "podIP": "192.168.10.252",
+      "podIPs": [
+        {
+          "ip": "192.168.10.252"
+        }
+      ],
+      "startTime": "2026-03-02T16:22:44Z",
+      "containerStatuses": [
+        {
+          "name": "microdns",
+          "state": {
+            "running": {
+              "startedAt": "2026-03-03T13:23:36Z"
+            }
+          },
+          "lastState": {},
+          "ready": true,
+          "restartCount": 0,
+          "image": "192.168.200.3:5000/microdns:edge",
+          "imageID": "sha256:ac31cf7916f73e08462ae6242f1a5ebad606709b05c9016937238637263a768f",
+          "containerID": "*5D3"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "dns",
+      "namespace": "g11",
+      "creationTimestamp": "2026-03-02T16:22:44Z",
+      "annotations": {
+        "vkube.io/boot-priority": "12",
+        "vkube.io/image-policy": "auto",
+        "vkube.io/network": "g11",
+        "vkube.io/node": "rose1",
+        "vkube.io/static-ip": "192.168.11.252"
+      }
+    },
+    "spec": {
+      "volumes": [
+        {
+          "name": "config",
+          "configMap": {
+            "name": "dns-config"
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "microdns",
+          "image": "192.168.200.3:5000/microdns:edge",
+          "resources": {},
+          "volumeMounts": [
+            {
+              "name": "config",
+              "mountPath": "/etc/microdns"
+            },
+            {
+              "name": "data",
+              "mountPath": "/data"
+            }
+          ],
+          "livenessProbe": {
+            "httpGet": {
+              "path": "/api/v1/zones",
+              "port": 8080
+            },
+            "periodSeconds": 30,
+            "failureThreshold": 3
+          },
+          "readinessProbe": {
+            "tcpSocket": {
+              "port": 53
+            },
+            "periodSeconds": 10
+          },
+          "startupProbe": {
+            "httpGet": {
+              "path": "/api/v1/zones",
+              "port": 8080
+            },
+            "initialDelaySeconds": 5,
+            "periodSeconds": 3,
+            "failureThreshold": 10
+          }
+        }
+      ],
+      "restartPolicy": "Always"
+    },
+    "status": {
+      "phase": "Running",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        },
+        {
+          "type": "PodScheduled",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        }
+      ],
+      "hostIP": "192.168.200.1",
+      "podIP": "192.168.11.252",
+      "podIPs": [
+        {
+          "ip": "192.168.11.252"
+        }
+      ],
+      "startTime": "2026-03-02T16:22:44Z",
+      "containerStatuses": [
+        {
+          "name": "microdns",
+          "state": {
+            "running": {
+              "startedAt": "2026-03-03T13:23:36Z"
+            }
+          },
+          "lastState": {},
+          "ready": true,
+          "restartCount": 0,
+          "image": "192.168.200.3:5000/microdns:edge",
+          "imageID": "sha256:ac31cf7916f73e08462ae6242f1a5ebad606709b05c9016937238637263a768f",
+          "containerID": "*5D2"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "pxe",
+      "namespace": "g10",
+      "creationTimestamp": "2026-03-02T03:22:48Z"
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "pxe",
+          "image": "192.168.200.3:5000/pxemanager:edge",
+          "resources": {}
+        }
+      ]
+    },
+    "status": {
+      "phase": "Running",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        },
+        {
+          "type": "PodScheduled",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        }
+      ],
+      "hostIP": "192.168.200.1",
+      "podIP": "192.168.200.15",
+      "podIPs": [
+        {
+          "ip": "192.168.200.15"
+        }
+      ],
+      "startTime": "2026-03-02T16:22:44Z",
+      "containerStatuses": [
+        {
+          "name": "pxe",
+          "state": {
+            "running": {
+              "startedAt": "2026-03-03T13:23:36Z"
+            }
+          },
+          "lastState": {},
+          "ready": false,
+          "restartCount": 0,
+          "image": "192.168.200.3:5000/pxemanager:edge",
+          "imageID": "sha256:2cc6c6fba40a82813d093d35164a6eccb3a5e434e878a745b0ae2eae3401e4aa",
+          "containerID": "*5E9"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "agentmonitor-g10",
+      "namespace": "monitoring",
+      "creationTimestamp": "2026-03-02T03:23:05Z",
+      "annotations": {
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{\"vkube.io/image-policy\":\"auto\",\"vkube.io/network\":\"g10\"},\"name\":\"agentmonitor-g10\",\"namespace\":\"monitoring\"},\"spec\":{\"containers\":[{\"command\":[\"/agent-monitor\"],\"image\":\"192.168.200.3:5000/agent-monitor:edge\",\"name\":\"monitor\"}],\"restartPolicy\":\"Always\"}}\n",
+        "vkube.io/image-policy": "auto",
+        "vkube.io/network": "g10",
+        "vkube.io/node": "rose1"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "monitor",
+          "image": "192.168.200.3:5000/agent-monitor:edge",
+          "command": [
+            "/agent-monitor"
+          ],
+          "resources": {}
+        }
+      ],
+      "restartPolicy": "Always"
+    },
+    "status": {
+      "phase": "Running",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        },
+        {
+          "type": "PodScheduled",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        }
+      ],
+      "hostIP": "192.168.200.1",
+      "podIP": "192.168.10.201",
+      "podIPs": [
+        {
+          "ip": "192.168.10.201"
+        }
+      ],
+      "startTime": "2026-03-02T16:22:44Z",
+      "containerStatuses": [
+        {
+          "name": "monitor",
+          "state": {
+            "running": {
+              "startedAt": "2026-03-03T13:23:36Z"
+            }
+          },
+          "lastState": {},
+          "ready": true,
+          "restartCount": 0,
+          "image": "192.168.200.3:5000/agent-monitor:edge",
+          "imageID": "sha256:b1f9cc8a45f0276bdb1dccd3c2988235d84e679aca117d95c99c4d47e0f68fc6",
+          "containerID": "*5E0"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "mkube-console",
+      "namespace": "infra",
+      "creationTimestamp": "2026-03-02T03:23:00Z",
+      "annotations": {
+        "vkube.io/node": "rose1"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "console",
+          "image": "192.168.200.3:5000/mkube-console:edge",
+          "resources": {}
+        }
+      ]
+    },
+    "status": {
+      "phase": "Pending",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "False",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        },
+        {
+          "type": "PodScheduled",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        }
+      ],
+      "hostIP": "192.168.200.1",
+      "podIP": "192.168.200.7",
+      "podIPs": [
+        {
+          "ip": "192.168.200.7"
+        }
+      ],
+      "startTime": "2026-03-02T16:22:44Z",
+      "containerStatuses": [
+        {
+          "name": "console",
+          "state": {
+            "terminated": {
+              "exitCode": 0,
+              "reason": "Stopped",
+              "startedAt": null,
+              "finishedAt": null
+            }
+          },
+          "lastState": {},
+          "ready": false,
+          "restartCount": 0,
+          "image": "192.168.200.3:5000/mkube-console:edge",
+          "imageID": "sha256:70dc4db98f11a8e8a92fa2a1f6081d08ec82ecbaacb4a1118690979a409ca651",
+          "containerID": "*5E4"
+        }
+      ]
+    }
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "ipmiserial",
+      "namespace": "infra",
+      "creationTimestamp": "2026-03-02T03:23:06Z"
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "ipmiserial",
+          "image": "192.168.200.3:5000/ipmiserial:edge",
+          "resources": {}
+        }
+      ]
+    },
+    "status": {
+      "phase": "Running",
+      "conditions": [
+        {
+          "type": "Ready",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        },
+        {
+          "type": "PodScheduled",
+          "status": "True",
+          "lastProbeTime": null,
+          "lastTransitionTime": null
+        }
+      ],
+      "hostIP": "192.168.200.1",
+      "podIP": "192.168.200.11",
+      "podIPs": [
+        {
+          "ip": "192.168.200.11"
+        }
+      ],
+      "startTime": "2026-03-02T16:22:44Z",
+      "containerStatuses": [
+        {
+          "name": "ipmiserial",
+          "state": {
+            "running": {
+              "startedAt": "2026-03-03T13:23:36Z"
+            }
+          },
+          "lastState": {},
+          "ready": false,
+          "restartCount": 0,
+          "image": "192.168.200.3:5000/ipmiserial:edge",
+          "imageID": "sha256:dd544c797fe3b30e03e29e209a1f74dcc05f60f17cfc733e6107cd853c6c6c52",
+          "containerID": "*5E5"
+        }
+      ]
+    }
+  }
+]

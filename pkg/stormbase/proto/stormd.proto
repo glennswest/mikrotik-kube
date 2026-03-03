@@ -1,0 +1,516 @@
+syntax = "proto3";
+package stormd;
+
+option go_package = "github.com/glennswest/mkube/pkg/stormbase/proto;stormdpb";
+
+// ── Local daemon API (stormctl → stormd over Unix socket) ──
+
+service StormDaemon {
+  // Workload lifecycle
+  rpc WorkloadList(WorkloadListRequest)     returns (WorkloadListResponse);
+  rpc WorkloadStart(WorkloadActionRequest)  returns (WorkloadActionResponse);
+  rpc WorkloadStop(WorkloadActionRequest)   returns (WorkloadActionResponse);
+  rpc WorkloadRemove(WorkloadActionRequest) returns (WorkloadActionResponse);
+  rpc WorkloadLogs(WorkloadLogsRequest)     returns (stream LogEntry);
+  rpc LogSources(LogSourcesRequest)        returns (LogSourcesResponse);
+
+  // Node operations
+  rpc NodeStatus(NodeStatusRequest) returns (NodeStatusResponse);
+
+  // Image operations
+  rpc ImagePull(ImagePullRequest) returns (ImagePullResponse);
+  rpc ImageList(ImageListRequest) returns (ImageListResponse);
+
+  // Cluster operations (mkube → stormd over WireGuard gRPC)
+  rpc WorkloadCreate(WorkloadCreateRequest) returns (WorkloadActionResponse);
+  rpc NodeDrain(NodeDrainRequest)           returns (NodeDrainResponse);
+  rpc NodeCordon(NodeCordonRequest)         returns (NodeCordonResponse);
+  rpc NodeUncordon(NodeCordonRequest)       returns (NodeCordonResponse);
+  rpc ImageEnsure(ImageEnsureRequest)       returns (ImageEnsureResponse);
+  rpc MeshUpdate(MeshUpdateRequest)         returns (MeshUpdateResponse);
+  rpc ServiceUpdate(ServiceUpdateRequest)   returns (ServiceUpdateResponse);
+  rpc ClusterStatus(ClusterStatusRequest)   returns (ClusterStatusResponse);
+
+  // Network policy operations
+  rpc NetworkPolicyApply(NetworkPolicyApplyRequest)   returns (NetworkPolicyApplyResponse);
+  rpc NetworkPolicyDelete(NetworkPolicyDeleteRequest) returns (NetworkPolicyDeleteResponse);
+  rpc NetworkPolicyList(NetworkPolicyListRequest)     returns (NetworkPolicyListResponse);
+
+  // Migration operations (CRIU checkpoint/restore)
+  rpc WorkloadCheckpoint(WorkloadCheckpointRequest) returns (WorkloadCheckpointResponse);
+  rpc WorkloadRestore(WorkloadRestoreRequest)       returns (WorkloadRestoreResponse);
+
+  // VM operations (Cloud Hypervisor)
+  rpc VmMigrate(VmMigrateRequest)     returns (VmMigrateResponse);
+  rpc VmSnapshot(VmSnapshotRequest)   returns (VmSnapshotResponse);
+
+  // Device passthrough operations
+  rpc DeviceList(DeviceListRequest)             returns (DeviceListResponse);
+  rpc DeviceGet(DeviceGetRequest)               returns (DeviceGetResponse);
+  rpc DeviceDiscover(DeviceDiscoverRequest)     returns (DeviceDiscoverResponse);
+  rpc DeviceBind(DeviceBindRequest)             returns (DeviceBindResponse);
+  rpc DeviceUnbind(DeviceUnbindRequest)         returns (DeviceUnbindResponse);
+  rpc DeviceClassList(DeviceClassListRequest)   returns (DeviceClassListResponse);
+  rpc DeviceClassCreate(DeviceClassCreateRequest) returns (DeviceClassCreateResponse);
+  rpc DeviceClassDelete(DeviceClassDeleteRequest) returns (DeviceClassDeleteResponse);
+  rpc DeviceAllocate(DeviceAllocateRequest)     returns (DeviceAllocateResponse);
+  rpc DeviceRelease(DeviceReleaseRequest)       returns (DeviceReleaseResponse);
+}
+
+// ── Messages ───────────────────────────────────────────
+
+message WorkloadListRequest {}
+
+message WorkloadListResponse {
+  repeated WorkloadInfo workloads = 1;
+}
+
+message WorkloadInfo {
+  string name           = 1;
+  string kind           = 2;  // "container" or "vm"
+  string status         = 3;  // "pending", "running", "stopped", "failed", "restarting"
+  uint32 pid            = 4;
+  uint32 restart_count  = 5;
+  string container_id   = 6;
+  string restart_policy = 7;
+  string pod_ip         = 8;
+  string node_id        = 9;
+}
+
+message WorkloadActionRequest {
+  string name = 1;
+}
+
+message WorkloadActionResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+// ── Workload creation (mkube pushes workloads to nodes) ──
+
+message WorkloadCreateRequest {
+  string name          = 1;
+  string kind          = 2;   // "container" or "vm"
+  string image         = 3;
+  string restart_policy = 4;  // "always", "on-failure", "never"
+  string cpu_limit     = 5;
+  string memory_limit  = 6;
+  repeated string command = 7;
+  repeated string env    = 8;
+  repeated PortMapping ports = 9;
+  repeated VolumeMount volumes = 10;
+  bool privileged              = 11;
+  repeated string devices      = 12;  // host device paths (e.g. "/dev/vfio/vfio")
+  repeated string capabilities = 13;  // Linux capabilities (e.g. "SYS_RAWIO")
+}
+
+message PortMapping {
+  uint32 host_port      = 1;
+  uint32 container_port = 2;
+  string protocol       = 3;  // "tcp" or "udp"
+}
+
+message VolumeMount {
+  string source   = 1;
+  string target   = 2;
+  bool   readonly = 3;
+}
+
+message WorkloadLogsRequest {
+  string name   = 1;
+  bool   follow = 2;
+  uint32 tail   = 3;
+  string source = 4; // "workload", "kernel", or "system" (default: workload)
+}
+
+message LogEntry {
+  string timestamp = 1;
+  string stream    = 2;
+  string message   = 3;
+  string source    = 4; // Log source type: workload, kernel, system
+}
+
+message LogSourcesRequest {}
+
+message LogSourcesResponse {
+  repeated LogSourceInfo sources = 1;
+}
+
+message LogSourceInfo {
+  string id   = 1; // Source identifier (container ID, "_kernel", "_system")
+  string type = 2; // "workload", "kernel", or "system"
+}
+
+// ── Node status ──────────────────────────────────────────
+
+message NodeStatusRequest {}
+
+message NodeStatusResponse {
+  string hostname         = 1;
+  uint64 uptime_secs      = 2;
+  uint32 workload_count   = 3;
+  uint32 running_count    = 4;
+  uint64 memory_total     = 5;
+  uint64 memory_available = 6;
+  uint64 disk_total       = 7;
+  uint64 disk_available   = 8;
+  repeated string cpu_info = 9;
+  string node_id          = 10;
+  string pod_cidr         = 11;
+  uint32 mesh_peers       = 12;
+  bool   cordoned         = 13;
+  string cordon_reason    = 14;
+}
+
+// ── Image operations ─────────────────────────────────────
+
+message ImagePullRequest {
+  string reference = 1;
+}
+
+message ImagePullResponse {
+  bool   success         = 1;
+  string message         = 2;
+  string manifest_digest = 3;
+}
+
+message ImageListRequest {}
+
+message ImageListResponse {
+  repeated string digests = 1;
+}
+
+// ── ImageEnsure: mkube guarantees image availability ─────
+
+message ImageEnsureRequest {
+  string reference = 1;  // image reference
+}
+
+message ImageEnsureResponse {
+  bool   available       = 1;
+  string message         = 2;
+  string manifest_digest = 3;
+}
+
+// ── Node drain ───────────────────────────────────────────
+
+message NodeDrainRequest {
+  bool   graceful   = 1;  // true = wait for workloads to stop, false = force
+  uint32 timeout_s  = 2;  // max seconds to wait (0 = default 300s)
+}
+
+message NodeDrainResponse {
+  bool   success           = 1;
+  string message           = 2;
+  uint32 workloads_stopped = 3;
+}
+
+// ── Node cordon/uncordon ─────────────────────────────────
+
+message NodeCordonRequest {
+  string reason = 1;  // e.g. "os-update", "maintenance"
+}
+
+message NodeCordonResponse {
+  bool   success  = 1;
+  string message  = 2;
+  bool   cordoned = 3;  // resulting cordon state
+}
+
+// ── Mesh membership update ───────────────────────────────
+
+message MeshUpdateRequest {
+  repeated MeshNode nodes = 1;
+}
+
+message MeshNode {
+  string node_id    = 1;
+  string hostname   = 2;
+  string endpoint   = 3;  // "ip:port" for WireGuard
+  string public_key = 4;
+  string tunnel_ip  = 5;
+  string pod_cidr   = 6;
+  string role       = 7;  // "controller", "worker", "controller+worker"
+  bool   healthy    = 8;
+}
+
+message MeshUpdateResponse {
+  bool   success     = 1;
+  uint32 active_peers = 2;
+}
+
+// ── Service discovery update ─────────────────────────────
+
+message ServiceUpdateRequest {
+  repeated ServiceEntry services = 1;
+}
+
+message ServiceEntry {
+  string name = 1;
+  repeated ServiceEndpointMsg endpoints = 2;
+}
+
+message ServiceEndpointMsg {
+  string ip      = 1;
+  uint32 port    = 2;
+  string node_id = 3;
+  bool   healthy = 4;
+}
+
+message ServiceUpdateResponse {
+  bool   success        = 1;
+  uint32 services_count = 2;
+}
+
+// ── Cluster status (aggregated view) ─────────────────────
+
+message ClusterStatusRequest {}
+
+message ClusterStatusResponse {
+  uint32 node_count       = 1;
+  uint32 healthy_nodes    = 2;
+  uint32 total_workloads  = 3;
+  uint32 running_workloads = 4;
+  repeated MeshNode nodes  = 5;
+}
+
+// ── CRIU checkpoint/restore ─────────────────────────────
+
+message WorkloadCheckpointRequest {
+  string name = 1;  // workload name to checkpoint
+}
+
+message WorkloadCheckpointResponse {
+  bool   success         = 1;
+  string message         = 2;
+  string checkpoint_path = 3;  // path to checkpoint directory
+}
+
+message WorkloadRestoreRequest {
+  string checkpoint_path = 1;  // path to checkpoint directory or archive
+}
+
+message WorkloadRestoreResponse {
+  bool   success       = 1;
+  string message       = 2;
+  string workload_name = 3;  // name of restored workload
+}
+
+// ── VM live migration ───────────────────────────────────
+
+message VmMigrateRequest {
+  string workload_name = 1;  // VM workload to migrate
+  string dest_url      = 2;  // destination receiver URL
+}
+
+message VmMigrateResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+message VmSnapshotRequest {
+  string workload_name = 1;
+  string dest_path     = 2;  // directory to store snapshot
+}
+
+message VmSnapshotResponse {
+  bool   success       = 1;
+  string message       = 2;
+  string snapshot_path = 3;
+}
+
+// ── Network policy ──────────────────────────────────────
+
+message NetworkPolicy {
+  string name      = 1;
+  string namespace = 2;
+  // Pod selector (label-based, simplified to name prefix)
+  string pod_selector = 3;
+  repeated NetworkPolicyRule ingress_rules = 4;
+  repeated NetworkPolicyRule egress_rules  = 5;
+}
+
+message NetworkPolicyRule {
+  repeated uint32 ports  = 1;  // allowed ports (empty = all)
+  repeated string cidrs  = 2;  // allowed CIDRs (e.g. "10.42.0.0/16")
+  string protocol        = 3;  // "tcp", "udp", or "" for any
+}
+
+message NetworkPolicyApplyRequest {
+  NetworkPolicy policy = 1;
+}
+
+message NetworkPolicyApplyResponse {
+  bool   success      = 1;
+  string message      = 2;
+  uint32 rules_applied = 3;
+}
+
+message NetworkPolicyDeleteRequest {
+  string name      = 1;
+  string namespace = 2;
+}
+
+message NetworkPolicyDeleteResponse {
+  bool   success       = 1;
+  string message       = 2;
+  uint32 rules_removed = 3;
+}
+
+message NetworkPolicyListRequest {
+  string namespace = 1;  // empty = all namespaces
+}
+
+message NetworkPolicyListResponse {
+  repeated NetworkPolicy policies = 1;
+}
+
+// ── Device passthrough ──────────────────────────────────
+
+message DeviceInfo {
+  string id             = 1;   // PCI address e.g. "0000:03:00.0"
+  string bus            = 2;   // "pci", "usb", etc.
+  string address        = 3;   // bus-specific address
+  string pci_class      = 4;   // PCI class code e.g. "0108" (NVMe)
+  string vendor         = 5;   // vendor ID e.g. "8086"
+  string device         = 6;   // device ID
+  string iommu_group    = 7;   // IOMMU group number
+  uint32 numa_node      = 8;
+  string current_driver = 9;   // currently bound driver
+  string state          = 10;  // "available", "bound", "unhealthy", "reserved"
+  string bound_to       = 11;  // pod/allocation ID if bound
+  map<string, string> attributes = 12;  // model, serial, firmware, capacity, etc.
+}
+
+message DeviceSelector {
+  string bus     = 1;  // match bus type (optional)
+  string pci_class = 2;  // match PCI class (optional)
+  string vendor  = 3;  // match vendor ID (optional)
+  string device  = 4;  // match device ID (optional)
+}
+
+message DeviceVolume {
+  string host_path      = 1;
+  string container_path = 2;
+  bool   readonly       = 3;
+}
+
+message DeviceClassInfo {
+  string name                    = 1;
+  repeated DeviceSelector selectors = 2;
+  string driver_override         = 3;  // e.g. "vfio-pci"
+  repeated string capabilities   = 4;  // Linux caps needed
+  repeated DeviceVolume volumes  = 5;
+}
+
+message DeviceRequestEntry {
+  string name         = 1;  // request name
+  string device_class = 2;  // device class to allocate from
+  uint32 count        = 3;  // number of devices requested
+  repeated DeviceSelector selectors = 4;  // additional selectors
+}
+
+message HugepagesConfig {
+  string size   = 1;  // e.g. "1G", "2M"
+  string limit  = 2;  // e.g. "32Gi"
+}
+
+message DeviceRuntimeConfig {
+  repeated string device_paths   = 1;  // /dev/vfio/N paths
+  repeated DeviceVolume mounts   = 2;
+  repeated string capabilities   = 3;  // Linux caps
+  map<string, string> env        = 4;  // environment variables
+}
+
+message AllocatedDevice {
+  string id      = 1;
+  string address = 2;
+  string driver  = 3;
+}
+
+// ── Device RPC messages ──────────────────────────────────
+
+message DeviceListRequest {}
+
+message DeviceListResponse {
+  repeated DeviceInfo devices = 1;
+}
+
+message DeviceGetRequest {
+  string id = 1;
+}
+
+message DeviceGetResponse {
+  DeviceInfo device = 1;
+}
+
+message DeviceDiscoverRequest {}
+
+message DeviceDiscoverResponse {
+  uint32 discovered_count = 1;
+}
+
+message DeviceBindRequest {
+  string id     = 1;  // device ID
+  string driver = 2;  // target driver e.g. "vfio-pci"
+}
+
+message DeviceBindResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+message DeviceUnbindRequest {
+  string id = 1;
+}
+
+message DeviceUnbindResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+message DeviceClassListRequest {}
+
+message DeviceClassListResponse {
+  repeated DeviceClassInfo classes = 1;
+}
+
+message DeviceClassCreateRequest {
+  DeviceClassInfo device_class = 1;
+}
+
+message DeviceClassCreateResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+message DeviceClassDeleteRequest {
+  string name = 1;
+}
+
+message DeviceClassDeleteResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+message DeviceAllocateRequest {
+  string pod_id                        = 1;
+  string profile                       = 2;  // named profile (optional)
+  repeated DeviceRequestEntry requests = 3;
+  HugepagesConfig hugepages            = 4;
+}
+
+message DeviceAllocateResponse {
+  string allocation_id                 = 1;
+  repeated AllocatedDevice devices     = 2;
+  DeviceRuntimeConfig runtime          = 3;
+}
+
+message DeviceReleaseRequest {
+  string allocation_id = 1;
+}
+
+message DeviceReleaseResponse {
+  bool   success = 1;
+  string message = 2;
+}

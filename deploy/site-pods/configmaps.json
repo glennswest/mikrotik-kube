@@ -1,0 +1,29 @@
+[
+  {
+    "kind": "ConfigMap",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "fastregistry-config",
+      "namespace": "g10",
+      "creationTimestamp": null,
+      "annotations": {
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"data\":{\"config.yaml\":\"server:\\n  addr: \\\":5000\\\"\\n\\nstorage:\\n  path: /data/registry\\n  cache_size_mb: 2048\\n  gc:\\n    enabled: true\\n    schedule: \\\"0 3 * * *\\\"\\n    keep_recent: 20\\n\\nmirrors:\\n  - name: docker.io\\n    upstream: https://registry-1.docker.io\\n    cache_ttl: 24h\\n  - name: quay.io\\n    upstream: https://quay.io\\n    cache_ttl: 24h\\n  - name: gcr.io\\n    upstream: https://gcr.io\\n    cache_ttl: 24h\\n  - name: ghcr.io\\n    upstream: https://ghcr.io\\n    cache_ttl: 24h\\n  - name: registry.k8s.io\\n    upstream: https://registry.k8s.io\\n    cache_ttl: 24h\\n\\nauth:\\n  type: none\\n\\nreleases:\\n  enabled: true\\n  pull_secret: /secrets/pull-secret.json\\n\"},\"kind\":\"ConfigMap\",\"metadata\":{\"annotations\":{},\"name\":\"fastregistry-config\",\"namespace\":\"g10\"}}\n"
+      }
+    },
+    "data": {
+      "config.yaml": "server:\n  addr: \":5000\"\n\nstorage:\n  path: /data/registry\n  cache_size_mb: 2048\n  gc:\n    enabled: true\n    schedule: \"0 3 * * *\"\n    keep_recent: 20\n\nmirrors:\n  - name: docker.io\n    upstream: https://registry-1.docker.io\n    cache_ttl: 24h\n  - name: quay.io\n    upstream: https://quay.io\n    cache_ttl: 24h\n  - name: gcr.io\n    upstream: https://gcr.io\n    cache_ttl: 24h\n  - name: ghcr.io\n    upstream: https://ghcr.io\n    cache_ttl: 24h\n  - name: registry.k8s.io\n    upstream: https://registry.k8s.io\n    cache_ttl: 24h\n\nauth:\n  type: none\n\nreleases:\n  enabled: true\n  pull_secret: /secrets/pull-secret.json\n"
+    }
+  },
+  {
+    "kind": "ConfigMap",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "registry-stormbase-config",
+      "namespace": "gt",
+      "creationTimestamp": null
+    },
+    "data": {
+      "config.yaml": "{\n  \"registry\": {\n    \"enabled\": true,\n    \"listenAddr\": \":5000\",\n    \"notifyURL\": \"http://192.168.200.2:8082/api/v1/registry/push-notify\",\n    \"pullThrough\": true,\n    \"storePath\": \"/raid1/registry/stormbase\",\n    \"upstreamRegistries\": [\n      \"ghcr.io\"\n    ],\n    \"watchImages\": [\n      {\n        \"Upstream\": \"ghcr.io/glennswest/stormbase:edge\",\n        \"LocalRepo\": \"stormbase\"\n      }\n    ],\n    \"watchPollSeconds\": 120\n  }\n}"
+    }
+  }
+]

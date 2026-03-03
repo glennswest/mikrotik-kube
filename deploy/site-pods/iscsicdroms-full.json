@@ -1,0 +1,113 @@
+[
+  {
+    "kind": "ISCSICdrom",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "fedora-netinst",
+      "creationTimestamp": "2026-03-02T03:11:45Z"
+    },
+    "spec": {
+      "isoFile": "fedora-netinst.iso",
+      "description": "fedora-netinst",
+      "readOnly": true
+    },
+    "status": {
+      "phase": "Ready",
+      "isoPath": "/raid1/iso/fedora-netinst.iso",
+      "isoSize": 1182896128,
+      "targetIQN": "iqn.2000-02.com.mikrotik:file5",
+      "portalIP": "192.168.200.1",
+      "portalPort": 3260,
+      "routerosID": "*37"
+    }
+  },
+  {
+    "kind": "ISCSICdrom",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "stormbase",
+      "creationTimestamp": "2026-03-02T03:11:47Z"
+    },
+    "spec": {
+      "isoFile": "stormbase-0.3.0-x86_64.iso",
+      "description": "stormbase v0.3.0",
+      "version": "0.3.0",
+      "readOnly": true
+    },
+    "status": {
+      "phase": "Ready",
+      "isoPath": "/raid1/iso/stormbase-0.3.0-x86_64.iso",
+      "isoSize": 106954752,
+      "targetIQN": "iqn.2000-02.com.mikrotik:file8",
+      "portalIP": "192.168.200.1",
+      "portalPort": 3260,
+      "routerosID": "*56"
+    }
+  },
+  {
+    "kind": "ISCSICdrom",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "baremetalservices",
+      "creationTimestamp": "2026-03-02T03:11:48Z"
+    },
+    "spec": {
+      "isoFile": "baremetalservices.iso",
+      "description": "baremetalservices",
+      "readOnly": true
+    },
+    "status": {
+      "phase": "Ready",
+      "isoPath": "/raid1/iso/baremetalservices.iso",
+      "isoSize": 62914560,
+      "targetIQN": "iqn.2000-02.com.mikrotik:file1",
+      "portalIP": "192.168.200.1",
+      "portalPort": 3260,
+      "routerosID": "*31"
+    }
+  },
+  {
+    "kind": "ISCSICdrom",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "coreos-live-serial",
+      "creationTimestamp": "2026-03-02T03:11:50Z"
+    },
+    "spec": {
+      "isoFile": "coreos-live-serial.iso",
+      "description": "coreos-live-serial",
+      "readOnly": true
+    },
+    "status": {
+      "phase": "Ready",
+      "isoPath": "/raid1/iso/coreos-live-serial.iso",
+      "isoSize": 1027604480,
+      "targetIQN": "iqn.2000-02.com.mikrotik:file10",
+      "portalIP": "192.168.200.1",
+      "portalPort": 3260,
+      "routerosID": "*58"
+    }
+  },
+  {
+    "kind": "ISCSICdrom",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "coreos-live",
+      "creationTimestamp": "2026-03-02T03:11:52Z"
+    },
+    "spec": {
+      "isoFile": "coreos-live.iso",
+      "description": "coreos-live",
+      "readOnly": true
+    },
+    "status": {
+      "phase": "Ready",
+      "isoPath": "/raid1/iso/coreos-live.iso",
+      "isoSize": 1027604480,
+      "targetIQN": "iqn.2000-02.com.mikrotik:file4",
+      "portalIP": "192.168.200.1",
+      "portalPort": 3260,
+      "routerosID": "*36"
+    }
+  }
+]

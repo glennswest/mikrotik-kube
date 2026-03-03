@@ -1,0 +1,573 @@
+[
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "nats",
+      "namespace": "infra",
+      "creationTimestamp": null,
+      "annotations": {
+        "vkube.io/boot-priority": "5",
+        "vkube.io/image-policy": "auto",
+        "vkube.io/network": "gt",
+        "vkube.io/node": "rose1",
+        "vkube.io/static-ip": "192.168.200.10"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "nats",
+          "image": "192.168.200.3:5000/nats:edge",
+          "command": [
+            "nats-server",
+            "-js",
+            "--store_dir",
+            "/data",
+            "--addr",
+            "0.0.0.0",
+            "-m",
+            "8222"
+          ],
+          "resources": {},
+          "volumeMounts": [
+            {
+              "name": "data",
+              "mountPath": "/data"
+            }
+          ],
+          "livenessProbe": {
+            "httpGet": {
+              "path": "/healthz",
+              "port": 8222
+            },
+            "periodSeconds": 30,
+            "failureThreshold": 3
+          },
+          "startupProbe": {
+            "tcpSocket": {
+              "port": 4222
+            },
+            "initialDelaySeconds": 2,
+            "periodSeconds": 2,
+            "failureThreshold": 10
+          }
+        }
+      ],
+      "restartPolicy": "Always"
+    },
+    "status": {}
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "dns",
+      "namespace": "g10",
+      "creationTimestamp": null,
+      "annotations": {
+        "vkube.io/boot-priority": "11",
+        "vkube.io/image-policy": "auto",
+        "vkube.io/network": "g10",
+        "vkube.io/node": "rose1",
+        "vkube.io/static-ip": "192.168.10.252"
+      }
+    },
+    "spec": {
+      "volumes": [
+        {
+          "name": "config",
+          "configMap": {
+            "name": "dns-config"
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "microdns",
+          "image": "192.168.200.3:5000/microdns:edge",
+          "resources": {},
+          "volumeMounts": [
+            {
+              "name": "config",
+              "mountPath": "/etc/microdns"
+            },
+            {
+              "name": "data",
+              "mountPath": "/data"
+            }
+          ],
+          "livenessProbe": {
+            "httpGet": {
+              "path": "/api/v1/zones",
+              "port": 8080
+            },
+            "periodSeconds": 30,
+            "failureThreshold": 3
+          },
+          "readinessProbe": {
+            "tcpSocket": {
+              "port": 53
+            },
+            "periodSeconds": 10
+          },
+          "startupProbe": {
+            "httpGet": {
+              "path": "/api/v1/zones",
+              "port": 8080
+            },
+            "initialDelaySeconds": 5,
+            "periodSeconds": 3,
+            "failureThreshold": 10
+          }
+        }
+      ],
+      "restartPolicy": "Always"
+    },
+    "status": {}
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "dns",
+      "namespace": "g11",
+      "creationTimestamp": null,
+      "annotations": {
+        "vkube.io/boot-priority": "12",
+        "vkube.io/image-policy": "auto",
+        "vkube.io/network": "g11",
+        "vkube.io/node": "rose1",
+        "vkube.io/static-ip": "192.168.11.252"
+      }
+    },
+    "spec": {
+      "volumes": [
+        {
+          "name": "config",
+          "configMap": {
+            "name": "dns-config"
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "microdns",
+          "image": "192.168.200.3:5000/microdns:edge",
+          "resources": {},
+          "volumeMounts": [
+            {
+              "name": "config",
+              "mountPath": "/etc/microdns"
+            },
+            {
+              "name": "data",
+              "mountPath": "/data"
+            }
+          ],
+          "livenessProbe": {
+            "httpGet": {
+              "path": "/api/v1/zones",
+              "port": 8080
+            },
+            "periodSeconds": 30,
+            "failureThreshold": 3
+          },
+          "readinessProbe": {
+            "tcpSocket": {
+              "port": 53
+            },
+            "periodSeconds": 10
+          },
+          "startupProbe": {
+            "httpGet": {
+              "path": "/api/v1/zones",
+              "port": 8080
+            },
+            "initialDelaySeconds": 5,
+            "periodSeconds": 3,
+            "failureThreshold": 10
+          }
+        }
+      ],
+      "restartPolicy": "Always"
+    },
+    "status": {}
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "dns",
+      "namespace": "gt",
+      "creationTimestamp": null,
+      "annotations": {
+        "vkube.io/boot-priority": "13",
+        "vkube.io/image-policy": "auto",
+        "vkube.io/network": "gt",
+        "vkube.io/node": "rose1",
+        "vkube.io/static-ip": "192.168.200.199"
+      }
+    },
+    "spec": {
+      "volumes": [
+        {
+          "name": "config",
+          "configMap": {
+            "name": "dns-config"
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "microdns",
+          "image": "192.168.200.3:5000/microdns:edge",
+          "resources": {},
+          "volumeMounts": [
+            {
+              "name": "config",
+              "mountPath": "/etc/microdns"
+            },
+            {
+              "name": "data",
+              "mountPath": "/data"
+            }
+          ],
+          "livenessProbe": {
+            "httpGet": {
+              "path": "/api/v1/zones",
+              "port": 8080
+            },
+            "periodSeconds": 30,
+            "failureThreshold": 3
+          },
+          "readinessProbe": {
+            "tcpSocket": {
+              "port": 53
+            },
+            "periodSeconds": 10
+          },
+          "startupProbe": {
+            "httpGet": {
+              "path": "/api/v1/zones",
+              "port": 8080
+            },
+            "initialDelaySeconds": 5,
+            "periodSeconds": 3,
+            "failureThreshold": 10
+          }
+        }
+      ],
+      "restartPolicy": "Always"
+    },
+    "status": {}
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "registry-stormbase",
+      "namespace": "gt",
+      "creationTimestamp": null,
+      "annotations": {
+        "vkube.io/image-policy": "auto",
+        "vkube.io/network": "gt",
+        "vkube.io/node": "rose1",
+        "vkube.io/static-ip": "192.168.200.6"
+      }
+    },
+    "spec": {
+      "volumes": [
+        {
+          "name": "config",
+          "configMap": {
+            "name": "registry-stormbase-config"
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "registry",
+          "image": "192.168.200.3:5000/mkube-registry:edge",
+          "resources": {},
+          "volumeMounts": [
+            {
+              "name": "config",
+              "mountPath": "/etc/registry"
+            },
+            {
+              "name": "data",
+              "mountPath": "/raid1/registry/stormbase"
+            }
+          ],
+          "livenessProbe": {
+            "httpGet": {
+              "path": "/v2/",
+              "port": 5000
+            },
+            "periodSeconds": 30,
+            "failureThreshold": 3
+          },
+          "readinessProbe": {
+            "tcpSocket": {
+              "port": 5000
+            },
+            "periodSeconds": 10
+          },
+          "startupProbe": {
+            "httpGet": {
+              "path": "/v2/",
+              "port": 5000
+            },
+            "initialDelaySeconds": 5,
+            "periodSeconds": 3,
+            "failureThreshold": 10
+          }
+        }
+      ],
+      "restartPolicy": "Always"
+    },
+    "status": {}
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "agentmonitor-g10",
+      "namespace": "monitoring",
+      "creationTimestamp": "2026-03-02T03:23:05Z",
+      "annotations": {
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{\"vkube.io/image-policy\":\"auto\",\"vkube.io/network\":\"g10\"},\"name\":\"agentmonitor-g10\",\"namespace\":\"monitoring\"},\"spec\":{\"containers\":[{\"command\":[\"/agent-monitor\"],\"image\":\"192.168.200.3:5000/agent-monitor:edge\",\"name\":\"monitor\"}],\"restartPolicy\":\"Always\"}}\n",
+        "vkube.io/image-policy": "auto",
+        "vkube.io/network": "g10",
+        "vkube.io/node": "rose1"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "monitor",
+          "image": "192.168.200.3:5000/agent-monitor:edge",
+          "command": [
+            "/agent-monitor"
+          ],
+          "resources": {}
+        }
+      ],
+      "restartPolicy": "Always"
+    },
+    "status": {}
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "dashboard",
+      "namespace": "infra",
+      "creationTimestamp": "2026-03-02T03:23:13Z",
+      "annotations": {
+        "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"v1\",\"kind\":\"Pod\",\"metadata\":{\"annotations\":{\"vkube.io/aliases\":\"dashboard\",\"vkube.io/image-policy\":\"auto\",\"vkube.io/network\":\"gt\"},\"name\":\"dashboard\",\"namespace\":\"infra\"},\"spec\":{\"containers\":[{\"image\":\"192.168.200.3:5000/mkube-dashboard:edge\",\"livenessProbe\":{\"failureThreshold\":3,\"httpGet\":{\"path\":\"/healthz\",\"port\":8080},\"periodSeconds\":30},\"name\":\"dashboard\",\"startupProbe\":{\"failureThreshold\":10,\"httpGet\":{\"path\":\"/healthz\",\"port\":8080},\"initialDelaySeconds\":2,\"periodSeconds\":2},\"volumeMounts\":[{\"mountPath\":\"/etc/dashboard\",\"name\":\"config\"}]}],\"restartPolicy\":\"Always\",\"volumes\":[{\"configMap\":{\"name\":\"dashboard-config\"},\"name\":\"config\"}]}}\n",
+        "vkube.io/aliases": "dashboard",
+        "vkube.io/image-policy": "auto",
+        "vkube.io/network": "gt",
+        "vkube.io/node": "rose1"
+      }
+    },
+    "spec": {
+      "volumes": [
+        {
+          "name": "config",
+          "configMap": {
+            "name": "dashboard-config"
+          }
+        }
+      ],
+      "containers": [
+        {
+          "name": "dashboard",
+          "image": "192.168.200.3:5000/mkube-dashboard:edge",
+          "resources": {},
+          "volumeMounts": [
+            {
+              "name": "config",
+              "mountPath": "/etc/dashboard"
+            }
+          ],
+          "livenessProbe": {
+            "httpGet": {
+              "path": "/healthz",
+              "port": 8080
+            },
+            "periodSeconds": 30,
+            "failureThreshold": 3
+          },
+          "startupProbe": {
+            "httpGet": {
+              "path": "/healthz",
+              "port": 8080
+            },
+            "initialDelaySeconds": 2,
+            "periodSeconds": 2,
+            "failureThreshold": 10
+          }
+        }
+      ],
+      "restartPolicy": "Always"
+    },
+    "status": {}
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "mkube-console",
+      "namespace": "infra",
+      "creationTimestamp": "2026-03-02T03:23:00Z",
+      "annotations": {
+        "vkube.io/node": "rose1"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "console",
+          "image": "192.168.200.3:5000/mkube-console:edge",
+          "resources": {}
+        }
+      ]
+    },
+    "status": {}
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "ipmiserial",
+      "namespace": "infra",
+      "creationTimestamp": "2026-03-02T03:23:06Z",
+      "annotations": {
+        "vkube.io/node": "rose1"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "ipmiserial",
+          "image": "192.168.200.3:5000/ipmiserial:edge",
+          "resources": {}
+        }
+      ]
+    },
+    "status": {}
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "ipmiserial",
+      "namespace": "g11",
+      "creationTimestamp": "2026-03-02T03:22:52Z",
+      "annotations": {
+        "vkube.io/node": "rose1"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "ipmiserial",
+          "image": "192.168.200.3:5000/ipmiserial:edge",
+          "resources": {}
+        }
+      ]
+    },
+    "status": {}
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "pxe",
+      "namespace": "g10",
+      "creationTimestamp": "2026-03-02T03:22:48Z",
+      "annotations": {
+        "vkube.io/node": "rose1"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "pxe",
+          "image": "192.168.200.3:5000/pxemanager:edge",
+          "resources": {}
+        }
+      ]
+    },
+    "status": {}
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "fastregistry",
+      "namespace": "g10",
+      "creationTimestamp": "2026-03-02T03:22:53Z",
+      "annotations": {
+        "vkube.io/node": "rose1"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "fastregistry",
+          "image": "192.168.200.3:5000/fastregistry:edge",
+          "resources": {}
+        }
+      ]
+    },
+    "status": {}
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "cloudid",
+      "namespace": "infra",
+      "creationTimestamp": "2026-03-02T03:23:14Z",
+      "annotations": {
+        "vkube.io/node": "rose1"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "cloudid",
+          "image": "192.168.200.3:5000/cloudid:edge",
+          "resources": {}
+        }
+      ]
+    },
+    "status": {}
+  },
+  {
+    "kind": "Pod",
+    "apiVersion": "v1",
+    "metadata": {
+      "name": "rosecicd",
+      "namespace": "default",
+      "creationTimestamp": "2026-03-02T03:22:53Z",
+      "annotations": {
+        "vkube.io/node": "rose1"
+      }
+    },
+    "spec": {
+      "containers": [
+        {
+          "name": "rosecicd",
+          "image": "192.168.200.3:5000/rosecicd:edge",
+          "resources": {}
+        }
+      ]
+    },
+    "status": {}
+  }
+]
