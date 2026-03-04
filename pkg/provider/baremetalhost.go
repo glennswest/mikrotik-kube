@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -620,7 +623,21 @@ func (p *MicroKubeProvider) enrichBMHStatus(ctx context.Context, bmh *BareMetalH
 
 // ─── Table API ──────────────────────────────────────────────────────────────
 
+var serverNameRe = regexp.MustCompile(`^(.*?)(\d+)$`)
+
 func bmhListToTable(hosts []BareMetalHost) *metav1.Table {
+	// Natural sort: server1, server2, ..., server8, server30
+	sort.Slice(hosts, func(i, j int) bool {
+		mi := serverNameRe.FindStringSubmatch(hosts[i].Name)
+		mj := serverNameRe.FindStringSubmatch(hosts[j].Name)
+		if mi != nil && mj != nil && mi[1] == mj[1] {
+			ni, _ := strconv.Atoi(mi[2])
+			nj, _ := strconv.Atoi(mj[2])
+			return ni < nj
+		}
+		return hosts[i].Name < hosts[j].Name
+	})
+
 	table := &metav1.Table{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "meta.k8s.io/v1",
@@ -633,7 +650,7 @@ func bmhListToTable(hosts []BareMetalHost) *metav1.Table {
 			{Name: "Network", Type: "string"},
 			{Name: "Image", Type: "string"},
 			{Name: "IP", Type: "string"},
-			{Name: "MAC", Type: "string"},
+			{Name: "IPMI", Type: "string"},
 			{Name: "Age", Type: "string"},
 		},
 	}
@@ -670,6 +687,11 @@ func bmhListToTable(hosts []BareMetalHost) *metav1.Table {
 			network = "-"
 		}
 
+		ip := h.Spec.IP
+		if ip == "" {
+			ip = h.Status.IP
+		}
+
 		table.Rows = append(table.Rows, metav1.TableRow{
 			Cells: []interface{}{
 				h.Name,
@@ -677,8 +699,8 @@ func bmhListToTable(hosts []BareMetalHost) *metav1.Table {
 				power,
 				network,
 				image,
-				h.Status.IP,
-				h.Spec.BootMACAddress,
+				ip,
+				h.Spec.BMC.Address,
 				age,
 			},
 			Object: kruntime.RawExtension{Raw: raw},
