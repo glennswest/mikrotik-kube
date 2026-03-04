@@ -979,8 +979,12 @@ func (p *MicroKubeProvider) handleManagedDNSTransition(ctx context.Context, wasM
 			p.deps.Logger.Warnw("teardown DNS on unmanaged transition failed",
 				"network", net.Name, "error", err)
 		}
-	case wasManaged && nowManaged && hasDNS:
-		// stays managed: update ConfigMap if DNS config changed
+	}
+
+	// Always update the DNS ConfigMap if it exists and DNS is configured.
+	// This ensures DHCP/PXE config changes in the Network CRD propagate
+	// to the running DNS container regardless of the managed flag.
+	if hasDNS {
 		toml := p.generateNetworkTOML(net)
 		cmKey := net.Name + "/dns-config"
 		if cm, ok := p.configMaps[cmKey]; ok {
@@ -991,7 +995,7 @@ func (p *MicroKubeProvider) handleManagedDNSTransition(ctx context.Context, wasM
 					_, _ = p.deps.Store.ConfigMaps.PutJSON(ctx, storeKey, cm)
 				}
 				p.syncConfigMapsToDisk(ctx)
-				p.deps.Logger.Infow("updated managed DNS ConfigMap", "network", net.Name)
+				p.deps.Logger.Infow("updated DNS ConfigMap", "network", net.Name)
 			}
 		}
 	}
