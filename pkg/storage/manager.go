@@ -135,6 +135,11 @@ func (m *Manager) EnsureImage(ctx context.Context, imageRef string) (string, err
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Normalize image ref to primary registry address before computing tarball name.
+	// This ensures consistent tarball naming regardless of which registry alias
+	// (e.g. 192.168.200.2:5000 vs 192.168.200.3:5000) appears in the pod spec.
+	imageRef = m.rewriteLocalhost(imageRef)
+
 	tarballName := dockersave.SanitizeImageRef(imageRef) + ".tar"
 	tarballPath := fmt.Sprintf("%s/%s", m.cfg.TarballCache, tarballName)
 
@@ -153,6 +158,7 @@ func (m *Manager) EnsureImage(ctx context.Context, imageRef string) (string, err
 	} else {
 		// No in-memory cache (restart case). Check disk .digest file before pulling.
 		// This avoids re-pulling images that are already cached from a previous boot.
+		digestFound := false
 		if diskDigest, err := os.ReadFile(tarballPath + ".digest"); err == nil {
 			storedDigest := strings.TrimSpace(string(diskDigest))
 			if storedDigest != "" {
@@ -169,6 +175,26 @@ func (m *Manager) EnsureImage(ctx context.Context, imageRef string) (string, err
 					m.log.Infow("image cache hit (disk)", "ref", imageRef, "path", hostPath, "digest", truncDigest(currentDigest))
 					return hostPath, nil
 				}
+			}
+			digestFound = true
+		}
+
+		// Alias fallback: if no digest file exists under the primary name,
+		// check if a tarball exists under an old registry alias name. This
+		// handles the case where the primary address changed (e.g. .2 → .3)
+		// but the cached tarball still uses the old name.
+		if !digestFound {
+			if aliasPath, aliasDigest := m.findAliasTarball(ctx, imageRef); aliasPath != "" {
+				hostPath := m.HostVisiblePath(aliasPath)
+				m.images[imageRef] = &CachedImage{
+					Ref:         imageRef,
+					TarballPath: hostPath,
+					Digest:      aliasDigest,
+					PulledAt:    time.Now(),
+					InUse:       1,
+				}
+				m.log.Infow("image cache hit (alias tarball)", "ref", imageRef, "path", hostPath, "digest", truncDigest(aliasDigest))
+				return hostPath, nil
 			}
 		}
 	}
@@ -205,6 +231,9 @@ func (m *Manager) EnsureImage(ctx context.Context, imageRef string) (string, err
 func (m *Manager) RefreshImage(ctx context.Context, imageRef string) (tarballPath string, changed bool, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Normalize image ref to primary registry address for consistent tarball naming.
+	imageRef = m.rewriteLocalhost(imageRef)
 
 	currentDigest, err := m.getRegistryDigest(ctx, imageRef)
 	if err != nil {
@@ -454,6 +483,59 @@ func (m *Manager) rewriteLocalhost(imageRef string) string {
 		}
 	}
 	return imageRef
+}
+
+// findAliasTarball checks if a tarball exists under an old registry alias name.
+// When the primary registry address changes (e.g. .2:5000 → .3:5000), cached
+// tarballs named after the old address become invisible. This scans all known
+// aliases and returns the existing tarball path and its digest if found.
+func (m *Manager) findAliasTarball(ctx context.Context, imageRef string) (string, string) {
+	if len(m.registryCfg.LocalAddresses) < 2 || !m.isLocalRegistry(imageRef) {
+		return "", ""
+	}
+
+	primary := m.registryCfg.LocalAddresses[0]
+	// Extract the image path (everything after the registry address)
+	imagePath := strings.TrimPrefix(imageRef, primary+"/")
+	if imagePath == imageRef {
+		return "", "" // imageRef doesn't start with primary (shouldn't happen after normalization)
+	}
+
+	for _, alias := range m.registryCfg.LocalAddresses[1:] {
+		aliasRef := alias + "/" + imagePath
+		aliasName := dockersave.SanitizeImageRef(aliasRef) + ".tar"
+		aliasPath := fmt.Sprintf("%s/%s", m.cfg.TarballCache, aliasName)
+
+		if aliasDigest, err := os.ReadFile(aliasPath + ".digest"); err == nil {
+			storedDigest := strings.TrimSpace(string(aliasDigest))
+			if storedDigest == "" {
+				continue
+			}
+			// Verify the alias tarball's digest matches the current registry
+			if currentDigest, err := m.getRegistryDigest(ctx, imageRef); err == nil && currentDigest == storedDigest {
+				m.log.Infow("found tarball under alias name",
+					"ref", imageRef, "alias", aliasRef, "path", aliasPath, "digest", truncDigest(storedDigest))
+				return aliasPath, storedDigest
+			}
+		}
+	}
+
+	// Also check "localhost/" prefix tarballs
+	localhostRef := "localhost/" + imagePath
+	localhostName := dockersave.SanitizeImageRef(localhostRef) + ".tar"
+	localhostPath := fmt.Sprintf("%s/%s", m.cfg.TarballCache, localhostName)
+	if localhostDigest, err := os.ReadFile(localhostPath + ".digest"); err == nil {
+		storedDigest := strings.TrimSpace(string(localhostDigest))
+		if storedDigest != "" {
+			if currentDigest, err := m.getRegistryDigest(ctx, imageRef); err == nil && currentDigest == storedDigest {
+				m.log.Infow("found tarball under localhost name",
+					"ref", imageRef, "path", localhostPath, "digest", truncDigest(storedDigest))
+				return localhostPath, storedDigest
+			}
+		}
+	}
+
+	return "", ""
 }
 
 // isLocalRegistry returns true if the image ref points to the embedded registry
