@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### 2026-03-03
+- **feat:** BMC credential masking — all BMH API responses (get, list, create, update, patch, watch) now return `"xxxxx"` for `spec.bmc.username` and `spec.bmc.password`. PUT/PATCH handlers preserve real credentials when masked values are submitted back. Real credentials are only stored internally and in NATS.
+- **feat:** BMH refresh endpoint — `POST /api/v1/namespaces/{ns}/baremetalhosts/{name}/refresh` sets `bmh.mkube.io/refresh` annotation, triggering bmh-operator to re-probe baremetalservices for full hardware inventory update.
+- **feat:** Natural sort for BMH table — `server1..server8..server30` sorted numerically instead of lexicographically.
+- **feat:** BMH table shows IP (from spec.ip) and IPMI (from spec.bmc.address) columns; removed MAC from summary view.
 - **fix:** Add `sync.RWMutex` to `MicroKubeProvider` protecting all in-memory maps from concurrent access. HTTP handler middleware serializes write requests (Lock) and allows concurrent reads (RLock). Watch handlers snapshot maps under RLock before streaming. Panic recovery middleware catches any remaining panics and returns HTTP 500 instead of crashing. HTTP server gains ReadTimeout (30s) and IdleTimeout (120s). Prevents `fatal error: concurrent map read and map write` crash (exit 2) when bmh-operator or other clients send concurrent requests.
 - **chore:** In-progress work moved to branch `wip/export-and-stormbase`: BMH reload endpoint, ExportYAML for BMH/BootConfigs, pvex-registry IP fix, site backup dumps, stormbase gRPC proto.
 - **feat:** Added `HardwareDetails` and `NICInfo` structs to `BMHStatus` — full hardware inventory (manufacturer, product, serial, CPU, memory, BIOS, disks) and per-interface network tracking stored directly on BMH status. `bmhReferencesNetwork` now also checks `NetworkInterfaces` for network join queries.
