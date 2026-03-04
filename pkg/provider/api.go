@@ -111,6 +111,7 @@ func (p *MicroKubeProvider) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/v1/namespaces/{namespace}/baremetalhosts/{name}", p.handlePatchBMH)
 	mux.HandleFunc("DELETE /api/v1/namespaces/{namespace}/baremetalhosts/{name}", p.handleDeleteBMH)
 	mux.HandleFunc("POST /api/v1/namespaces/{namespace}/baremetalhosts/{name}/refresh", p.handleRefreshBMH)
+	mux.HandleFunc("POST /api/v1/baremetalhosts/refresh", p.handleRefreshAllBMH)
 
 	// Namespaces — registered by namespace.Manager.RegisterRoutes()
 

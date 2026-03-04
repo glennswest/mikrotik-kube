@@ -474,6 +474,35 @@ func (p *MicroKubeProvider) handleRefreshBMH(w http.ResponseWriter, r *http.Requ
 	})
 }
 
+// handleRefreshAllBMH triggers a refresh on every BMH.
+func (p *MicroKubeProvider) handleRefreshAllBMH(w http.ResponseWriter, r *http.Request) {
+	ts := time.Now().UTC().Format(time.RFC3339)
+	var names []string
+
+	for key, bmh := range p.bareMetalHosts {
+		if bmh.Annotations == nil {
+			bmh.Annotations = make(map[string]string)
+		}
+		bmh.Annotations["bmh.mkube.io/refresh"] = ts
+
+		if p.deps.Store != nil && p.deps.Store.BareMetalHosts != nil {
+			parts := strings.SplitN(key, "/", 2)
+			storeKey := parts[0] + "." + parts[1]
+			if _, err := p.deps.Store.BareMetalHosts.PutJSON(r.Context(), storeKey, bmh); err != nil {
+				p.deps.Logger.Warnw("failed to persist refresh for BMH", "key", key, "error", err)
+				continue
+			}
+		}
+		names = append(names, bmh.Name)
+	}
+
+	podWriteJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"message": fmt.Sprintf("refresh requested for %d hosts", len(names)),
+		"hosts":   names,
+	})
+}
+
 // ─── Reconcile spec changes → pxemanager actions ────────────────────────────
 
 func (p *MicroKubeProvider) reconcileBMHChanges(ctx context.Context, old, new *BareMetalHost) {
