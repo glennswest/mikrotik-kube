@@ -91,25 +91,6 @@ type BareMetalHostList struct {
 	Items           []BareMetalHost `json:"items"`
 }
 
-// sanitizeBMH returns a copy with BMC credentials masked.
-func sanitizeBMH(b *BareMetalHost) *BareMetalHost {
-	out := b.DeepCopy()
-	if out.Spec.BMC.Username != "" {
-		out.Spec.BMC.Username = "xxxxx"
-	}
-	if out.Spec.BMC.Password != "" {
-		out.Spec.BMC.Password = "xxxxx"
-	}
-	return out
-}
-
-func sanitizeBMHList(items []BareMetalHost) []BareMetalHost {
-	out := make([]BareMetalHost, len(items))
-	for i := range items {
-		out[i] = *sanitizeBMH(&items[i])
-	}
-	return out
-}
 
 func (b *BareMetalHost) DeepCopy() *BareMetalHost {
 	out := *b
@@ -210,7 +191,7 @@ func (p *MicroKubeProvider) handleCreateBMH(w http.ResponseWriter, r *http.Reque
 	// Sync BootConfig assignedTo
 	p.syncBootConfigRef(r.Context(), bmh.Name, "", bmh.Spec.BootConfigRef)
 
-	podWriteJSON(w, http.StatusCreated, sanitizeBMH(&bmh))
+	podWriteJSON(w, http.StatusCreated, &bmh)
 }
 
 func (p *MicroKubeProvider) handleGetBMH(w http.ResponseWriter, r *http.Request) {
@@ -235,7 +216,7 @@ func (p *MicroKubeProvider) handleGetBMH(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	podWriteJSON(w, http.StatusOK, sanitizeBMH(enriched))
+	podWriteJSON(w, http.StatusOK, enriched)
 }
 
 func (p *MicroKubeProvider) handleListAllBMH(w http.ResponseWriter, r *http.Request) {
@@ -259,7 +240,7 @@ func (p *MicroKubeProvider) handleListAllBMH(w http.ResponseWriter, r *http.Requ
 
 	podWriteJSON(w, http.StatusOK, BareMetalHostList{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "BareMetalHostList"},
-		Items:    sanitizeBMHList(items),
+		Items:    items,
 	})
 }
 
@@ -289,7 +270,7 @@ func (p *MicroKubeProvider) handleListNamespacedBMH(w http.ResponseWriter, r *ht
 
 	podWriteJSON(w, http.StatusOK, BareMetalHostList{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "BareMetalHostList"},
-		Items:    sanitizeBMHList(items),
+		Items:    items,
 	})
 }
 
@@ -319,11 +300,11 @@ func (p *MicroKubeProvider) handleUpdateBMH(w http.ResponseWriter, r *http.Reque
 	if bmh.CreationTimestamp.IsZero() {
 		bmh.CreationTimestamp = existing.CreationTimestamp
 	}
-	// Preserve existing credentials if not provided or masked in the update
-	if (bmh.Spec.BMC.Username == "" || bmh.Spec.BMC.Username == "xxxxx") && existing.Spec.BMC.Username != "" {
+	// Preserve existing credentials if not provided in the update
+	if bmh.Spec.BMC.Username == "" && existing.Spec.BMC.Username != "" {
 		bmh.Spec.BMC.Username = existing.Spec.BMC.Username
 	}
-	if (bmh.Spec.BMC.Password == "" || bmh.Spec.BMC.Password == "xxxxx") && existing.Spec.BMC.Password != "" {
+	if bmh.Spec.BMC.Password == "" && existing.Spec.BMC.Password != "" {
 		bmh.Spec.BMC.Password = existing.Spec.BMC.Password
 	}
 
@@ -345,7 +326,7 @@ func (p *MicroKubeProvider) handleUpdateBMH(w http.ResponseWriter, r *http.Reque
 	// Sync BootConfig assignedTo
 	p.syncBootConfigRef(r.Context(), bmh.Name, oldBootConfigRef, bmh.Spec.BootConfigRef)
 
-	podWriteJSON(w, http.StatusOK, sanitizeBMH(&bmh))
+	podWriteJSON(w, http.StatusOK, &bmh)
 }
 
 func (p *MicroKubeProvider) handlePatchBMH(w http.ResponseWriter, r *http.Request) {
@@ -378,11 +359,11 @@ func (p *MicroKubeProvider) handlePatchBMH(w http.ResponseWriter, r *http.Reques
 	merged.Name = name
 	merged.TypeMeta = metav1.TypeMeta{APIVersion: "v1", Kind: "BareMetalHost"}
 
-	// Preserve existing credentials if patch sent masked values
-	if (merged.Spec.BMC.Username == "xxxxx" || merged.Spec.BMC.Username == "") && existing.Spec.BMC.Username != "" {
+	// Preserve existing credentials if not provided in patch
+	if merged.Spec.BMC.Username == "" && existing.Spec.BMC.Username != "" {
 		merged.Spec.BMC.Username = existing.Spec.BMC.Username
 	}
-	if (merged.Spec.BMC.Password == "xxxxx" || merged.Spec.BMC.Password == "") && existing.Spec.BMC.Password != "" {
+	if merged.Spec.BMC.Password == "" && existing.Spec.BMC.Password != "" {
 		merged.Spec.BMC.Password = existing.Spec.BMC.Password
 	}
 
@@ -404,7 +385,7 @@ func (p *MicroKubeProvider) handlePatchBMH(w http.ResponseWriter, r *http.Reques
 	// Sync BootConfig assignedTo
 	p.syncBootConfigRef(r.Context(), merged.Name, oldBootConfigRef, merged.Spec.BootConfigRef)
 
-	podWriteJSON(w, http.StatusOK, sanitizeBMH(merged))
+	podWriteJSON(w, http.StatusOK, merged)
 }
 
 func (p *MicroKubeProvider) handleDeleteBMH(w http.ResponseWriter, r *http.Request) {
