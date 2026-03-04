@@ -28,6 +28,7 @@ type ContainerRuntime interface {
 	// File operations for image storage
 	UploadFile(ctx context.Context, path string, data io.Reader) error
 	RemoveFile(ctx context.Context, path string) error
+	RemoveDirectory(ctx context.Context, path string) error
 
 	// Mount operations (RouterOS-specific, no-op on other backends)
 	CreateMount(ctx context.Context, name, src, dst string) error

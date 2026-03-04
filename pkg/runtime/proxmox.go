@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -266,6 +267,10 @@ func (p *ProxmoxRuntime) UploadFile(ctx context.Context, path string, data io.Re
 func (p *ProxmoxRuntime) RemoveFile(ctx context.Context, path string) error {
 	// Remove template from storage
 	return p.client.RemoveTemplate(ctx, p.storage, path)
+}
+
+func (p *ProxmoxRuntime) RemoveDirectory(_ context.Context, path string) error {
+	return os.RemoveAll(path)
 }
 
 // CreateMount stages a mount for the next CreateContainer call.

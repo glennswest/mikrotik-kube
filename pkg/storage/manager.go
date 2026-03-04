@@ -147,9 +147,16 @@ func (m *Manager) EnsureImage(ctx context.Context, imageRef string) (string, err
 	// If the cached digest matches, skip the re-pull.
 	if cached, ok := m.images[imageRef]; ok {
 		if currentDigest, err := m.getRegistryDigest(ctx, imageRef); err == nil && cached.Digest != "" && currentDigest == cached.Digest {
-			cached.InUse++
-			m.log.Debugw("image cache hit (memory)", "ref", imageRef, "path", cached.TarballPath)
-			return cached.TarballPath, nil
+			// Verify the tarball file actually exists on disk before trusting cache.
+			// GC, manual deletion, or failed writes can leave the cache pointing
+			// to a non-existent file.
+			if m.tarballExists(tarballPath) {
+				cached.InUse++
+				m.log.Debugw("image cache hit (memory)", "ref", imageRef, "path", cached.TarballPath)
+				return cached.TarballPath, nil
+			}
+			m.log.Warnw("tarball file missing despite cache hit, re-pulling",
+				"ref", imageRef, "path", tarballPath)
 		}
 		// Digest changed or unavailable — delete stale tarball and re-pull.
 		m.log.Infow("image digest changed in registry, deleting stale tarball and re-pulling", "ref", imageRef)
@@ -372,6 +379,14 @@ func truncDigest(d string) string {
 	return d
 }
 
+// tarballExists checks whether the tarball file exists on the local filesystem.
+// For RouterOS with SelfRootDir, tarballs are on persistent mounts (local disk).
+// For Proxmox/StormBase, tarballs are also on local disk.
+func (m *Manager) tarballExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 // pullAndUpload pulls an OCI image from a registry, converts it to a
 // RouterOS-compatible flat rootfs tar, and uploads it.
 func (m *Manager) pullAndUpload(ctx context.Context, imageRef, tarballPath string) error {
@@ -406,6 +421,11 @@ func (m *Manager) pullAndUpload(ctx context.Context, imageRef, tarballPath strin
 	img, err := crane.Pull(imageRef, opts...)
 	if err != nil {
 		return fmt.Errorf("pulling image %s: %w", imageRef, err)
+	}
+
+	// Log the pulled image's manifest digest for debugging stale-image issues
+	if pulledDigest, err := img.Digest(); err == nil {
+		m.log.Infow("pulled image manifest digest", "ref", imageRef, "digest", pulledDigest.String())
 	}
 
 	// Flatten OCI layers into a single uncompressed rootfs tarball,
@@ -576,17 +596,19 @@ func (m *Manager) ClearImageDigest(imageRef string) {
 	_ = os.Remove(tarballFile)
 }
 
-// ClearImageDigestByRepo removes cached digests for all images matching
+// ClearImageDigestByRepo removes cached entries for all images matching
 // a given repository name (e.g. "microdns"). This is used when a push
 // event is received from the registry to ensure stale tarballs are invalidated.
+// Deletes the entire in-memory entry (not just the digest) so that
+// RefreshImage is forced to re-pull from scratch.
 func (m *Manager) ClearImageDigestByRepo(repo string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for ref, cached := range m.images {
+	for ref := range m.images {
 		if strings.Contains(ref, "/"+repo+":") || strings.HasPrefix(ref, repo+":") {
-			m.log.Infow("clearing cached digest for repo push", "ref", ref, "repo", repo)
-			cached.Digest = ""
+			m.log.Infow("clearing cached image for repo push", "ref", ref, "repo", repo)
+			delete(m.images, ref)
 			tarballName := dockersave.SanitizeImageRef(ref) + ".tar"
 			tarballFile := fmt.Sprintf("%s/%s", m.cfg.TarballCache, tarballName)
 			_ = os.Remove(tarballFile + ".digest")

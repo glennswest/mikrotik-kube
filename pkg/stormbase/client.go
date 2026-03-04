@@ -237,6 +237,10 @@ func (c *Client) RemoveFile(_ context.Context, _ string) error {
 	return nil
 }
 
+func (c *Client) RemoveDirectory(_ context.Context, path string) error {
+	return os.RemoveAll(path)
+}
+
 func (c *Client) CreateMount(_ context.Context, _, _, _ string) error {
 	return nil // volumes are passed inline via CreateContainer spec
 }

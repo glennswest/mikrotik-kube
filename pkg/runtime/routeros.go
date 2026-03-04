@@ -109,6 +109,10 @@ func (r *RouterOSRuntime) RemoveFile(ctx context.Context, path string) error {
 	return r.client.RemoveFile(ctx, path)
 }
 
+func (r *RouterOSRuntime) RemoveDirectory(ctx context.Context, path string) error {
+	return r.client.RemoveDirectory(ctx, path)
+}
+
 func (r *RouterOSRuntime) CreateMount(ctx context.Context, name, src, dst string) error {
 	return r.client.CreateMount(ctx, name, src, dst)
 }

@@ -100,6 +100,7 @@ func (m *mockRuntime) GetSystemResource(context.Context) (*runtime.SystemResourc
 }
 func (m *mockRuntime) UploadFile(context.Context, string, io.Reader) error       { return nil }
 func (m *mockRuntime) RemoveFile(context.Context, string) error                  { return nil }
+func (m *mockRuntime) RemoveDirectory(context.Context, string) error             { return nil }
 func (m *mockRuntime) CreateMount(context.Context, string, string, string) error { return nil }
 func (m *mockRuntime) RemoveMountsByList(context.Context, string) error          { return nil }
 func (m *mockRuntime) Backend() string                                           { return "stormbase" }

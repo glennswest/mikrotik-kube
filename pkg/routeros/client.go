@@ -282,6 +282,61 @@ func (c *Client) RemoveFile(ctx context.Context, path string) error {
 	}, nil)
 }
 
+// RemoveDirectory removes a directory and all its contents from the RouterOS
+// filesystem. First tries a simple RemoveFile (works on RouterOS 7.x for
+// non-empty directories). If that fails, falls back to listing all children
+// and removing them individually before removing the parent.
+func (c *Client) RemoveDirectory(ctx context.Context, path string) error {
+	// Normalize path: strip leading "/" — RouterOS uses disk-relative paths
+	path = strings.TrimPrefix(path, "/")
+	if path == "" {
+		return fmt.Errorf("refusing to remove root directory")
+	}
+
+	// Try simple removal first (works on newer RouterOS 7.x)
+	if err := c.RemoveFile(ctx, path); err == nil {
+		return nil
+	}
+
+	// Fallback: list all files under the path and remove individually
+	var files []map[string]interface{}
+	if err := c.restGET(ctx, "/file", &files); err != nil {
+		return fmt.Errorf("listing files for recursive removal of %s: %w", path, err)
+	}
+
+	// Collect children sorted by path length descending (deepest first)
+	type fileEntry struct {
+		id   string
+		name string
+	}
+	var children []fileEntry
+	prefix := path + "/"
+	for _, f := range files {
+		name, _ := f["name"].(string)
+		id, _ := f[".id"].(string)
+		if name == path || strings.HasPrefix(name, prefix) {
+			children = append(children, fileEntry{id: id, name: name})
+		}
+	}
+
+	// Sort deepest-first by counting path separators (descending)
+	for i := 0; i < len(children); i++ {
+		for j := i + 1; j < len(children); j++ {
+			if strings.Count(children[i].name, "/") < strings.Count(children[j].name, "/") {
+				children[i], children[j] = children[j], children[i]
+			}
+		}
+	}
+
+	// Remove each child
+	for _, child := range children {
+		_ = c.restPOST(ctx, "/file/remove", map[string]string{".id": child.id}, nil)
+	}
+
+	// Final attempt to remove the now-empty parent
+	return c.RemoveFile(ctx, path)
+}
+
 // ─── Bridge Operations ──────────────────────────────────────────────────────
 
 // BridgePort represents a bridge port assignment.

@@ -351,7 +351,7 @@ func (p *MicroKubeProvider) CreatePod(ctx context.Context, pod *corev1.Pod) erro
 		// RouterOS skips tarball extraction when root-dir already has content,
 		// so without this, stale images persist across container recreation.
 		rootDir := fmt.Sprintf("%s/%s", p.deps.Config.Storage.BasePath, name)
-		if err := p.deps.Runtime.RemoveFile(ctx, rootDir); err != nil {
+		if err := p.deps.Runtime.RemoveDirectory(ctx, rootDir); err != nil {
 			log.Debugw("root-dir cleanup (may not exist yet)", "rootDir", rootDir, "error", err)
 		}
 
@@ -690,8 +690,14 @@ func (p *MicroKubeProvider) stagingExtractAndVerify(
 	// Clean up any leftover staging resources from a previous failed attempt
 	p.cleanupStagingResources(ctx, stg)
 
-	// Clean staging root-dir to force fresh extraction
-	_ = p.deps.Runtime.RemoveFile(ctx, stg.stgRootDir)
+	// Clean staging root-dir to force fresh extraction.
+	// MUST use RemoveDirectory (not RemoveFile) because root-dirs contain
+	// extracted rootfs trees. RemoveFile silently fails on non-empty dirs,
+	// causing RouterOS to skip tarball extraction and reuse stale content.
+	if err := p.deps.Runtime.RemoveDirectory(ctx, stg.stgRootDir); err != nil {
+		log.Warnw("staging root-dir cleanup failed (may not exist yet)",
+			"rootDir", stg.stgRootDir, "error", err)
+	}
 
 	// Allocate staging veth with dynamic IP (empty hostname = no DNS registration)
 	_, _, dnsServer, err := p.deps.NetworkMgr.AllocateInterface(ctx, stg.stgVeth, "", networkName, "")
@@ -782,9 +788,13 @@ func (p *MicroKubeProvider) cutoverContainer(
 	// Release old veth + IP
 	_ = p.deps.NetworkMgr.ReleaseInterface(ctx, stg.prodVeth)
 
-	// Remove old root-dir (safe — different from staging root-dir)
-	if stg.prodRootDir != stg.stgRootDir {
-		_ = p.deps.Runtime.RemoveFile(ctx, stg.prodRootDir)
+	// Remove old root-dir (safe — different from staging root-dir).
+	// Normalize paths before comparison to handle leading "/" mismatch —
+	// RouterOS may return root-dir without leading "/" while basePath has one.
+	if normalizePath(stg.prodRootDir) != normalizePath(stg.stgRootDir) {
+		if err := p.deps.Runtime.RemoveDirectory(ctx, stg.prodRootDir); err != nil {
+			log.Warnw("old root-dir cleanup failed", "rootDir", stg.prodRootDir, "error", err)
+		}
 	}
 
 	// Allocate production veth with SAME production IP (static)
@@ -946,12 +956,21 @@ func (p *MicroKubeProvider) createContainerMounts(
 // alternateStagingRootDir returns a staging root-dir path that does NOT
 // conflict with the current production root-dir. Alternates between
 // basePath/<name> and basePath/<name>__stg across successive updates.
+// Uses normalizePath for comparison because RouterOS may return root-dir
+// without leading "/" while basePath includes one.
 func (p *MicroKubeProvider) alternateStagingRootDir(currentRootDir, prodName string) string {
 	stgPath := fmt.Sprintf("%s/%s__stg", p.deps.Config.Storage.BasePath, prodName)
-	if currentRootDir == stgPath {
+	if normalizePath(currentRootDir) == normalizePath(stgPath) {
 		return fmt.Sprintf("%s/%s", p.deps.Config.Storage.BasePath, prodName)
 	}
 	return stgPath
+}
+
+// normalizePath strips leading "/" for consistent path comparison.
+// RouterOS returns disk-relative paths (e.g. "raid1/images/foo") but
+// mkube config uses absolute-style paths (e.g. "/raid1/images/foo").
+func normalizePath(p string) string {
+	return strings.TrimPrefix(p, "/")
 }
 
 // waitForRunning polls until the container reaches "running" state or timeout.
@@ -1515,6 +1534,7 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 		pod *corev1.Pod
 	}
 	bootStale := make(map[string][]staleEntry)
+	bootCheckedImages := make(map[string]bool) // image ref → changed?
 
 	stepStart = time.Now()
 	for _, pod := range desiredPods {
@@ -1552,12 +1572,21 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 			// For pods with image-policy=auto, check if the registry has a
 			// newer image than what's currently running. Deferred to after
 			// all pods are tracked — restarted one-at-a-time per image group.
+			// Use bootCheckedImages to call RefreshImage once per unique image,
+			// then mark ALL pods with that image as stale (same fix as step 3c).
 			if pod.Annotations[annotationImagePolicy] == "auto" && pod.Annotations[annotationFile] == "" {
 				for _, c := range pod.Spec.Containers {
-					_, changed, err := p.deps.StorageMgr.RefreshImage(ctx, c.Image)
-					if err != nil {
-						log.Warnw("failed to check image freshness", "pod", key, "image", c.Image, "error", err)
-					} else if changed {
+					changed, alreadyChecked := bootCheckedImages[c.Image]
+					if !alreadyChecked {
+						_, changed, err := p.deps.StorageMgr.RefreshImage(ctx, c.Image)
+						if err != nil {
+							log.Warnw("failed to check image freshness", "pod", key, "image", c.Image, "error", err)
+							bootCheckedImages[c.Image] = false
+						} else {
+							bootCheckedImages[c.Image] = changed
+						}
+					}
+					if changed {
 						bootStale[c.Image] = append(bootStale[c.Image], staleEntry{key: key, pod: pod.DeepCopy()})
 						break
 					}
@@ -1616,7 +1645,12 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 	// IMPORTANT: Pods sharing the same image are restarted one at a time
 	// with liveness verification between each, to prevent simultaneous
 	// outages (e.g., all DNS pods going down at once).
+	//
+	// Call RefreshImage ONCE per unique image to avoid a bug where the
+	// first call updates the cache, causing subsequent pods with the same
+	// image to see the new digest and miss the change.
 	imageToStale := make(map[string][]staleEntry)
+	checkedImages := make(map[string]bool) // image ref → changed?
 	for key, pod := range p.pods {
 		if p.redeploying[key] {
 			continue
@@ -1625,10 +1659,17 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 			continue
 		}
 		for _, c := range pod.Spec.Containers {
-			_, changed, err := p.deps.StorageMgr.RefreshImage(ctx, c.Image)
-			if err != nil {
-				log.Debugw("image freshness check failed", "pod", key, "image", c.Image, "error", err)
-			} else if changed {
+			changed, alreadyChecked := checkedImages[c.Image]
+			if !alreadyChecked {
+				_, changed, err := p.deps.StorageMgr.RefreshImage(ctx, c.Image)
+				if err != nil {
+					log.Debugw("image freshness check failed", "pod", key, "image", c.Image, "error", err)
+					checkedImages[c.Image] = false
+				} else {
+					checkedImages[c.Image] = changed
+				}
+			}
+			if changed {
 				imageToStale[c.Image] = append(imageToStale[c.Image], staleEntry{key: key, pod: pod.DeepCopy()})
 				break
 			}
