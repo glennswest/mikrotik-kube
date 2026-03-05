@@ -14,6 +14,40 @@ import (
 	"go.uber.org/zap"
 )
 
+// ─── Flexible Record Types (all record types, not just A) ───────────────────
+
+// FullRecordData is like RecordData but handles all record types (MX, SRV, CAA, etc.)
+// Data is a string for simple types (A, AAAA, CNAME, NS, PTR, TXT) and an object for complex types.
+type FullRecordData struct {
+	Type string      `json:"type"`
+	Data interface{} `json:"data"`
+}
+
+// FullRecord is a DNS record that supports all record data types.
+type FullRecord struct {
+	ID        string         `json:"id"`
+	ZoneID    string         `json:"zone_id,omitempty"`
+	Name      string         `json:"name"`
+	TTL       int            `json:"ttl"`
+	Type      string         `json:"type"`
+	Data      FullRecordData `json:"data"`
+	Enabled   bool           `json:"enabled"`
+	CreatedAt string         `json:"created_at,omitempty"`
+	UpdatedAt string         `json:"updated_at,omitempty"`
+}
+
+// DHCPLease represents an active DHCP lease from a microdns instance.
+type DHCPLease struct {
+	ID         string `json:"id"`
+	IP         string `json:"ip_addr"`
+	MAC        string `json:"mac_addr"`
+	Hostname   string `json:"hostname"`
+	LeaseStart string `json:"lease_start"`
+	LeaseEnd   string `json:"lease_end"`
+	PoolID     string `json:"pool_id"`
+	State      string `json:"state"`
+}
+
 // Client is a REST client for MicroDNS instances.
 // It is stateless — each call takes the endpoint URL as a parameter,
 // so a single client can talk to multiple MicroDNS servers.
@@ -723,6 +757,311 @@ func (c *Client) DeleteDNSForwarder(ctx context.Context, endpoint, zone string) 
 		return fmt.Errorf("deleting DNS forwarder %s: HTTP %d", zone, resp.StatusCode)
 	}
 	return nil
+}
+
+// ─── Full Record Methods (proxy support) ────────────────────────────────────
+
+// ListFullRecords returns all DNS records in a zone with full type support.
+func (c *Client) ListFullRecords(ctx context.Context, endpoint, zoneID string) ([]FullRecord, error) {
+	var all []FullRecord
+	const pageSize = 100
+	offset := 0
+
+	for {
+		url := fmt.Sprintf("%s/api/v1/zones/%s/records?limit=%d&offset=%d", endpoint, zoneID, pageSize, offset)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		if err != nil {
+			return nil, fmt.Errorf("building record list request: %w", err)
+		}
+
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("listing records in zone %s: %w", zoneID, err)
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("reading record list response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("listing records: HTTP %d: %s", resp.StatusCode, string(body))
+		}
+
+		var page []FullRecord
+		if err := json.Unmarshal(body, &page); err != nil {
+			return nil, fmt.Errorf("decoding records: %w", err)
+		}
+
+		all = append(all, page...)
+		if len(page) < pageSize {
+			break
+		}
+		offset += len(page)
+	}
+
+	return all, nil
+}
+
+// GetFullRecord returns a single DNS record by ID with full type support.
+func (c *Client) GetFullRecord(ctx context.Context, endpoint, zoneID, recordID string) (*FullRecord, error) {
+	url := fmt.Sprintf("%s/api/v1/zones/%s/records/%s", endpoint, zoneID, recordID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("building record get request: %w", err)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("getting record %s: %w", recordID, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading record response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("record %s not found", recordID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("getting record: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var rec FullRecord
+	if err := json.Unmarshal(body, &rec); err != nil {
+		return nil, fmt.Errorf("decoding record: %w", err)
+	}
+	return &rec, nil
+}
+
+// CreateFullRecord creates a DNS record with full type support.
+// The payload should contain name, ttl, data (RecordData object), and optionally enabled.
+func (c *Client) CreateFullRecord(ctx context.Context, endpoint, zoneID string, payload interface{}) (*FullRecord, error) {
+	data, _ := json.Marshal(payload)
+	url := fmt.Sprintf("%s/api/v1/zones/%s/records", endpoint, zoneID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("building record create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("creating record: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading create response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("creating record: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var rec FullRecord
+	if err := json.Unmarshal(body, &rec); err != nil {
+		return nil, fmt.Errorf("decoding created record: %w", err)
+	}
+	c.invalidateCache(endpoint, zoneID)
+	return &rec, nil
+}
+
+// UpdateFullRecord updates a DNS record by ID with full type support.
+func (c *Client) UpdateFullRecord(ctx context.Context, endpoint, zoneID, recordID string, payload interface{}) (*FullRecord, error) {
+	data, _ := json.Marshal(payload)
+	url := fmt.Sprintf("%s/api/v1/zones/%s/records/%s", endpoint, zoneID, recordID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("building record update request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("updating record %s: %w", recordID, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading update response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("updating record: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var rec FullRecord
+	if err := json.Unmarshal(body, &rec); err != nil {
+		return nil, fmt.Errorf("decoding updated record: %w", err)
+	}
+	c.invalidateCache(endpoint, zoneID)
+	return &rec, nil
+}
+
+// ─── DHCP Lease Methods ─────────────────────────────────────────────────────
+
+// ListDHCPLeases returns all active DHCP leases from a microdns instance.
+func (c *Client) ListDHCPLeases(ctx context.Context, endpoint string) ([]DHCPLease, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/api/v1/leases", nil)
+	if err != nil {
+		return nil, fmt.Errorf("building lease list request: %w", err)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("listing DHCP leases from %s: %w", endpoint, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading lease list response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("listing DHCP leases: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var leases []DHCPLease
+	if err := json.Unmarshal(body, &leases); err != nil {
+		return nil, fmt.Errorf("decoding DHCP leases: %w", err)
+	}
+	return leases, nil
+}
+
+// ─── Single-Resource GET Methods (proxy support) ────────────────────────────
+
+// GetDHCPPool returns a single DHCP pool by ID.
+func (c *Client) GetDHCPPool(ctx context.Context, endpoint, poolID string) (*DHCPPool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/api/v1/dhcp/pools/"+poolID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("building pool get request: %w", err)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("getting DHCP pool %s: %w", poolID, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading pool response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("DHCP pool %s not found", poolID)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("getting DHCP pool: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var pool DHCPPool
+	if err := json.Unmarshal(body, &pool); err != nil {
+		return nil, fmt.Errorf("decoding DHCP pool: %w", err)
+	}
+	return &pool, nil
+}
+
+// UpdateDHCPPool updates a DHCP pool by ID.
+func (c *Client) UpdateDHCPPool(ctx context.Context, endpoint, poolID string, pool DHCPPool) (*DHCPPool, error) {
+	payload, _ := json.Marshal(pool)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, endpoint+"/api/v1/dhcp/pools/"+poolID, bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("building pool update request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("updating DHCP pool %s: %w", poolID, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading pool update response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("updating DHCP pool: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var updated DHCPPool
+	if err := json.Unmarshal(body, &updated); err != nil {
+		return nil, fmt.Errorf("decoding updated pool: %w", err)
+	}
+	return &updated, nil
+}
+
+// GetDHCPReservation returns a single DHCP reservation by MAC address.
+func (c *Client) GetDHCPReservation(ctx context.Context, endpoint, mac string) (*DHCPReservation, error) {
+	mac = strings.ToLower(mac)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/api/v1/dhcp/reservations/"+mac, nil)
+	if err != nil {
+		return nil, fmt.Errorf("building reservation get request: %w", err)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("getting DHCP reservation %s: %w", mac, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading reservation response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("DHCP reservation %s not found", mac)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("getting DHCP reservation: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var res DHCPReservation
+	if err := json.Unmarshal(body, &res); err != nil {
+		return nil, fmt.Errorf("decoding DHCP reservation: %w", err)
+	}
+	return &res, nil
+}
+
+// GetDNSForwarder returns a single DNS forwarder by zone name.
+func (c *Client) GetDNSForwarder(ctx context.Context, endpoint, zone string) (*DNSForwarder, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/api/v1/dns/forwarders/"+zone, nil)
+	if err != nil {
+		return nil, fmt.Errorf("building forwarder get request: %w", err)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("getting DNS forwarder %s: %w", zone, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading forwarder response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("DNS forwarder %s not found", zone)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("getting DNS forwarder: HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var fwd DNSForwarder
+	if err := json.Unmarshal(body, &fwd); err != nil {
+		return nil, fmt.Errorf("decoding DNS forwarder: %w", err)
+	}
+	return &fwd, nil
 }
 
 // ─── Health Check ───────────────────────────────────────────────────────────

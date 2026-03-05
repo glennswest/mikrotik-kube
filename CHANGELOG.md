@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-03-05
+- **feat:** DNS & DHCP proxy resources via kube API — all microdns resources (DNS records, DHCP pools, DHCP reservations, DHCP leases, DNS forwarders) now accessible via `mk get/apply/delete`. Namespace = network name (e.g. `mk get dr -n g10`). Short names: dr, dp, dhcpr, dl, df. microdns is source of truth — no NATS persistence. New `dns_proxy.go` with 24 handler functions and 5 table formatters. DNS client extended with full record support (all record types), DHCP lease listing, and single-resource GET methods.
 - **fix:** Dynamic IPAM registration for Network CRDs — networks created via API (not in config.yaml) were never registered with IPAM allocator, causing DNS pod creation to fail with "network not found". Added `Manager.RegisterNetwork()` for dynamic pool registration, wired into `handleCreateNetwork` and `LoadNetworksFromStore`.
 - **fix:** PVC key consistency for managed DNS — PVCs created by `deployManagedDNS` used wrong key format (no namespace), causing consistency check failures. Fixed to use `namespace/name` map key and `namespace.name` NATS key.
 - **feat:** Bridge rename on RouterOS — renamed `bridge` → `bridge-g10` and `bridge-boot` → `bridge-g11` for naming convention consistency. Deleted unused `containers` bridge.

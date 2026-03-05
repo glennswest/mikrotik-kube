@@ -102,6 +102,32 @@ func (p *MicroKubeProvider) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/bootconfig", p.handleBootConfigLookup)
 	mux.HandleFunc("POST /api/v1/boot-complete", p.handleBootComplete)
 
+	// DNS/DHCP Proxy Resources (proxied to microdns, namespace = network name)
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/dnsrecords", p.handleListDNSRecords)
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/dnsrecords/{name}", p.handleGetDNSRecord)
+	mux.HandleFunc("POST /api/v1/namespaces/{namespace}/dnsrecords", p.handleCreateDNSRecord)
+	mux.HandleFunc("PUT /api/v1/namespaces/{namespace}/dnsrecords/{name}", p.handleUpdateDNSRecord)
+	mux.HandleFunc("DELETE /api/v1/namespaces/{namespace}/dnsrecords/{name}", p.handleDeleteDNSRecord)
+
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/dhcppools", p.handleListDHCPPools)
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/dhcppools/{name}", p.handleGetDHCPPool)
+	mux.HandleFunc("POST /api/v1/namespaces/{namespace}/dhcppools", p.handleCreateDHCPPool)
+	mux.HandleFunc("PUT /api/v1/namespaces/{namespace}/dhcppools/{name}", p.handleUpdateDHCPPool)
+	mux.HandleFunc("DELETE /api/v1/namespaces/{namespace}/dhcppools/{name}", p.handleDeleteDHCPPool)
+
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/dhcpreservations", p.handleListDHCPReservations)
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/dhcpreservations/{name}", p.handleGetDHCPReservation)
+	mux.HandleFunc("POST /api/v1/namespaces/{namespace}/dhcpreservations", p.handleCreateDHCPReservation)
+	mux.HandleFunc("PUT /api/v1/namespaces/{namespace}/dhcpreservations/{name}", p.handleUpdateDHCPReservation)
+	mux.HandleFunc("DELETE /api/v1/namespaces/{namespace}/dhcpreservations/{name}", p.handleDeleteDHCPReservation)
+
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/dhcpleases", p.handleListDHCPLeases)
+
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/dnsforwarders", p.handleListDNSForwarders)
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/dnsforwarders/{name}", p.handleGetDNSForwarder)
+	mux.HandleFunc("POST /api/v1/namespaces/{namespace}/dnsforwarders", p.handleCreateDNSForwarder)
+	mux.HandleFunc("DELETE /api/v1/namespaces/{namespace}/dnsforwarders/{name}", p.handleDeleteDNSForwarder)
+
 	// BareMetalHosts
 	mux.HandleFunc("GET /api/v1/baremetalhosts", p.handleListAllBMH)
 	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/baremetalhosts", p.handleListNamespacedBMH)
@@ -750,6 +776,41 @@ func (p *MicroKubeProvider) handleAPIResources(w http.ResponseWriter, r *http.Re
 				ShortNames: []string{"bc"},
 				Verbs:      metav1.Verbs{"get", "list", "create", "update", "patch", "delete"},
 			},
+			{
+				Name:       "dnsrecords",
+				Namespaced: true,
+				Kind:       "DNSRecord",
+				ShortNames: []string{"dr"},
+				Verbs:      metav1.Verbs{"get", "list", "create", "update", "delete"},
+			},
+			{
+				Name:       "dhcppools",
+				Namespaced: true,
+				Kind:       "DHCPPool",
+				ShortNames: []string{"dp"},
+				Verbs:      metav1.Verbs{"get", "list", "create", "update", "delete"},
+			},
+			{
+				Name:       "dhcpreservations",
+				Namespaced: true,
+				Kind:       "DHCPReservation",
+				ShortNames: []string{"dhcpr"},
+				Verbs:      metav1.Verbs{"get", "list", "create", "update", "delete"},
+			},
+			{
+				Name:       "dhcpleases",
+				Namespaced: true,
+				Kind:       "DHCPLease",
+				ShortNames: []string{"dl"},
+				Verbs:      metav1.Verbs{"get", "list"},
+			},
+			{
+				Name:       "dnsforwarders",
+				Namespaced: true,
+				Kind:       "DNSForwarder",
+				ShortNames: []string{"df"},
+				Verbs:      metav1.Verbs{"get", "list", "create", "delete"},
+			},
 		},
 	})
 }
@@ -1105,6 +1166,10 @@ func (p *MicroKubeProvider) handleListNamespaces(w http.ResponseWriter, r *http.
 	for _, pvc := range p.pvcs {
 		nsSet[pvc.Namespace] = true
 	}
+	// Include network names as namespaces (for DNS/DHCP proxy resources)
+	for name := range p.networks {
+		nsSet[name] = true
+	}
 	// Always include "default"
 	nsSet["default"] = true
 
@@ -1146,6 +1211,12 @@ func (p *MicroKubeProvider) handleGetNamespace(w http.ResponseWriter, r *http.Re
 				found = true
 				break
 			}
+		}
+	}
+	// Check if it's a network name (used as namespace for DNS/DHCP proxy resources)
+	if !found {
+		if _, ok := p.networks[name]; ok {
+			found = true
 		}
 	}
 

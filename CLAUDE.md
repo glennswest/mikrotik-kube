@@ -170,6 +170,7 @@ go test ./...
 - PVC key consistency for managed DNS: PVCs created by `deployManagedDNS` used wrong key format (no namespace), causing consistency check failures.
 - Bridge rename on rose1: `bridge` → `bridge-g10`, `bridge-boot` → `bridge-g11`, deleted unused `containers` bridge. All references (IPs, relays, DHCP server) auto-updated by RouterOS internal ID refs.
 - g8/g9 full network setup: Created managed Network CRDs with DNS, DHCP, forward zones. Replaced standalone zero-zone DNS containers with mkube-managed pods. All 6 networks operational.
+- DNS/DHCP proxy resources via kube API: All microdns resources accessible via `mk get/apply/delete`. 5 resource types: DNSRecord (dr), DHCPPool (dp), DHCPReservation (dhcpr), DHCPLease (dl), DNSForwarder (df). Namespace = network name. microdns is source of truth (no NATS). 24 handler functions, 5 table formatters. DNS client extended with full record support and lease listing.
 
 ### TODO (priority order)
 1. **BareMetalHost Operator (BMO)**: Owns ALL host state and state machines. Architecture:
