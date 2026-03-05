@@ -186,7 +186,7 @@ func (p *MicroKubeProvider) handleCreateBMH(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Sync DHCP reservations to Network CRDs (data + IPMI)
-	p.syncBMHToNetwork(r.Context(), &bmh, "", "")
+	p.syncBMHToNetwork(r.Context(), &bmh, "", "", "", "")
 
 	// Sync BootConfig assignedTo
 	p.syncBootConfigRef(r.Context(), bmh.Name, "", bmh.Spec.BootConfigRef)
@@ -287,6 +287,8 @@ func (p *MicroKubeProvider) handleUpdateBMH(w http.ResponseWriter, r *http.Reque
 
 	oldDataNetwork := existing.Spec.Network
 	oldIPMINetwork := existing.Spec.BMC.Network
+	oldHostname := firstNonEmpty(existing.Spec.Hostname, existing.Name)
+	oldIP := existing.Spec.IP
 	oldBootConfigRef := existing.Spec.BootConfigRef
 
 	var bmh BareMetalHost
@@ -320,8 +322,8 @@ func (p *MicroKubeProvider) handleUpdateBMH(w http.ResponseWriter, r *http.Reque
 
 	p.bareMetalHosts[key] = &bmh
 
-	// Sync DHCP reservations to Network CRDs (data + IPMI)
-	p.syncBMHToNetwork(r.Context(), &bmh, oldDataNetwork, oldIPMINetwork)
+	// Sync DHCP reservations + DNS to Network CRDs (data + IPMI)
+	p.syncBMHToNetwork(r.Context(), &bmh, oldDataNetwork, oldIPMINetwork, oldHostname, oldIP)
 
 	// Sync BootConfig assignedTo
 	p.syncBootConfigRef(r.Context(), bmh.Name, oldBootConfigRef, bmh.Spec.BootConfigRef)
@@ -343,6 +345,8 @@ func (p *MicroKubeProvider) handlePatchBMH(w http.ResponseWriter, r *http.Reques
 	// Start from existing, overlay the patch
 	oldDataNetwork := existing.Spec.Network
 	oldIPMINetwork := existing.Spec.BMC.Network
+	oldHostname := firstNonEmpty(existing.Spec.Hostname, existing.Name)
+	oldIP := existing.Spec.IP
 	oldBootConfigRef := existing.Spec.BootConfigRef
 	merged := existing.DeepCopy()
 
@@ -379,8 +383,8 @@ func (p *MicroKubeProvider) handlePatchBMH(w http.ResponseWriter, r *http.Reques
 
 	p.bareMetalHosts[key] = merged
 
-	// Sync DHCP reservations to Network CRDs (data + IPMI)
-	p.syncBMHToNetwork(r.Context(), merged, oldDataNetwork, oldIPMINetwork)
+	// Sync DHCP reservations + DNS to Network CRDs (data + IPMI)
+	p.syncBMHToNetwork(r.Context(), merged, oldDataNetwork, oldIPMINetwork, oldHostname, oldIP)
 
 	// Sync BootConfig assignedTo
 	p.syncBootConfigRef(r.Context(), merged.Name, oldBootConfigRef, merged.Spec.BootConfigRef)
@@ -402,6 +406,14 @@ func (p *MicroKubeProvider) handleDeleteBMH(w http.ResponseWriter, r *http.Reque
 	// Remove DHCP reservations from referenced Network CRDs (data + IPMI)
 	p.removeBMHFromNetwork(r.Context(), bmh.Spec.BootMACAddress, bmh.Spec.Network)
 	p.removeBMHFromNetwork(r.Context(), bmh.Spec.BMC.MAC, bmh.Spec.BMC.Network)
+
+	// Remove DNS A record for data network
+	if bmh.Spec.Network != "" && bmh.Spec.IP != "" {
+		hostname := firstNonEmpty(bmh.Spec.Hostname, bmh.Name)
+		if err := p.deps.NetworkMgr.DeregisterDNS(r.Context(), bmh.Spec.Network, hostname, bmh.Spec.IP); err != nil {
+			p.deps.Logger.Warnw("BMH DNS deregistration failed", "bmh", bmh.Name, "error", err)
+		}
+	}
 
 	// Remove from BootConfig assignedTo
 	p.removeBootConfigRef(r.Context(), bmh.Name, bmh.Spec.BootConfigRef)
@@ -534,22 +546,43 @@ func (p *MicroKubeProvider) reconcileBMHChanges(ctx context.Context, old, new *B
 // ─── BMH → Network CRD Sync ─────────────────────────────────────────────────
 
 // syncBMHToNetwork upserts DHCP reservations on the BMH's referenced Network CRDs
-// (both data network and IPMI network). Old network names are used to clean up
-// reservations when the network reference changes.
-func (p *MicroKubeProvider) syncBMHToNetwork(ctx context.Context, bmh *BareMetalHost, oldDataNetwork, oldIPMINetwork string) {
+// (both data network and IPMI network). Old network/hostname/IP are used to clean up
+// reservations and DNS records when references change.
+func (p *MicroKubeProvider) syncBMHToNetwork(ctx context.Context, bmh *BareMetalHost, oldDataNetwork, oldIPMINetwork, oldHostname, oldIP string) {
+	log := p.deps.Logger
+
 	// Sync data network reservation (boot MAC → data network)
 	if oldDataNetwork != "" && oldDataNetwork != bmh.Spec.Network {
 		p.removeBMHFromNetwork(ctx, bmh.Spec.BootMACAddress, oldDataNetwork)
+		// Deregister old DNS A record from old network
+		if oldIP != "" && oldHostname != "" {
+			if err := p.deps.NetworkMgr.DeregisterDNS(ctx, oldDataNetwork, oldHostname, oldIP); err != nil {
+				log.Warnw("BMH old DNS deregistration failed", "bmh", bmh.Name, "oldNetwork", oldDataNetwork, "error", err)
+			}
+		}
 	}
 	if bmh.Spec.Network != "" && bmh.Spec.BootMACAddress != "" {
+		hostname := firstNonEmpty(bmh.Spec.Hostname, bmh.Name)
 		p.upsertNetworkReservation(ctx, bmh.Spec.Network, NetworkDHCPReservation{
 			MAC:         bmh.Spec.BootMACAddress,
 			IP:          bmh.Spec.IP,
-			Hostname:    firstNonEmpty(bmh.Spec.Hostname, bmh.Name),
+			Hostname:    hostname,
 			NextServer:  bmh.Spec.NextServer,
 			BootFile:    bmh.Spec.BootFile,
 			BootFileEFI: bmh.Spec.BootFileEFI,
 		}, bmh.Name)
+
+		// Auto-register DNS A record for the data network
+		if bmh.Spec.IP != "" && hostname != "" {
+			if err := p.deps.NetworkMgr.CleanStaleDNS(ctx, bmh.Spec.Network, hostname, bmh.Spec.IP); err != nil {
+				log.Warnw("BMH DNS stale cleanup failed", "bmh", bmh.Name, "network", bmh.Spec.Network, "error", err)
+			}
+			if err := p.deps.NetworkMgr.RegisterDNS(ctx, bmh.Spec.Network, hostname, bmh.Spec.IP); err != nil {
+				log.Warnw("BMH DNS registration failed", "bmh", bmh.Name, "network", bmh.Spec.Network, "error", err)
+			} else {
+				log.Infow("registered BMH DNS A record", "bmh", bmh.Name, "hostname", hostname, "ip", bmh.Spec.IP, "network", bmh.Spec.Network)
+			}
+		}
 	}
 
 	// Sync IPMI network reservation (IPMI MAC → IPMI network)
