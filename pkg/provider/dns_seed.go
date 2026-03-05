@@ -204,7 +204,9 @@ func (p *MicroKubeProvider) reconcileDNSConfig(ctx context.Context) {
 		}
 
 		if needsSeed {
-			go p.seedDNSConfig(ctx, net)
+			// Use background context — seedDNSConfig retries for 30s
+			// and shouldn't be tied to the reconcile tick deadline
+			go p.seedDNSConfig(context.Background(), net)
 			continue
 		}
 

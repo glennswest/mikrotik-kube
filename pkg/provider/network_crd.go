@@ -893,8 +893,10 @@ func (p *MicroKubeProvider) deployManagedDNS(ctx context.Context, net *Network) 
 		}
 	}
 
-	// 6. Async seed DHCP pools, reservations, and forwarders via REST API
-	go p.seedDNSConfig(ctx, net)
+	// 6. Async seed DHCP pools, reservations, and forwarders via REST API.
+	// Use background context — the HTTP request context cancels when the
+	// handler returns, which would kill the seed goroutine immediately.
+	go p.seedDNSConfig(context.Background(), net)
 
 	log.Infow("deployed managed DNS pod",
 		"zone", net.Spec.DNS.Zone,
