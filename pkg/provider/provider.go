@@ -117,6 +117,7 @@ func (p *MicroKubeProvider) SetStore(s *store.Store) {
 	p.LoadRegistriesFromStore(context.Background())
 	p.MigrateRegistryConfig(context.Background())
 	p.LoadConfigMapsFromStore(context.Background())
+	p.ReconcileNetworkConfigMaps(context.Background())
 	p.LoadISCSICdromsFromStore(context.Background())
 	p.LoadBootConfigsFromStore(context.Background())
 	p.startDHCPSubscription(context.Background())
@@ -1454,6 +1455,19 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 	}
 	for _, cm := range generateDefaultConfigMaps(p.deps.Config) {
 		p.configMaps[cm.Namespace+"/"+cm.Name] = cm
+	}
+	// Override static-config-derived DNS ConfigMaps with Network CRD
+	// versions for migrated networks. Network CRDs are the source of
+	// truth for DHCP reservations and DNS config once migrated.
+	for _, net := range p.networks {
+		hasDNS := net.Spec.DNS.Zone != "" && net.Spec.DNS.Server != ""
+		if !hasDNS {
+			continue
+		}
+		cmKey := net.Name + "/dns-config"
+		if cm, ok := p.configMaps[cmKey]; ok {
+			cm.Data["microdns.toml"] = p.generateNetworkTOML(net)
+		}
 	}
 
 	// 1c. Stamp vkube.io/node on pods that lack it (one-time migration for clustering)

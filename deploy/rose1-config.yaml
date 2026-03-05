@@ -117,11 +117,8 @@ networks:
             ip: "192.168.10.51"
             hostname: "gb10b"
           - mac: "50:6B:4B:B1:9E:26"
-            ip: "192.168.10.30"
-            hostname: "server30"
-          - mac: "50:6B:4B:B1:9E:27"
-            ip: "192.168.10.31"
-            hostname: "server30b"
+            ip: "192.168.10.18"
+            hostname: "server9"
           - mac: "D0:11:E5:A0:1A:A4"
             ip: "192.168.10.190"
             hostname: "macmini"
@@ -174,7 +171,7 @@ networks:
             hostname: "server8"
           - mac: "14:18:77:62:5D:0C"
             ip: "192.168.11.30"
-            hostname: "server30"
+            hostname: "server9"
   - name: gw
     bridge: bridge-lan
     cidr: "192.168.1.0/24"

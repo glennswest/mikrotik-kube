@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### 2026-03-05
+- **fix:** DNS ConfigMap overwritten every reconcile cycle (10s) by static config — `generateDefaultConfigMaps` from `rose1-config.yaml` clobbered Network CRD-derived ConfigMaps, causing stale DHCP reservations (e.g. server30) to reappear after every cleanup. Reconcile loop now overrides static ConfigMaps with Network CRD-generated TOML for migrated networks.
+- **fix:** Boot-time ConfigMap reconciliation — added `ReconcileNetworkConfigMaps()` after `LoadConfigMapsFromStore` to regenerate stale DNS ConfigMaps from current Network CRD state on startup.
+- **chore:** Replace server30 with server9 in `deploy/rose1-config.yaml` (g10: .30→.18, g11 hostname update). server9 replaces decommissioned server30.
+
 ### 2026-03-04
 - **fix:** Stale root-dir causes containers to run old image after push — `RemoveFile` fails silently on non-empty directories (RouterOS `/file/remove` can't delete extracted rootfs trees). Added `RemoveDirectory` to all runtime backends with recursive removal. Blue-green staging and `CreatePod` now use `RemoveDirectory`.
 - **fix:** Root-dir path normalization mismatch — `basePath` has leading `/` but RouterOS returns root-dir without it, breaking staging alternation (both updates used the same `__stg` dir). Added `normalizePath()` for consistent comparison.

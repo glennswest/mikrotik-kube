@@ -155,6 +155,40 @@ func (p *MicroKubeProvider) LoadNetworksFromStore(ctx context.Context) {
 	}
 }
 
+// ReconcileNetworkConfigMaps regenerates DNS ConfigMaps from the current
+// Network CRD state. Call after loading both networks and configmaps from
+// store to fix stale ConfigMaps that diverged (e.g. reservations changed
+// while mkube was down or before ConfigMap sync code existed).
+func (p *MicroKubeProvider) ReconcileNetworkConfigMaps(ctx context.Context) {
+	updated := 0
+	for _, net := range p.networks {
+		hasDNS := net.Spec.DNS.Zone != "" && net.Spec.DNS.Server != ""
+		if !hasDNS {
+			continue
+		}
+		toml := p.generateNetworkTOML(net)
+		cmKey := net.Name + "/dns-config"
+		cm, ok := p.configMaps[cmKey]
+		if !ok {
+			continue
+		}
+		if cm.Data["microdns.toml"] != toml {
+			cm.Data["microdns.toml"] = toml
+			if p.deps.Store != nil && p.deps.Store.ConfigMaps != nil {
+				storeKey := net.Name + ".dns-config"
+				_, _ = p.deps.Store.ConfigMaps.PutJSON(ctx, storeKey, cm)
+			}
+			updated++
+			p.deps.Logger.Infow("reconciled stale DNS ConfigMap on boot",
+				"network", net.Name)
+		}
+	}
+	if updated > 0 {
+		p.syncConfigMapsToDisk(ctx)
+		p.deps.Logger.Infow("reconciled DNS ConfigMaps on boot", "updated", updated)
+	}
+}
+
 // MigrateNetworkConfig migrates config.yaml NetworkDef entries to Network CRDs
 // on first boot (when the NETWORKS bucket is empty).
 func (p *MicroKubeProvider) MigrateNetworkConfig(ctx context.Context) {
