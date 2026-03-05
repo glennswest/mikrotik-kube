@@ -293,7 +293,8 @@ func (p *MicroKubeProvider) reconcileDHCPLeases(ctx context.Context) {
 			continue
 		}
 
-		resp, err := pxeHTTPClient.Do(req)
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Do(req)
 		if err != nil {
 			log.Debugw("DHCP lease fetch failed", "network", n.Name, "error", err)
 			continue

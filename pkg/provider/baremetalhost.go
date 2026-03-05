@@ -1,7 +1,6 @@
 package provider
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,7 +10,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -22,7 +20,7 @@ import (
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-// BareMetalHost represents a physical server managed through pxemanager/IPMI.
+// BareMetalHost represents a physical server managed through bmh-operator/IPMI.
 type BareMetalHost struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
@@ -163,28 +161,6 @@ func (p *MicroKubeProvider) handleCreateBMH(w http.ResponseWriter, r *http.Reque
 
 	p.bareMetalHosts[key] = &bmh
 
-	// Register in pxemanager
-	if bmh.Spec.BootMACAddress != "" {
-		if err := pxeRegisterHost(r.Context(), p.deps.Config.BMH.PXEManagerURL, bmh.Spec.BootMACAddress, bmh.Name, bmh.Spec.Image); err != nil {
-			p.deps.Logger.Warnw("failed to register host in pxemanager", "name", bmh.Name, "error", err)
-		}
-	}
-
-	// Configure IPMI if BMC details provided
-	if bmh.Spec.BMC.Address != "" {
-		user := bmh.Spec.BMC.Username
-		pass := bmh.Spec.BMC.Password
-		if user == "" {
-			user = "ADMIN"
-		}
-		if pass == "" {
-			pass = "ADMIN"
-		}
-		if err := pxeConfigureIPMI(r.Context(), p.deps.Config.BMH.PXEManagerURL, bmh.Name, bmh.Spec.BMC.Address, user, pass); err != nil {
-			p.deps.Logger.Warnw("failed to configure IPMI", "name", bmh.Name, "error", err)
-		}
-	}
-
 	// Sync DHCP reservations to Network CRDs (data + IPMI)
 	p.syncBMHToNetwork(r.Context(), &bmh, "", "", "", "")
 
@@ -208,9 +184,6 @@ func (p *MicroKubeProvider) handleGetBMH(w http.ResponseWriter, r *http.Request)
 	enriched := bmh.DeepCopy()
 	enriched.TypeMeta = metav1.TypeMeta{APIVersion: "v1", Kind: "BareMetalHost"}
 
-	// Enrich with live pxemanager data
-	p.enrichBMHStatus(r.Context(), enriched)
-
 	if wantsTable(r) {
 		podWriteJSON(w, http.StatusOK, bmhListToTable([]BareMetalHost{*enriched}))
 		return
@@ -233,7 +206,6 @@ func (p *MicroKubeProvider) handleListAllBMH(w http.ResponseWriter, r *http.Requ
 	}
 
 	if wantsTable(r) {
-		p.enrichBMHListConcurrent(r.Context(), items)
 		podWriteJSON(w, http.StatusOK, bmhListToTable(items))
 		return
 	}
@@ -263,7 +235,6 @@ func (p *MicroKubeProvider) handleListNamespacedBMH(w http.ResponseWriter, r *ht
 	}
 
 	if wantsTable(r) {
-		p.enrichBMHListConcurrent(r.Context(), items)
 		podWriteJSON(w, http.StatusOK, bmhListToTable(items))
 		return
 	}
@@ -309,8 +280,6 @@ func (p *MicroKubeProvider) handleUpdateBMH(w http.ResponseWriter, r *http.Reque
 	if bmh.Spec.BMC.Password == "" && existing.Spec.BMC.Password != "" {
 		bmh.Spec.BMC.Password = existing.Spec.BMC.Password
 	}
-
-	p.reconcileBMHChanges(r.Context(), existing, &bmh)
 
 	if p.deps.Store != nil && p.deps.Store.BareMetalHosts != nil {
 		storeKey := ns + "." + name
@@ -370,8 +339,6 @@ func (p *MicroKubeProvider) handlePatchBMH(w http.ResponseWriter, r *http.Reques
 	if merged.Spec.BMC.Password == "" && existing.Spec.BMC.Password != "" {
 		merged.Spec.BMC.Password = existing.Spec.BMC.Password
 	}
-
-	p.reconcileBMHChanges(r.Context(), existing, merged)
 
 	if p.deps.Store != nil && p.deps.Store.BareMetalHosts != nil {
 		storeKey := ns + "." + name
@@ -494,53 +461,6 @@ func (p *MicroKubeProvider) handleRefreshAllBMH(w http.ResponseWriter, r *http.R
 		"message": fmt.Sprintf("refresh requested for %d hosts", len(names)),
 		"hosts":   names,
 	})
-}
-
-// ─── Reconcile spec changes → pxemanager actions ────────────────────────────
-
-func (p *MicroKubeProvider) reconcileBMHChanges(ctx context.Context, old, new *BareMetalHost) {
-	pxeURL := p.deps.Config.BMH.PXEManagerURL
-	log := p.deps.Logger
-
-	// Image changed → set_image
-	if new.Spec.Image != old.Spec.Image && new.Spec.Image != "" {
-		if err := pxeSetImage(ctx, pxeURL, new.Spec.BootMACAddress, new.Spec.Image); err != nil {
-			log.Warnw("pxe set_image failed", "host", new.Name, "error", err)
-			new.Status.ErrorMessage = fmt.Sprintf("set_image: %v", err)
-		} else {
-			new.Status.Phase = "Provisioning"
-		}
-	}
-
-	// Online state changed → IPMI power
-	if new.Spec.Online != nil && (old.Spec.Online == nil || *new.Spec.Online != *old.Spec.Online) {
-		action := "power_off"
-		if *new.Spec.Online {
-			action = "power_on"
-		}
-		if err := pxeIPMIPower(ctx, pxeURL, new.Name, action); err != nil {
-			log.Warnw("pxe IPMI power failed", "host", new.Name, "action", action, "error", err)
-			new.Status.ErrorMessage = fmt.Sprintf("ipmi %s: %v", action, err)
-		} else {
-			new.Status.PoweredOn = *new.Spec.Online
-			new.Status.ErrorMessage = ""
-		}
-	}
-
-	// BMC config changed → configure IPMI
-	if new.Spec.BMC.Address != "" && new.Spec.BMC.Address != old.Spec.BMC.Address {
-		user := new.Spec.BMC.Username
-		pass := new.Spec.BMC.Password
-		if user == "" {
-			user = "ADMIN"
-		}
-		if pass == "" {
-			pass = "ADMIN"
-		}
-		if err := pxeConfigureIPMI(ctx, pxeURL, new.Name, new.Spec.BMC.Address, user, pass); err != nil {
-			log.Warnw("pxe IPMI config failed", "host", new.Name, "error", err)
-		}
-	}
 }
 
 // ─── BMH → Network CRD Sync ─────────────────────────────────────────────────
@@ -715,48 +635,6 @@ func (p *MicroKubeProvider) networkDNSEndpoint(net *Network) string {
 	return ""
 }
 
-// enrichBMHListConcurrent enriches all BMH items concurrently with a 3s overall timeout.
-func (p *MicroKubeProvider) enrichBMHListConcurrent(ctx context.Context, items []BareMetalHost) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-
-	var wg sync.WaitGroup
-	for i := range items {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			p.enrichBMHStatus(ctx, &items[idx])
-		}(i)
-	}
-	wg.Wait()
-}
-
-// enrichBMHStatus fetches live data from pxemanager to update status fields.
-func (p *MicroKubeProvider) enrichBMHStatus(ctx context.Context, bmh *BareMetalHost) {
-	pxeURL := p.deps.Config.BMH.PXEManagerURL
-	if pxeURL == "" || bmh.Spec.BootMACAddress == "" {
-		return
-	}
-
-	host, err := pxeGetHost(ctx, pxeURL, bmh.Spec.BootMACAddress)
-	if err != nil {
-		return
-	}
-
-	if host.LastBoot != nil {
-		bmh.Status.LastBoot = *host.LastBoot
-	}
-	bmh.Status.BootCount = host.BootCount
-	if host.CurrentImage != "" && bmh.Spec.Image == "" {
-		bmh.Spec.Image = host.CurrentImage
-	}
-
-	// Check IPMI power status
-	powered, err := pxeIPMIStatus(ctx, pxeURL, bmh.Name)
-	if err == nil {
-		bmh.Status.PoweredOn = powered
-	}
-}
 
 // ─── Table API ──────────────────────────────────────────────────────────────
 
@@ -845,142 +723,6 @@ func bmhListToTable(hosts []BareMetalHost) *metav1.Table {
 	}
 
 	return table
-}
-
-// ─── pxemanager Client ──────────────────────────────────────────────────────
-
-// pxeHost is the JSON structure returned by pxemanager GET /api/hosts.
-type pxeHost struct {
-	MAC          string  `json:"mac"`
-	Hostname     string  `json:"hostname"`
-	CurrentImage string  `json:"current_image"`
-	LastBoot     *string `json:"last_boot"`
-	BootCount    int     `json:"boot_count"`
-	IPMIIP       *string `json:"ipmi_ip"`
-}
-
-var pxeHTTPClient = &http.Client{Timeout: 10 * time.Second}
-
-func pxeRegisterHost(ctx context.Context, pxeURL, mac, hostname, image string) error {
-	if image == "" {
-		image = "localboot"
-	}
-	body, _ := json.Marshal(map[string]string{
-		"mac":           mac,
-		"hostname":      hostname,
-		"current_image": image,
-	})
-	req, err := http.NewRequestWithContext(ctx, "POST", pxeURL+"/api/hosts", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := pxeHTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
-	resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("pxe register: HTTP %d", resp.StatusCode)
-	}
-	return nil
-}
-
-func pxeSetImage(ctx context.Context, pxeURL, mac, image string) error {
-	form := fmt.Sprintf("image=%s", image)
-	req, err := http.NewRequestWithContext(ctx, "POST",
-		fmt.Sprintf("%s/api/host?mac=%s&action=set_image", pxeURL, mac),
-		strings.NewReader(form))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := pxeHTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
-	resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("pxe set_image: HTTP %d", resp.StatusCode)
-	}
-	return nil
-}
-
-func pxeIPMIPower(ctx context.Context, pxeURL, hostname, action string) error {
-	req, err := http.NewRequestWithContext(ctx, "POST",
-		fmt.Sprintf("%s/api/host/ipmi?host=%s&action=%s", pxeURL, hostname, action), nil)
-	if err != nil {
-		return err
-	}
-	resp, err := pxeHTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
-	resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("pxe ipmi %s: HTTP %d", action, resp.StatusCode)
-	}
-	return nil
-}
-
-func pxeIPMIStatus(ctx context.Context, pxeURL, hostname string) (bool, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("%s/api/host/ipmi/status?host=%s", pxeURL, hostname), nil)
-	if err != nil {
-		return false, err
-	}
-	resp, err := pxeHTTPClient.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	return strings.TrimSpace(string(body)) == "on", nil
-}
-
-func pxeConfigureIPMI(ctx context.Context, pxeURL, hostname, ipmiIP, user, pass string) error {
-	form := fmt.Sprintf("ipmi_ip=%s&ipmi_username=%s&ipmi_password=%s", ipmiIP, user, pass)
-	req, err := http.NewRequestWithContext(ctx, "POST",
-		fmt.Sprintf("%s/api/host/ipmi/config?host=%s", pxeURL, hostname),
-		strings.NewReader(form))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := pxeHTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
-	resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("pxe ipmi config: HTTP %d", resp.StatusCode)
-	}
-	return nil
-}
-
-func pxeGetHost(ctx context.Context, pxeURL, mac string) (*pxeHost, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", pxeURL+"/api/hosts", nil)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := pxeHTTPClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var hosts []pxeHost
-	if err := json.NewDecoder(resp.Body).Decode(&hosts); err != nil {
-		return nil, err
-	}
-
-	normalizedMAC := strings.ToLower(mac)
-	for _, h := range hosts {
-		if strings.ToLower(h.MAC) == normalizedMAC {
-			return &h, nil
-		}
-	}
-	return nil, fmt.Errorf("host with MAC %s not found in pxemanager", mac)
 }
 
 // LoadBMHFromStore loads BMH objects from NATS store into the in-memory map.
@@ -1097,7 +839,6 @@ func (p *MicroKubeProvider) handleWatchBMH(w http.ResponseWriter, r *http.Reques
 	p.mu.RUnlock()
 	for _, enriched := range snapshot {
 		enriched.TypeMeta = metav1.TypeMeta{APIVersion: "v1", Kind: "BareMetalHost"}
-		p.enrichBMHStatus(ctx, enriched)
 		evt := K8sWatchEvent{Type: "ADDED", Object: enriched}
 		if err := enc.Encode(evt); err != nil {
 			return
@@ -1138,7 +879,6 @@ func (p *MicroKubeProvider) handleWatchBMH(w http.ResponseWriter, r *http.Reques
 					continue
 				}
 				bmh.TypeMeta = metav1.TypeMeta{APIVersion: "v1", Kind: "BareMetalHost"}
-				p.enrichBMHStatus(ctx, &bmh)
 			}
 
 			watchEvt := K8sWatchEvent{
