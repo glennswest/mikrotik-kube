@@ -166,6 +166,10 @@ go test ./...
 - DNS data persistence: Managed DNS pods now get PVC-backed data volume for redb persistence.
 - NATS messaging in microdns TOML: Generated TOML includes `[messaging]` section enabling microdns → NATS DHCP event pipeline.
 - dhcpIndex rebuild from CRDs: `rebuildDHCPIndex()` builds from both static config and Network CRDs. DHCP watcher polls CRD-based networks. Wired into CRD handlers and SetStore boot path.
+- Dynamic IPAM registration for Network CRDs: Networks created via API were never registered with IPAM allocator, causing DNS pod creation to fail. Added `Manager.RegisterNetwork()` method. Wired into `handleCreateNetwork` and `LoadNetworksFromStore`.
+- PVC key consistency for managed DNS: PVCs created by `deployManagedDNS` used wrong key format (no namespace), causing consistency check failures.
+- Bridge rename on rose1: `bridge` → `bridge-g10`, `bridge-boot` → `bridge-g11`, deleted unused `containers` bridge. All references (IPs, relays, DHCP server) auto-updated by RouterOS internal ID refs.
+- g8/g9 full network setup: Created managed Network CRDs with DNS, DHCP, forward zones. Replaced standalone zero-zone DNS containers with mkube-managed pods. All 6 networks operational.
 
 ### TODO (priority order)
 1. **BareMetalHost Operator (BMO)**: Owns ALL host state and state machines. Architecture:

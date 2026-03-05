@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### 2026-03-05
+- **fix:** Dynamic IPAM registration for Network CRDs — networks created via API (not in config.yaml) were never registered with IPAM allocator, causing DNS pod creation to fail with "network not found". Added `Manager.RegisterNetwork()` for dynamic pool registration, wired into `handleCreateNetwork` and `LoadNetworksFromStore`.
+- **fix:** PVC key consistency for managed DNS — PVCs created by `deployManagedDNS` used wrong key format (no namespace), causing consistency check failures. Fixed to use `namespace/name` map key and `namespace.name` NATS key.
+- **feat:** Bridge rename on RouterOS — renamed `bridge` → `bridge-g10` and `bridge-boot` → `bridge-g11` for naming convention consistency. Deleted unused `containers` bridge.
+- **feat:** g8 (household) and g9 (wifi) full network setup — created Network CRDs with managed DNS, DHCP pools, static records, and forward zone integration. DNS pods auto-deployed with PVC persistence. DHCP relays auto-provisioned.
+- **chore:** Updated `deploy/rose1-config.yaml` with bridge renames and g8/g9 network definitions.
 - **fix:** NATS URL for microdns TOML — embedded NATS sets config URL to `nats://0.0.0.0:4222` which is unreachable from external containers. `natsURL()` now detects bind-all addresses and substitutes the NATS container IP (192.168.200.10). Same fix in `defaults.go`.
 - **fix:** DNS data persistence — managed DNS pods now get PVC-backed data volume (`{network}-dns-data` PVC) so redb database survives container recreation/restart.
 - **feat:** Network provisioning flow — creating a Network CRD auto-provisions infrastructure on RouterOS (bridge, gateway IP, DHCP relay, microdns pod). Deprovisioning on delete tears down in reverse order. New `network_provision.go`.
