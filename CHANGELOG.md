@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### 2026-03-05
+- **feat:** microdns liveness checks — new `checkMicroDNSServices()` in consistency report verifies REST API health, DHCP pool/reservation counts, and DNS forwarder topology for each managed network. New `MicroDNS` section in consistency report.
+- **feat:** Auto-recovery after DNS restart — `repairDNSLiveness()` now triggers `seedDNSConfig()` after restarting a dead DNS pod, re-populating DHCP pools/reservations/forwarders that may be lost when the database is ephemeral.
+- **feat:** `checkInfraHealth()` polling fallback now probes microdns REST API + port 53 for each managed network, detecting zombie containers (RouterOS reports "running" but process is dead).
 - **feat:** Direct microdns REST API for DHCP/forwarders — mkube now calls microdns REST API directly for DHCP pool creation, reservation upsert/delete, and DNS forward zone management. Replaces the old TOML pipeline (BMH change → Network CRD → TOML → ConfigMap → microdns reads TOML → migrates to DB). Network CRD keeps reservations as desired-state backup for re-seeding on DB loss.
 - **feat:** DNS client extended with DHCP pool CRUD, reservation upsert/delete, DNS forwarder ensure/delete, and health check methods (`pkg/dns/client.go`).
 - **feat:** New `dns_seed.go` — `seedDNSConfig()` seeds DHCP pools, reservations, and forward zones via REST API with retry-on-startup. `reconcileDNSConfig()` detects empty microdns databases and re-seeds from Network CRD state.

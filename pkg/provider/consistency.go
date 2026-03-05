@@ -41,6 +41,7 @@ type ConsistencyChecks struct {
 	Registries  []CheckItem `json:"registries,omitempty"`
 	ISCSICdroms  []CheckItem `json:"iscsiCdroms,omitempty"`
 	BootConfigs  []CheckItem `json:"bootConfigs,omitempty"`
+	MicroDNS     []CheckItem `json:"microDNS,omitempty"`
 }
 
 // CheckItem is a single check result.
@@ -106,6 +107,7 @@ func (p *MicroKubeProvider) runConsistencyChecks(ctx context.Context) Consistenc
 	report.Checks.Registries = p.checkRegistryCRDs(ctx)
 	report.Checks.ISCSICdroms = p.checkISCSICdromCRDs(ctx)
 	report.Checks.BootConfigs = p.checkBootConfigCRDs(ctx)
+	report.Checks.MicroDNS = p.checkMicroDNSServices(ctx)
 
 	for _, items := range [][]CheckItem{
 		report.Checks.Containers,
@@ -120,6 +122,7 @@ func (p *MicroKubeProvider) runConsistencyChecks(ctx context.Context) Consistenc
 		report.Checks.Registries,
 		report.Checks.ISCSICdroms,
 		report.Checks.BootConfigs,
+		report.Checks.MicroDNS,
 	} {
 		for _, item := range items {
 			switch item.Status {
@@ -1250,6 +1253,12 @@ func (p *MicroKubeProvider) repairDNSLiveness(ctx context.Context) int {
 		if alive {
 			log.Infow("DNS pod restarted and port 53 alive", "pod", podKey)
 			repaired++
+
+			// Re-seed DHCP pools/reservations/forwarders — the database
+			// may be empty after restart (redb ephemeral).
+			if net, ok := p.networks[dead.netName]; ok {
+				go p.seedDNSConfig(context.Background(), net)
+			}
 		} else {
 			log.Errorw("DNS pod restarted but port 53 still dead, halting DNS repair",
 				"pod", podKey)
@@ -1527,6 +1536,135 @@ func (p *MicroKubeProvider) checkBMHs() []CheckItem {
 					Message: "BMH in memory but not in NATS",
 				})
 			}
+		}
+	}
+
+	return items
+}
+
+// checkMicroDNSServices verifies all microdns services (REST API, DHCP pools,
+// reservations, DNS forwarders) for each managed network.
+func (p *MicroKubeProvider) checkMicroDNSServices(ctx context.Context) []CheckItem {
+	var items []CheckItem
+	dnsClient := p.deps.NetworkMgr.DNSClient()
+	if dnsClient == nil {
+		return nil
+	}
+
+	for _, net := range p.networks {
+		if net.Spec.ExternalDNS || net.Spec.DNS.Zone == "" || net.Spec.DNS.Server == "" {
+			continue
+		}
+
+		endpoint := net.Spec.DNS.Endpoint
+		if endpoint == "" {
+			endpoint = "http://" + net.Spec.DNS.Server + ":8080"
+		}
+
+		// 1. REST API health
+		if err := dnsClient.HealthCheck(ctx, endpoint); err != nil {
+			items = append(items, CheckItem{
+				Name:    fmt.Sprintf("microdns-api/%s", net.Name),
+				Status:  "fail",
+				Message: fmt.Sprintf("REST API unreachable: %v", err),
+			})
+			// Skip further checks — API is down
+			continue
+		}
+		items = append(items, CheckItem{
+			Name:    fmt.Sprintf("microdns-api/%s", net.Name),
+			Status:  "pass",
+			Message: "REST API healthy",
+			Details: endpoint,
+		})
+
+		// 2. DHCP pools (if DHCP is enabled for this network or relayed to it)
+		if net.Spec.DHCP.Enabled || p.networkHasDHCP(net.Name) {
+			pools, err := dnsClient.ListDHCPPools(ctx, endpoint)
+			if err != nil {
+				items = append(items, CheckItem{
+					Name:    fmt.Sprintf("microdns-dhcp-pools/%s", net.Name),
+					Status:  "warn",
+					Message: fmt.Sprintf("cannot check DHCP pools: %v", err),
+				})
+			} else if len(pools) == 0 {
+				items = append(items, CheckItem{
+					Name:    fmt.Sprintf("microdns-dhcp-pools/%s", net.Name),
+					Status:  "fail",
+					Message: "no DHCP pools configured (database may be empty after restart)",
+				})
+			} else {
+				items = append(items, CheckItem{
+					Name:    fmt.Sprintf("microdns-dhcp-pools/%s", net.Name),
+					Status:  "pass",
+					Message: fmt.Sprintf("%d DHCP pool(s) configured", len(pools)),
+				})
+			}
+
+			// 3. DHCP reservations — verify count matches Network CRD
+			reservations, err := dnsClient.ListDHCPReservations(ctx, endpoint)
+			if err != nil {
+				items = append(items, CheckItem{
+					Name:    fmt.Sprintf("microdns-dhcp-reservations/%s", net.Name),
+					Status:  "warn",
+					Message: fmt.Sprintf("cannot check DHCP reservations: %v", err),
+				})
+			} else {
+				// Count expected reservations from this network + relayed peers
+				expected := len(net.Spec.DHCP.Reservations)
+				for _, peer := range p.networks {
+					if peer.Name != net.Name && peer.Spec.DHCP.Enabled && peer.Spec.DHCP.ServerNetwork == net.Name {
+						expected += len(peer.Spec.DHCP.Reservations)
+					}
+				}
+
+				status := "pass"
+				msg := fmt.Sprintf("%d reservation(s) active", len(reservations))
+				if expected > 0 && len(reservations) < expected {
+					status = "warn"
+					msg = fmt.Sprintf("%d/%d reservations (some missing)", len(reservations), expected)
+				}
+				items = append(items, CheckItem{
+					Name:    fmt.Sprintf("microdns-dhcp-reservations/%s", net.Name),
+					Status:  status,
+					Message: msg,
+				})
+			}
+		}
+
+		// 4. DNS forwarders match network topology
+		forwarders, err := dnsClient.ListDNSForwarders(ctx, endpoint)
+		if err != nil {
+			continue
+		}
+
+		existingZones := make(map[string]bool, len(forwarders))
+		for _, f := range forwarders {
+			existingZones[f.Zone] = true
+		}
+
+		var missing []string
+		for _, peer := range p.networks {
+			if peer.Name == net.Name || peer.Spec.DNS.Zone == "" || peer.Spec.DNS.Server == "" {
+				continue
+			}
+			if !existingZones[peer.Spec.DNS.Zone] {
+				missing = append(missing, peer.Spec.DNS.Zone)
+			}
+		}
+
+		if len(missing) > 0 {
+			items = append(items, CheckItem{
+				Name:    fmt.Sprintf("microdns-forwarders/%s", net.Name),
+				Status:  "fail",
+				Message: fmt.Sprintf("missing forwarders: %s", strings.Join(missing, ", ")),
+			})
+		} else {
+			items = append(items, CheckItem{
+				Name:    fmt.Sprintf("microdns-forwarders/%s", net.Name),
+				Status:  "pass",
+				Message: fmt.Sprintf("%d forwarder(s) configured", len(forwarders)),
+			})
 		}
 	}
 

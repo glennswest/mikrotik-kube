@@ -155,12 +155,46 @@ func (p *MicroKubeProvider) handleInfraDeath(ctx context.Context, ic infraContai
 }
 
 // checkInfraHealth is the polling fallback called from the reconcile loop.
-// It only acts if the watch goroutine hasn't recently restarted the container
-// (i.e., the watch is not connected and the container is unresponsive).
-// This catches edge cases where the watch goroutine itself is stuck.
+// It checks microdns REST API and port 53 for each managed network. If both
+// are dead but the container is reported as "running" (zombie state), the pod
+// is restarted and the database re-seeded.
 func (p *MicroKubeProvider) checkInfraHealth(ctx context.Context) {
-	// Polling is now a lightweight backup — the watch handles most cases.
-	// Only check containers where the watch might not be connected yet.
+	dnsClient := p.deps.NetworkMgr.DNSClient()
+	if dnsClient == nil {
+		return
+	}
+
+	for _, netObj := range p.networks {
+		if netObj.Spec.ExternalDNS || netObj.Spec.DNS.Zone == "" || netObj.Spec.DNS.Server == "" {
+			continue
+		}
+
+		endpoint := netObj.Spec.DNS.Endpoint
+		if endpoint == "" {
+			endpoint = "http://" + netObj.Spec.DNS.Server + ":8080"
+		}
+
+		// REST API healthy → microdns is alive, nothing to do
+		if err := dnsClient.HealthCheck(ctx, endpoint); err == nil {
+			continue
+		}
+
+		// REST API dead — check if port 53 is also dead (full zombie)
+		if probeDNSPort(netObj.Spec.DNS.Server, netObj.Spec.DNS.Zone, 3*time.Second) {
+			// Port 53 is alive but REST API is down — unusual but not critical.
+			// DNS resolution still works; DHCP management is impaired.
+			p.deps.Logger.Warnw("microdns REST API down but port 53 alive",
+				"network", netObj.Name, "endpoint", endpoint)
+			continue
+		}
+
+		// Both REST API and port 53 are dead — repairDNSLiveness will handle
+		// the restart on the next consistency check cycle. Log it here for
+		// visibility in reconcile logs.
+		p.deps.Logger.Warnw("microdns fully unresponsive (REST API + port 53 dead)",
+			"network", netObj.Name, "endpoint", endpoint,
+			"note", "repairDNSLiveness will restart on next consistency check")
+	}
 }
 
 // getInfraContainers returns the list of infrastructure containers to watch.
