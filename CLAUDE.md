@@ -160,6 +160,10 @@ go test ./...
 - Direct microdns REST API for DHCP/forwarders: mkube now calls microdns REST API directly for DHCP pool creation, reservation upsert/delete, and DNS forward zone management. Replaces the old TOML pipeline. TOML reduced to minimal structural config. Network CRD keeps reservations as NATS desired-state backup. `seedDNSConfig()` re-seeds on empty DB. BMH sync pushes changes via REST API immediately.
 - microdns liveness checks: `checkMicroDNSServices()` in consistency report verifies REST API health, DHCP pool/reservation counts, and DNS forwarder topology. `repairDNSLiveness()` triggers `seedDNSConfig()` after restart for auto-recovery. `checkInfraHealth()` polling fallback detects zombie microdns containers.
 - pxemanager code removed from mkube: All pxemanager client code (pxeHost type, pxeHTTPClient, pxeRegisterHost, pxeSetImage, pxeIPMIPower, pxeIPMIStatus, pxeConfigureIPMI, pxeGetHost), reconcileBMHChanges, enrichBMHStatus, enrichBMHListConcurrent — all removed. bmh-operator handles IPMI directly. Eliminates stale error messages from decommissioned pxemanager.
+- Network provisioning flow: Creating a Network CRD auto-provisions infrastructure on RouterOS (bridge, gateway IP, DHCP relay). Deprovisioning on delete tears down in reverse. RouterOS client extended with bridge/IP/DHCP-relay CRUD. Network driver implements CreateBridge/DeleteBridge. `network_provision.go` handles the lifecycle.
+- Network CRD pairNetwork: Links companion data/IPMI networks (e.g. g12↔g13). Config `NetworkDef.Type` carries type classification through migration.
+- NATS messaging in microdns TOML: Generated TOML includes `[messaging]` section enabling microdns → NATS DHCP event pipeline.
+- dhcpIndex rebuild from CRDs: `rebuildDHCPIndex()` builds from both static config and Network CRDs. DHCP watcher polls CRD-based networks. Wired into CRD handlers and SetStore boot path.
 
 ### TODO (priority order)
 1. **BareMetalHost Operator (BMO)**: Owns ALL host state and state machines. Architecture:

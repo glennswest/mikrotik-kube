@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### 2026-03-05
+- **feat:** Network provisioning flow — creating a Network CRD auto-provisions infrastructure on RouterOS (bridge, gateway IP, DHCP relay, microdns pod). Deprovisioning on delete tears down in reverse order. New `network_provision.go`.
+- **feat:** RouterOS client bridge/IP/DHCP-relay CRUD — `CreateBridge`, `DeleteBridge`, `AddIPAddress`, `RemoveIPAddress`, `RemoveIPAddressByInterface`, `AddDHCPRelay`, `RemoveDHCPRelay`, `RemoveDHCPRelayByInterface`, `ListDHCPRelays`, `BridgeExists`.
+- **feat:** Network CRD `pairNetwork` field — links companion data/IPMI networks (e.g. g12↔g13). `provisioned` tracks infrastructure state. Table shows Pair column.
+- **feat:** Config `NetworkDef.Type` field — carries `type: ipmi/data/etc` from config.yaml through migration to Network CRD.
+- **feat:** NATS messaging section in generated microdns TOML — enables DHCP event pipeline (microdns → NATS → mkube DHCP watcher → bmh-operator).
+- **feat:** Rebuild dhcpIndex from Network CRDs — `rebuildDHCPIndex()` builds from both static config and CRDs. DHCP watcher polls CRD-based networks. Wired into CRD create/update/patch handlers and SetStore boot path.
+- **feat:** RouterOS network driver implements `CreateBridge`/`DeleteBridge` (previously returned ErrNotSupported).
 - **refactor:** Remove all pxemanager client code — pxeHost type, pxeHTTPClient, all pxe* functions, reconcileBMHChanges, enrichBMHStatus, enrichBMHListConcurrent. bmh-operator handles all IPMI directly. Eliminates stale error messages from decommissioned pxemanager.
 - **chore:** Remove server7 references from `deploy/rose1-config.yaml` and g10 Network CRD (placeholder MACs).
 - **feat:** microdns liveness checks — new `checkMicroDNSServices()` in consistency report verifies REST API health, DHCP pool/reservation counts, and DNS forwarder topology for each managed network. New `MicroDNS` section in consistency report.
