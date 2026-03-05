@@ -60,6 +60,13 @@ func (p *MicroKubeProvider) LoadPVCsFromStore(ctx context.Context) {
 			p.deps.Logger.Warnw("failed to read PVC from store", "key", key, "error", err)
 			continue
 		}
+		// Migration: PVCs stored without namespace (pre-fix) are stale.
+		// Delete from NATS and skip — they'll be recreated with correct keys.
+		if pvc.Namespace == "" {
+			p.deps.Logger.Infow("deleting stale PVC with empty namespace", "key", key, "name", pvc.Name)
+			_ = p.deps.Store.PersistentVolumeClaims.Delete(ctx, key)
+			continue
+		}
 		mapKey := pvc.Namespace + "/" + pvc.Name
 		p.pvcs[mapKey] = &pvc
 	}
