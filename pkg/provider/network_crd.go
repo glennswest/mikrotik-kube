@@ -866,6 +866,14 @@ func (p *MicroKubeProvider) deployManagedDNS(ctx context.Context, net *Network) 
 						},
 					},
 				},
+				{
+					Name: "data",
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: net.Name + "-dns-data",
+						},
+					},
+				},
 			},
 			Containers: []corev1.Container{
 				{
@@ -909,7 +917,30 @@ func (p *MicroKubeProvider) deployManagedDNS(ctx context.Context, net *Network) 
 		},
 	}
 
-	// 3. Persist pod to NATS
+	// 3. Ensure PVC exists for DNS data persistence
+	pvcName := net.Name + "-dns-data"
+	if _, exists := p.pvcs[pvcName]; !exists {
+		storageClass := "local"
+		pvc := &corev1.PersistentVolumeClaim{
+			TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "PersistentVolumeClaim"},
+			ObjectMeta: metav1.ObjectMeta{Name: pvcName},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				StorageClassName: &storageClass,
+			},
+			Status: corev1.PersistentVolumeClaimStatus{
+				Phase: corev1.ClaimBound,
+			},
+		}
+		p.pvcs[pvcName] = pvc
+		if p.deps.Store != nil && p.deps.Store.PersistentVolumeClaims != nil {
+			if _, err := p.deps.Store.PersistentVolumeClaims.PutJSON(ctx, pvcName, pvc); err != nil {
+				log.Warnw("failed to persist DNS data PVC", "error", err)
+			}
+		}
+		log.Infow("created DNS data PVC", "pvc", pvcName)
+	}
+
+	// 4. Persist pod to NATS
 	if p.deps.Store != nil && p.deps.Store.Pods != nil {
 		storeKey := net.Name + ".dns"
 		if _, err := p.deps.Store.Pods.PutJSON(ctx, storeKey, &pod); err != nil {
@@ -917,12 +948,12 @@ func (p *MicroKubeProvider) deployManagedDNS(ctx context.Context, net *Network) 
 		}
 	}
 
-	// 4. Create the pod (goes through ContainerRuntime interface)
+	// 6. Create the pod (goes through ContainerRuntime interface)
 	if err := p.CreatePod(ctx, &pod); err != nil {
 		return fmt.Errorf("creating dns pod: %w", err)
 	}
 
-	// 5. Set DNS endpoint on network so REST API calls work
+	// 7. Set DNS endpoint on network so REST API calls work
 	net.Spec.DNS.Endpoint = "http://" + net.Spec.DNS.Server + ":8080"
 	if p.deps.Store != nil && p.deps.Store.Networks != nil {
 		if _, err := p.deps.Store.Networks.PutJSON(ctx, net.Name, net); err != nil {

@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/glennswest/mkube/pkg/routeros"
 	"github.com/glennswest/mkube/pkg/runtime"
@@ -162,19 +163,32 @@ func cidrMask(cidr string) string {
 	return "24" // default
 }
 
-// natsURL returns the NATS URL for microdns messaging.
-// Prefers the configured URL; falls back to embedded NATS on the NATS container IP.
+// natsURL returns the NATS URL that external containers (microdns) can use
+// to connect to NATS. When embedded NATS is used, the bind address (0.0.0.0)
+// is meaningless outside the mkube container — we need the actual NATS
+// container or mkube container IP that's reachable from other containers.
 func (p *MicroKubeProvider) natsURL() string {
-	if p.deps.Config.NATS.URL != "" {
-		return p.deps.Config.NATS.URL
-	}
-	// For embedded NATS, build URL from known NATS container IP
 	port := p.deps.Config.NATS.Port
 	if port == 0 {
 		port = 4222
 	}
-	// Embedded NATS runs on the same host; NATS container is at 192.168.200.10
-	// but microdns containers need to reach it at the NATS container IP.
+
+	// If a URL is configured and not a bind-all address, use it directly
+	url := p.deps.Config.NATS.URL
+	if url != "" && !strings.Contains(url, "0.0.0.0") && !strings.Contains(url, "127.0.0.1") {
+		return url
+	}
+
+	// Look up NATS container IP from tracked pods
+	for _, pod := range p.pods {
+		if pod.Namespace == "infra" && pod.Name == "nats" {
+			if ip := pod.Status.PodIP; ip != "" {
+				return fmt.Sprintf("nats://%s:%d", ip, port)
+			}
+		}
+	}
+
+	// Fallback: well-known NATS container IP
 	return fmt.Sprintf("nats://192.168.200.10:%d", port)
 }
 

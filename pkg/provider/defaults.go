@@ -102,12 +102,14 @@ default_ttl = 300
 		}
 
 		// NATS messaging section for DHCP event pipeline
+		// Embedded NATS sets URL to nats://0.0.0.0:4222 — not reachable from
+		// external containers. Always use the NATS container IP.
+		natsPort := cfg.NATS.Port
+		if natsPort == 0 {
+			natsPort = 4222
+		}
 		natsURL := cfg.NATS.URL
-		if natsURL == "" {
-			natsPort := cfg.NATS.Port
-			if natsPort == 0 {
-				natsPort = 4222
-			}
+		if natsURL == "" || strings.Contains(natsURL, "0.0.0.0") || strings.Contains(natsURL, "127.0.0.1") {
 			natsURL = fmt.Sprintf("nats://192.168.200.10:%d", natsPort)
 		}
 		messagingSection := fmt.Sprintf(`
