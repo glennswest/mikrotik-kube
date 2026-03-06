@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### 2026-03-06
+- **feat:** PATCH handlers for DNS/DHCP proxy resources — proper GET-merge-update semantics for dnsrecords, dhcppools, dhcpreservations. Enables `oc apply` updates on proxy resources (previously only PUT/POST worked).
+- **feat:** DNS stress test suite — creates N A records, verifies all via lookup, deletes all, repeats M rounds. Monitors system memory between rounds for leak detection (warns if >50MB drift). Default: 100 rounds x 100 records.
+- **fix:** Integration test uses dedicated gtest network for ALL tests — never touches production networks. DNS pod wait changed from fixed 15s to polling (up to 120s). Root cause of previous "no pods" was timing, not connectivity.
+
 ### 2026-03-05
 - **feat:** Auto-recovery for stopped/faulted containers — reconciler detects containers that are stopped but should be running (start-on-boot=yes), attempts restart first, falls back to full destroy+recreate if restart fails. RouterOS `comment` field captured for diagnostics. Events emitted: `ContainerStopped`, `Restarted`, `RecoveryRecreate`.
 - **feat:** Container `Comment` field — RouterOS error messages (e.g. "could not acquire interface: no device (6)") now propagated through routeros.Container → runtime.Container → pod status (Terminated reason) → consistency check details.
