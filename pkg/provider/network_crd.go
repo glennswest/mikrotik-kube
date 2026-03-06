@@ -165,6 +165,31 @@ func (p *MicroKubeProvider) LoadNetworksFromStore(ctx context.Context) {
 	if len(keys) > 0 {
 		p.deps.Logger.Infow("loaded networks from store", "count", len(keys))
 	}
+
+	// Ensure managed networks have their DNS pods deployed.
+	// On restart, the pod store entry may have been lost (e.g. if the pod
+	// was not tracked in p.pods when teardown ran, or if NATS lost the key).
+	for _, net := range p.networks {
+		if !net.Spec.Managed || net.Spec.DNS.Zone == "" || net.Spec.DNS.Server == "" {
+			continue
+		}
+		podKey := net.Name + "/dns"
+		if _, ok := p.pods[podKey]; ok {
+			continue // already tracked
+		}
+		// Check NATS pod store
+		if p.deps.Store != nil && p.deps.Store.Pods != nil {
+			storeKey := net.Name + ".dns"
+			var existing corev1.Pod
+			if _, err := p.deps.Store.Pods.GetJSON(ctx, storeKey, &existing); err == nil {
+				continue // exists in store, reconciler will pick it up
+			}
+		}
+		p.deps.Logger.Infow("managed network missing DNS pod, deploying", "network", net.Name)
+		if err := p.deployManagedDNS(ctx, net); err != nil {
+			p.deps.Logger.Warnw("failed to deploy managed DNS on load", "network", net.Name, "error", err)
+		}
+	}
 }
 
 // ReconcileNetworkConfigMaps regenerates DNS ConfigMaps from the current
@@ -295,6 +320,7 @@ func networkDefToNetwork(nd config.NetworkDef) Network {
 				End:   nd.IPAMEnd,
 			},
 			ExternalDNS:   nd.ExternalDNS,
+			Managed:       !nd.ExternalDNS && nd.DNS.Zone != "" && nd.DNS.Server != "",
 			StaticRecords: staticRecords,
 		},
 		Status: NetworkStatus{
