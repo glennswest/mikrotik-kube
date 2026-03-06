@@ -1034,12 +1034,26 @@ func (p *MicroKubeProvider) teardownManagedDNS(ctx context.Context, netName stri
 		} else {
 			log.Infow("deleted managed DNS pod")
 		}
-		// Remove from NATS pod store
-		if p.deps.Store != nil && p.deps.Store.Pods != nil {
-			storeKey := netName + ".dns"
-			if err := p.deps.Store.Pods.Delete(ctx, storeKey); err != nil {
-				log.Warnw("failed to delete dns pod from store", "error", err)
-			}
+	} else {
+		// Pod not tracked (e.g. CreatePod failed or was loaded from NATS
+		// during boot but never reconciled into p.pods). Directly clean up
+		// the container and veth that may still exist on the device.
+		containerName := netName + "_dns_microdns"
+		vethName := "veth_" + netName + "_dns_0"
+		log.Infow("DNS pod not tracked, cleaning up container/veth directly",
+			"container", containerName, "veth", vethName)
+		p.stopAndRemoveContainer(ctx, containerName, "")
+		_ = p.deps.Runtime.RemoveMountsByList(ctx, containerName)
+		if err := p.deps.NetworkMgr.ReleaseInterface(ctx, vethName); err != nil {
+			log.Warnw("failed to release veth during direct cleanup", "veth", vethName, "error", err)
+		}
+	}
+
+	// Remove from NATS pod store regardless of tracking state
+	if p.deps.Store != nil && p.deps.Store.Pods != nil {
+		storeKey := netName + ".dns"
+		if err := p.deps.Store.Pods.Delete(ctx, storeKey); err != nil {
+			log.Warnw("failed to delete dns pod from store", "error", err)
 		}
 	}
 
