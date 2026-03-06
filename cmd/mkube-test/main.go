@@ -11,7 +11,8 @@ import (
 )
 
 var (
-	mkCmd           = flag.String("mk", "mk", "mk/oc command (default: mk)")
+	mkCmd           = flag.String("mk", "oc", "oc/mk command (default: oc)")
+	kubeconfig      = flag.String("kubeconfig", os.ExpandEnv("$HOME/.kube/mkube.config"), "kubeconfig path")
 	networkName     = flag.String("network", "gtest", "test network name")
 	containerImage  = flag.String("image", "192.168.200.3:5000/microdns:edge", "container image for pod tests")
 	containerCycles = flag.Int("container-cycles", 5, "number of container start/stop cycles")
@@ -144,12 +145,14 @@ func main() {
 
 func mk(args ...string) (string, error) {
 	cmd := exec.Command(*mkCmd, args...)
+	cmd.Env = append(os.Environ(), "KUBECONFIG="+*kubeconfig)
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
 
 func mkApply(yaml string) (string, error) {
 	cmd := exec.Command(*mkCmd, "apply", "-f", "-")
+	cmd.Env = append(os.Environ(), "KUBECONFIG="+*kubeconfig)
 	cmd.Stdin = strings.NewReader(yaml)
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err

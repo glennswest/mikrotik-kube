@@ -409,6 +409,11 @@ func (p *MicroKubeProvider) handleCreateNetwork(w http.ResponseWriter, r *http.R
 		}
 	}
 
+	// Set bridge name before registration so the network manager has it
+	if net.Spec.Bridge == "" {
+		net.Spec.Bridge = "bridge-" + net.Name
+	}
+
 	p.networks[net.Name] = &net
 
 	// Register with IPAM so pods on this network can allocate IPs
@@ -416,9 +421,10 @@ func (p *MicroKubeProvider) handleCreateNetwork(w http.ResponseWriter, r *http.R
 		p.deps.Logger.Warnw("failed to register network with IPAM", "network", net.Name, "error", err)
 	}
 
-	// Provision infrastructure (bridge, gateway IP, DHCP relay) if not already done
+	// Provision infrastructure (bridge, gateway IP, DHCP relay) synchronously
+	// before deploying DNS, so the bridge exists when the DNS pod is created.
 	if !net.Spec.Provisioned {
-		go p.provisionNetwork(context.Background(), &net)
+		p.provisionNetwork(r.Context(), &net)
 	}
 
 	// Auto-deploy managed DNS pod if network is managed with DNS config
