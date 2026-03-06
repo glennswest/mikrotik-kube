@@ -13,13 +13,14 @@ import (
 var (
 	mkCmd           = flag.String("mk", "oc", "oc/mk command (default: oc)")
 	kubeconfig      = flag.String("kubeconfig", os.ExpandEnv("$HOME/.kube/mkube.config"), "kubeconfig path")
-	networkName     = flag.String("network", "gtest", "test network name")
+	networkName     = flag.String("network", "gtest", "test network for container tests")
+	dnsNetwork      = flag.String("dns-network", "gt", "existing network for DNS/DHCP tests (must have running microdns)")
 	containerImage  = flag.String("image", "192.168.200.3:5000/microdns:edge", "container image for pod tests")
 	containerCycles = flag.Int("container-cycles", 5, "number of container start/stop cycles")
 	dhcpCycles      = flag.Int("dhcp-cycles", 100, "number of DHCP reservation CRUD cycles")
 	dnsCycles       = flag.Int("dns-cycles", 100, "number of DNS record CRUD cycles")
-	skipSetup       = flag.Bool("skip-setup", false, "skip network creation (assume gtest exists)")
-	skipTeardown    = flag.Bool("skip-teardown", false, "skip network deletion at end")
+	skipSetup       = flag.Bool("skip-setup", false, "skip test network creation")
+	skipTeardown    = flag.Bool("skip-teardown", false, "skip test network deletion at end")
 	suite           = flag.String("suite", "all", "run specific suite: all, containers, dhcp, dns, pool")
 )
 
@@ -59,7 +60,8 @@ func main() {
 	flag.Parse()
 
 	fmt.Println("=== mkube Integration Test ===")
-	fmt.Printf("Network: %s\n", *networkName)
+	fmt.Printf("Container network: %s\n", *networkName)
+	fmt.Printf("DNS/DHCP network:  %s\n", *dnsNetwork)
 	fmt.Printf("Command: %s\n\n", *mkCmd)
 
 	// Verify mk command works
@@ -314,7 +316,8 @@ spec:
 
 func runDHCPSuite() bool {
 	n := *dhcpCycles
-	fmt.Printf("--- Suite 2: DHCP Reservations (%d cycles) ---\n", n)
+	ns := *dnsNetwork
+	fmt.Printf("--- Suite 2: DHCP Reservations (%d cycles on %s) ---\n", n, ns)
 
 	createSt := &stats{}
 	deleteSt := &stats{}
@@ -322,9 +325,10 @@ func runDHCPSuite() bool {
 
 	for i := 1; i <= n; i++ {
 		mac := fmt.Sprintf("02:00:00:00:%02x:%02x", i/256, i%256)
-		ip := fmt.Sprintf("192.168.99.%d", 100+(i%100))
+		ip := fmt.Sprintf("10.99.0.%d", 1+(i%254))
 		hostname := fmt.Sprintf("test-host-%d", i)
 		macDash := strings.ReplaceAll(mac, ":", "-")
+		cycleFailed := false
 
 		// Create reservation via mk apply
 		createStart := time.Now()
@@ -337,7 +341,7 @@ spec:
   mac: "%s"
   ip: "%s"
   hostname: "%s"
-`, macDash, *networkName, mac, ip, hostname)
+`, macDash, ns, mac, ip, hostname)
 
 		out, err := mkApply(resYAML)
 		if err != nil {
@@ -348,14 +352,20 @@ spec:
 		createSt.record(createMs)
 
 		// Verify exists
-		_, err = mk("get", "dhcpr", macDash, "-n", *networkName)
+		_, err = mk("get", "dhcpr", macDash, "-n", ns)
 		if err != nil {
 			fmt.Printf("  cycle %3d/%d: create=%dms VERIFY FAILED\n", i, n, createMs)
+			mk("delete", "dhcpr", macDash, "-n", ns)
 			continue
 		}
 
-		// Update hostname via mk apply
-		updateYAML := fmt.Sprintf(`apiVersion: v1
+		// Update hostname — delete and recreate (microdns proxy has no PATCH)
+		delOut, delErr := mk("delete", "dhcpr", macDash, "-n", ns)
+		if delErr != nil {
+			fmt.Printf("  cycle %3d/%d: create=%dms UPDATE-DELETE FAILED: %s\n", i, n, createMs, truncate(delOut, 100))
+			cycleFailed = true
+		} else {
+			updateYAML := fmt.Sprintf(`apiVersion: v1
 kind: DHCPReservation
 metadata:
   name: %s
@@ -364,23 +374,27 @@ spec:
   mac: "%s"
   ip: "%s"
   hostname: "%s-updated"
-`, macDash, *networkName, mac, ip, hostname)
-
-		_, err = mkApply(updateYAML)
-		if err != nil {
-			fmt.Printf("  cycle %3d/%d: create=%dms UPDATE FAILED\n", i, n, createMs)
-			// Continue to cleanup
+`, macDash, ns, mac, ip, hostname)
+			upOut, upErr := mkApply(updateYAML)
+			if upErr != nil {
+				fmt.Printf("  cycle %3d/%d: create=%dms UPDATE-RECREATE FAILED: %s\n", i, n, createMs, truncate(upOut, 100))
+				cycleFailed = true
+			}
 		}
 
-		// Delete
+		// Final delete
 		deleteStart := time.Now()
-		_, err = mk("delete", "dhcpr", macDash, "-n", *networkName)
+		_, err = mk("delete", "dhcpr", macDash, "-n", ns)
 		if err != nil {
 			fmt.Printf("  cycle %3d/%d: create=%dms DELETE FAILED\n", i, n, createMs)
 			continue
 		}
 		deleteMs := time.Since(deleteStart).Milliseconds()
 		deleteSt.record(deleteMs)
+
+		if cycleFailed {
+			continue
+		}
 
 		passed++
 		if i%10 == 0 || i == n || i <= 3 {
@@ -403,15 +417,17 @@ spec:
 
 func runDNSSuite() bool {
 	n := *dnsCycles
-	fmt.Printf("--- Suite 3: DNS Records (%d cycles) ---\n", n)
+	ns := *dnsNetwork
+	fmt.Printf("--- Suite 3: DNS Records (%d cycles on %s) ---\n", n, ns)
 
 	crudSt := &stats{}
 	passed := 0
 
 	for i := 1; i <= n; i++ {
 		hostname := fmt.Sprintf("test-dns-%d", i)
-		ip1 := fmt.Sprintf("192.168.99.%d", 10+(i%240))
-		ip2 := fmt.Sprintf("192.168.99.%d", 10+((i+1)%240))
+		ip1 := fmt.Sprintf("10.99.1.%d", 1+(i%254))
+		ip2 := fmt.Sprintf("10.99.2.%d", 1+(i%254))
+		cycleFailed := false
 
 		cycleStart := time.Now()
 
@@ -426,7 +442,7 @@ spec:
   type: A
   data: "%s"
   ttl: 60
-`, hostname, *networkName, hostname, ip1)
+`, hostname, ns, hostname, ip1)
 
 		out, err := mkApply(recYAML)
 		if err != nil {
@@ -435,8 +451,7 @@ spec:
 		}
 
 		// Get the record to find the real name (microdns UUID)
-		// mk get dr -n gtest -o json returns a list
-		obj, err := mkGetJSON("get", "dr", "-n", *networkName)
+		obj, err := mkGetJSON("get", "dr", "-n", ns)
 		if err != nil {
 			fmt.Printf("  cycle %3d/%d: LIST FAILED: %v\n", i, n, err)
 			continue
@@ -449,8 +464,13 @@ spec:
 			continue
 		}
 
-		// Update IP via mk apply (use the real record ID)
-		updateYAML := fmt.Sprintf(`apiVersion: v1
+		// Update IP — delete and recreate (microdns proxy has no PATCH)
+		_, delErr := mk("delete", "dr", recordID, "-n", ns)
+		if delErr != nil {
+			fmt.Printf("  cycle %3d/%d: UPDATE-DELETE FAILED\n", i, n)
+			cycleFailed = true
+		} else {
+			updateYAML := fmt.Sprintf(`apiVersion: v1
 kind: DNSRecord
 metadata:
   name: "%s"
@@ -460,18 +480,31 @@ spec:
   type: A
   data: "%s"
   ttl: 120
-`, recordID, *networkName, hostname, ip2)
+`, hostname, ns, hostname, ip2)
 
-		_, err = mkApply(updateYAML)
-		if err != nil {
-			fmt.Printf("  cycle %3d/%d: UPDATE FAILED\n", i, n)
-			// Try to delete anyway
+			upOut, upErr := mkApply(updateYAML)
+			if upErr != nil {
+				fmt.Printf("  cycle %3d/%d: UPDATE-RECREATE FAILED: %s\n", i, n, truncate(upOut, 100))
+				cycleFailed = true
+			} else {
+				// Re-fetch the new record ID for deletion
+				obj2, err2 := mkGetJSON("get", "dr", "-n", ns)
+				if err2 == nil {
+					recordID = findDNSRecordByHostname(obj2, hostname)
+				}
+			}
 		}
 
-		// Delete by ID
-		_, err = mk("delete", "dr", recordID, "-n", *networkName)
-		if err != nil {
-			fmt.Printf("  cycle %3d/%d: DELETE FAILED\n", i, n)
+		// Final delete by ID (if we have one)
+		if recordID != "" {
+			_, err = mk("delete", "dr", recordID, "-n", ns)
+			if err != nil {
+				fmt.Printf("  cycle %3d/%d: DELETE FAILED\n", i, n)
+				continue
+			}
+		}
+
+		if cycleFailed {
 			continue
 		}
 
@@ -513,10 +546,11 @@ func findDNSRecordByHostname(obj map[string]interface{}, hostname string) string
 // ─── Suite 4: DHCP Pool CRUD ────────────────────────────────────────────────
 
 func runPoolSuite() bool {
-	fmt.Println("--- Suite 4: DHCP Pool CRUD ---")
+	ns := *dnsNetwork
+	fmt.Printf("--- Suite 4: DHCP Pool CRUD (on %s) ---\n", ns)
 
 	// List pools
-	out, err := mk("get", "dp", "-n", *networkName)
+	out, err := mk("get", "dp", "-n", ns)
 	if err != nil {
 		fmt.Printf("  List pools FAILED: %v (%s)\n", err, out)
 		return false
@@ -524,7 +558,7 @@ func runPoolSuite() bool {
 	fmt.Printf("  Pools:\n%s\n", out)
 
 	// Get pools as JSON to find pool ID
-	obj, err := mkGetJSON("get", "dp", "-n", *networkName)
+	obj, err := mkGetJSON("get", "dp", "-n", ns)
 	if err != nil {
 		fmt.Printf("  List pools JSON FAILED: %v\n", err)
 		return false
@@ -545,7 +579,7 @@ func runPoolSuite() bool {
 	}
 
 	// Get single pool
-	_, err = mk("get", "dp", poolID, "-n", *networkName)
+	_, err = mk("get", "dp", poolID, "-n", ns)
 	if err != nil {
 		fmt.Printf("  GET pool %s FAILED\n", poolID)
 		return false
