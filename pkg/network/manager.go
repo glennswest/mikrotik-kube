@@ -339,6 +339,11 @@ func (m *Manager) ReleaseInterface(ctx context.Context, vethName string) error {
 	if alloc, ok := m.allocs[vethName]; ok {
 		m.ipam.Release(alloc.networkName, vethName)
 		delete(m.allocs, vethName)
+	} else {
+		// m.allocs may have been cleared (e.g. by a prior release or network
+		// unregister) while the IPAM pool still holds the key. Fall back to
+		// releasing from every pool so stale entries are always cleaned.
+		m.ipam.ReleaseFromAll(vethName)
 	}
 
 	// Remove from state
@@ -594,6 +599,14 @@ func (m *Manager) UnregisterNetwork(name string) {
 	// don't persist and block re-creation of the same network.
 	m.state.removePortsBySwitch(name)
 	m.state.removeSwitch(name)
+
+	// Clean up m.allocs entries for this network so ReleaseInterface can
+	// still reach the IPAM pool via the alloc's networkName.
+	for k, alloc := range m.allocs {
+		if alloc.networkName == name {
+			delete(m.allocs, k)
+		}
+	}
 
 	m.log.Infow("unregistered dynamic network", "name", name)
 }

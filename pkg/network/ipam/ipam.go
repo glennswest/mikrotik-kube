@@ -126,6 +126,16 @@ func (a *Allocator) Release(poolName, key string) {
 	delete(pool.Allocated, key)
 }
 
+// ReleaseFromAll removes key from every pool's Allocated map.
+// Used as a fallback when the caller doesn't know which pool owns the key.
+func (a *Allocator) ReleaseFromAll(key string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for _, pool := range a.pools {
+		delete(pool.Allocated, key)
+	}
+}
+
 // Record marks an IP as already allocated (used during sync).
 func (a *Allocator) Record(poolName, key string, ip net.IP) {
 	a.mu.Lock()
