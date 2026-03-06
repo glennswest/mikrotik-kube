@@ -236,6 +236,90 @@ func (s *Store) ExportYAML(ctx context.Context) ([]byte, error) {
 		}
 	}
 
+	// Export HostReservations
+	if s.HostReservations != nil {
+		hresKeys, err := s.HostReservations.Keys(ctx, "")
+		if err != nil {
+			return nil, fmt.Errorf("listing host reservations: %w", err)
+		}
+		for _, key := range hresKeys {
+			raw, _, err := s.HostReservations.Get(ctx, key)
+			if err != nil {
+				continue
+			}
+			var doc map[string]interface{}
+			if err := json.Unmarshal(raw, &doc); err != nil {
+				continue
+			}
+			doc["apiVersion"] = "v1"
+			doc["kind"] = "HostReservation"
+			delete(doc, "status")
+			data, err := json.MarshalIndent(doc, "", "  ")
+			if err != nil {
+				continue
+			}
+			buf.WriteString("---\n")
+			buf.Write(data)
+			buf.WriteString("\n")
+		}
+	}
+
+	// Export JobRunners
+	if s.JobRunners != nil {
+		jrKeys, err := s.JobRunners.Keys(ctx, "")
+		if err != nil {
+			return nil, fmt.Errorf("listing job runners: %w", err)
+		}
+		for _, key := range jrKeys {
+			raw, _, err := s.JobRunners.Get(ctx, key)
+			if err != nil {
+				continue
+			}
+			var doc map[string]interface{}
+			if err := json.Unmarshal(raw, &doc); err != nil {
+				continue
+			}
+			doc["apiVersion"] = "v1"
+			doc["kind"] = "JobRunner"
+			delete(doc, "status")
+			data, err := json.MarshalIndent(doc, "", "  ")
+			if err != nil {
+				continue
+			}
+			buf.WriteString("---\n")
+			buf.Write(data)
+			buf.WriteString("\n")
+		}
+	}
+
+	// Export Jobs
+	if s.Jobs != nil {
+		jobKeys, err := s.Jobs.Keys(ctx, "")
+		if err != nil {
+			return nil, fmt.Errorf("listing jobs: %w", err)
+		}
+		for _, key := range jobKeys {
+			raw, _, err := s.Jobs.Get(ctx, key)
+			if err != nil {
+				continue
+			}
+			var doc map[string]interface{}
+			if err := json.Unmarshal(raw, &doc); err != nil {
+				continue
+			}
+			doc["apiVersion"] = "v1"
+			doc["kind"] = "Job"
+			delete(doc, "status")
+			data, err := json.MarshalIndent(doc, "", "  ")
+			if err != nil {
+				continue
+			}
+			buf.WriteString("---\n")
+			buf.Write(data)
+			buf.WriteString("\n")
+		}
+	}
+
 	return buf.Bytes(), nil
 }
 
@@ -326,7 +410,99 @@ func (s *Store) ImportYAML(ctx context.Context, data []byte) (int, int, error) {
 		}
 	}
 
+	// Import HostReservations
+	if s.HostReservations != nil {
+		hress, err := parseGenericDocs(data, "HostReservation")
+		if err == nil {
+			for _, doc := range hress {
+				meta := doc["metadata"]
+				if m, ok := meta.(map[string]interface{}); ok {
+					ns, _ := m["namespace"].(string)
+					name, _ := m["name"].(string)
+					if ns != "" && name != "" {
+						raw, _ := json.Marshal(doc)
+						_, _ = s.HostReservations.Put(ctx, ns+"."+name, raw)
+					}
+				}
+			}
+		}
+	}
+
+	// Import JobRunners
+	if s.JobRunners != nil {
+		jrs, err := parseGenericDocs(data, "JobRunner")
+		if err == nil {
+			for _, doc := range jrs {
+				meta := doc["metadata"]
+				if m, ok := meta.(map[string]interface{}); ok {
+					name, _ := m["name"].(string)
+					if name != "" {
+						raw, _ := json.Marshal(doc)
+						_, _ = s.JobRunners.Put(ctx, name, raw)
+					}
+				}
+			}
+		}
+	}
+
+	// Import Jobs
+	if s.Jobs != nil {
+		jobs, err := parseGenericDocs(data, "Job")
+		if err == nil {
+			for _, doc := range jobs {
+				meta := doc["metadata"]
+				if m, ok := meta.(map[string]interface{}); ok {
+					ns, _ := m["namespace"].(string)
+					name, _ := m["name"].(string)
+					if ns != "" && name != "" {
+						raw, _ := json.Marshal(doc)
+						_, _ = s.Jobs.Put(ctx, ns+"."+name, raw)
+					}
+				}
+			}
+		}
+	}
+
 	return podCount, cmCount, nil
+}
+
+// parseGenericDocs extracts documents of the given Kind from multi-document YAML.
+func parseGenericDocs(data []byte, kind string) ([]map[string]interface{}, error) {
+	var results []map[string]interface{}
+
+	reader := yaml.NewYAMLReader(bufio.NewReader(bytes.NewReader(data)))
+	for {
+		doc, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		doc = bytes.TrimSpace(doc)
+		if len(doc) == 0 {
+			continue
+		}
+
+		var meta metav1.TypeMeta
+		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(doc), 4096).Decode(&meta); err != nil {
+			continue
+		}
+
+		if meta.Kind != kind {
+			continue
+		}
+
+		var generic map[string]interface{}
+		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(doc), 4096).Decode(&generic); err != nil {
+			continue
+		}
+
+		results = append(results, generic)
+	}
+
+	return results, nil
 }
 
 // MigrateIfEmpty checks if the PODS bucket is empty and imports from the boot
@@ -415,6 +591,15 @@ func parseManifests(data []byte) ([]*corev1.Pod, []*corev1.ConfigMap, error) {
 			continue
 		case "ISCSICdrom":
 			// iSCSI CDROMs are handled separately via parseISCSICdroms
+			continue
+		case "HostReservation":
+			// HostReservations are handled separately
+			continue
+		case "JobRunner":
+			// JobRunners are handled separately
+			continue
+		case "Job":
+			// Jobs are handled separately
 			continue
 		default:
 			var pod corev1.Pod

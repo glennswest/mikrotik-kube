@@ -9,7 +9,7 @@ MKUBE_API ?= http://192.168.200.2:8082
 GOFLAGS   := -ldflags "-s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)"
 
 .PHONY: build build-local tarball deploy deploy-tarball test lint clean mocks \
-        build-registry build-installer build-update build-all \
+        build-registry build-installer build-update build-agent build-all \
         deploy-update deploy-installer \
         build-pve-deploy build-mkube-boot deploy-pvex-registry deploy-pvex-boot deploy-pvex-mkube \
         build-test test-integration
@@ -42,8 +42,12 @@ build-pve-deploy:
 build-mkube-boot:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -o dist/mkube-boot ./cmd/mkube-boot/
 
+## Build mkube-agent for amd64 (runs on bare metal CoreOS hosts)
+build-agent:
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -o dist/mkube-agent ./cmd/mkube-agent/
+
 ## Build all binaries for the target architecture
-build-all: build build-registry build-installer build-update build-pve-deploy
+build-all: build build-registry build-installer build-update build-pve-deploy build-agent
 
 ## Create RouterOS-compatible docker-save tarball (no Docker needed)
 tarball: build

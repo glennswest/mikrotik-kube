@@ -41,6 +41,7 @@ go test ./...
 | installer | `cmd/installer/` | Mac (local) | One-shot RouterOS bootstrap CLI |
 | pve-deploy | `cmd/pve-deploy/` | Mac (local) | Deploy OCI images as Proxmox LXC containers |
 | mkube-boot | `cmd/mkube-boot/` | Proxmox LXC (x86_64) | Bootstrap mkube infrastructure on Proxmox |
+| mkube-agent | `cmd/mkube-agent/` | CoreOS (x86_64) | Job execution agent for bare metal hosts |
 
 ### Key Packages
 | Package | Purpose |
@@ -176,6 +177,7 @@ go test ./...
 - Deploy version verification: healthz now reports version and commit hash. `make deploy` waits up to 90s after push for mkube-update to swap in the new binary, then verifies the running commit matches the build. Prevents silently running stale code after deploy.
 - Auto-recovery for stopped/faulted containers: Reconciler detects stopped containers with start-on-boot=yes, attempts restart first (cheapest fix), falls back to full destroy+recreate if restart fails. RouterOS `comment` field propagated through the stack for diagnostics. Events: ContainerStopped, Restarted, RecoveryRecreate. Lifecycle phase timing stats via `GET /api/v1/lifecycle/stats`.
 - Live integration test CLI: `cmd/mkube-test` runs against live mkube API with dedicated test network. 4 suites: container start/stop, DHCP reservation CRUD, DNS record CRUD, DHCP pool CRUD. Reports timing stats.
+- Job scheduling system: 3 new CRDs (HostReservation namespaced, JobRunner cluster-scoped, Job namespaced) + JobQueue computed view + scheduler goroutine (10s tick) + mkube-agent binary. Full CRUD/PATCH/Watch/table/consistency/export-import. Agent endpoints: source-IP authenticated work pull, heartbeat, log streaming, completion. Scheduler: priority scheduling, provisioning/running/heartbeat timeouts, idle runner power-off. NATS JOBLOGS bucket with 7-day TTL. In-memory log ring buffer (10k lines).
 
 ### TODO (priority order)
 1. **BareMetalHost Operator (BMO)**: Owns ALL host state and state machines. Architecture:

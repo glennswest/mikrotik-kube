@@ -142,6 +142,43 @@ func (p *MicroKubeProvider) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/namespaces/{namespace}/baremetalhosts/{name}/refresh", p.handleRefreshBMH)
 	mux.HandleFunc("POST /api/v1/baremetalhosts/refresh", p.handleRefreshAllBMH)
 
+	// HostReservations (namespaced)
+	mux.HandleFunc("GET /api/v1/hostreservations", p.handleListAllHostReservations)
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/hostreservations", p.handleListNamespacedHostReservations)
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/hostreservations/{name}", p.handleGetHostReservation)
+	mux.HandleFunc("POST /api/v1/namespaces/{namespace}/hostreservations", p.handleCreateHostReservation)
+	mux.HandleFunc("PUT /api/v1/namespaces/{namespace}/hostreservations/{name}", p.handleUpdateHostReservation)
+	mux.HandleFunc("PATCH /api/v1/namespaces/{namespace}/hostreservations/{name}", p.handlePatchHostReservation)
+	mux.HandleFunc("DELETE /api/v1/namespaces/{namespace}/hostreservations/{name}", p.handleDeleteHostReservation)
+
+	// JobRunners (cluster-scoped)
+	mux.HandleFunc("GET /api/v1/jobrunners", p.handleListJobRunners)
+	mux.HandleFunc("GET /api/v1/jobrunners/{name}", p.handleGetJobRunner)
+	mux.HandleFunc("POST /api/v1/jobrunners", p.handleCreateJobRunner)
+	mux.HandleFunc("PUT /api/v1/jobrunners/{name}", p.handleUpdateJobRunner)
+	mux.HandleFunc("PATCH /api/v1/jobrunners/{name}", p.handlePatchJobRunner)
+	mux.HandleFunc("DELETE /api/v1/jobrunners/{name}", p.handleDeleteJobRunner)
+
+	// Jobs (namespaced)
+	mux.HandleFunc("GET /api/v1/jobs", p.handleListAllJobs)
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/jobs", p.handleListNamespacedJobs)
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/jobs/{name}", p.handleGetJob)
+	mux.HandleFunc("POST /api/v1/namespaces/{namespace}/jobs", p.handleCreateJob)
+	mux.HandleFunc("PUT /api/v1/namespaces/{namespace}/jobs/{name}", p.handleUpdateJob)
+	mux.HandleFunc("PATCH /api/v1/namespaces/{namespace}/jobs/{name}", p.handlePatchJob)
+	mux.HandleFunc("DELETE /api/v1/namespaces/{namespace}/jobs/{name}", p.handleDeleteJob)
+	mux.HandleFunc("POST /api/v1/namespaces/{namespace}/jobs/{name}/cancel", p.handleCancelJob)
+	mux.HandleFunc("GET /api/v1/namespaces/{namespace}/jobs/{name}/logs", p.handleGetJobLogs)
+
+	// JobQueue (computed view)
+	mux.HandleFunc("GET /api/v1/jobqueue", p.handleGetJobQueue)
+
+	// Agent endpoints (source-IP authenticated)
+	mux.HandleFunc("GET /api/v1/agent/work", p.handleAgentWork)
+	mux.HandleFunc("POST /api/v1/agent/heartbeat", p.handleAgentHeartbeat)
+	mux.HandleFunc("POST /api/v1/agent/logs", p.handleAgentLogs)
+	mux.HandleFunc("POST /api/v1/agent/complete", p.handleAgentComplete)
+
 	// Namespaces — registered by namespace.Manager.RegisterRoutes()
 
 	// Nodes
@@ -781,6 +818,34 @@ func (p *MicroKubeProvider) handleAPIResources(w http.ResponseWriter, r *http.Re
 				Kind:       "BootConfig",
 				ShortNames: []string{"bc"},
 				Verbs:      metav1.Verbs{"get", "list", "create", "update", "patch", "delete"},
+			},
+			{
+				Name:       "hostreservations",
+				Namespaced: true,
+				Kind:       "HostReservation",
+				ShortNames: []string{"hres"},
+				Verbs:      metav1.Verbs{"get", "list", "create", "update", "patch", "delete"},
+			},
+			{
+				Name:       "jobrunners",
+				Namespaced: false,
+				Kind:       "JobRunner",
+				ShortNames: []string{"jr"},
+				Verbs:      metav1.Verbs{"get", "list", "create", "update", "patch", "delete"},
+			},
+			{
+				Name:       "jobs",
+				Namespaced: true,
+				Kind:       "Job",
+				ShortNames: []string{"job"},
+				Verbs:      metav1.Verbs{"get", "list", "create", "update", "patch", "delete"},
+			},
+			{
+				Name:       "jobqueue",
+				Namespaced: false,
+				Kind:       "Job",
+				ShortNames: []string{"jq"},
+				Verbs:      metav1.Verbs{"get", "list"},
 			},
 			{
 				Name:       "dnsrecords",

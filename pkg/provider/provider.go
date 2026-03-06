@@ -96,7 +96,11 @@ type MicroKubeProvider struct {
 	networks        map[string]*Network                     // name -> Network (cluster-scoped)
 	registries      map[string]*Registry                    // name -> Registry (cluster-scoped)
 	iscsiCdroms     map[string]*ISCSICdrom                  // name -> ISCSICdrom (cluster-scoped)
-	bootConfigs     map[string]*BootConfig                  // name -> BootConfig (cluster-scoped)
+	bootConfigs      map[string]*BootConfig                  // name -> BootConfig (cluster-scoped)
+	hostReservations map[string]*HostReservation             // namespace/name -> HostReservation
+	jobRunners       map[string]*JobRunner                   // name -> JobRunner (cluster-scoped)
+	jobs             map[string]*Job                         // namespace/name -> Job
+	jobLogBuf        *jobLogStore                            // in-memory job log buffers
 	dhcpIndex       *dhcpNetworkIndex            // precomputed DHCP reservation/subnet lookup
 	events          []corev1.Event               // recent events (ring buffer, max 256)
 	notifyPodStatus func(*corev1.Pod)            // callback for pod status updates
@@ -123,6 +127,9 @@ func (p *MicroKubeProvider) SetStore(s *store.Store) {
 	p.ReconcileNetworkConfigMaps(context.Background())
 	p.LoadISCSICdromsFromStore(context.Background())
 	p.LoadBootConfigsFromStore(context.Background())
+	p.LoadHostReservationsFromStore(context.Background())
+	p.LoadJobRunnersFromStore(context.Background())
+	p.LoadJobsFromStore(context.Background())
 	p.startDHCPSubscription(context.Background())
 }
 
@@ -158,7 +165,11 @@ func NewMicroKubeProvider(deps Deps) (*MicroKubeProvider, error) {
 		networks:        make(map[string]*Network),
 		registries:      make(map[string]*Registry),
 		iscsiCdroms:     make(map[string]*ISCSICdrom),
-		bootConfigs:     make(map[string]*BootConfig),
+		bootConfigs:      make(map[string]*BootConfig),
+		hostReservations: make(map[string]*HostReservation),
+		jobRunners:       make(map[string]*JobRunner),
+		jobs:             make(map[string]*Job),
+		jobLogBuf:        newJobLogStore(),
 		dhcpIndex:       buildDHCPIndex(deps.Config.Networks),
 		pushNotify:      make(chan registry.PushEvent, 16),
 		redeploying:     make(map[string]bool),

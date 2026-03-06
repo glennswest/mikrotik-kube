@@ -3,6 +3,11 @@
 ## [Unreleased]
 
 ### 2026-03-06
+- **feat:** Job scheduling system for bare metal hosts — HostReservation CRD (namespaced, claims BMH for pool), JobRunner CRD (cluster-scoped, runner template with boot config, idle timeout, reclaim policy, overflow), Job CRD (namespaced, unit of work with script, env, priority, timeout, artifacts), JobQueue computed view (priority-sorted pending jobs). Full CRUD + PATCH + Watch + table format + consistency checks + NATS persistence + export/import for all 3 CRDs.
+- **feat:** Job scheduler goroutine — 10s tick loop: schedules pending jobs by priority to available hosts, sets BMH bootConfigRef + powers on, monitors provisioning/running/heartbeat timeouts, handles idle runner power-off via reclaim policy.
+- **feat:** Agent REST endpoints — source-IP authenticated: GET /api/v1/agent/work (poll for assigned job), POST /api/v1/agent/heartbeat (30s keepalive), POST /api/v1/agent/logs (stream log lines), POST /api/v1/agent/complete (report exit code). Job lifecycle: Pending→Scheduling→Provisioning→Running→Completed|Failed|TimedOut|Cancelled.
+- **feat:** Job log buffer — in-memory ring buffer (10k lines per job) with NATS JOBLOGS bucket persistence (7-day TTL). GET /api/v1/namespaces/{ns}/jobs/{name}/logs reads from memory or falls back to NATS.
+- **feat:** mkube-agent standalone binary — Go static binary for CoreOS hosts. Polls for work, executes bash script, streams stdout/stderr logs, sends heartbeats, reports exit code. Config via MKUBE_API env var.
 - **feat:** PATCH handlers for DNS/DHCP proxy resources — proper GET-merge-update semantics for dnsrecords, dhcppools, dhcpreservations. Enables `oc apply` updates on proxy resources (previously only PUT/POST worked).
 - **feat:** DNS stress test suite — creates N A records, verifies all via lookup, deletes all, repeats M rounds. Monitors system memory between rounds for leak detection (warns if >50MB drift). Default: 100 rounds x 100 records.
 - **fix:** Integration test uses dedicated gtest network for ALL tests — never touches production networks. DNS pod wait changed from fixed 15s to polling (up to 120s). Root cause of previous "no pods" was timing, not connectivity.

@@ -39,9 +39,12 @@ type ConsistencyChecks struct {
 	Networks    []CheckItem `json:"networks,omitempty"`
 	BMHs        []CheckItem `json:"bmhs,omitempty"`
 	Registries  []CheckItem `json:"registries,omitempty"`
-	ISCSICdroms  []CheckItem `json:"iscsiCdroms,omitempty"`
-	BootConfigs  []CheckItem `json:"bootConfigs,omitempty"`
-	MicroDNS     []CheckItem `json:"microDNS,omitempty"`
+	ISCSICdroms      []CheckItem `json:"iscsiCdroms,omitempty"`
+	BootConfigs      []CheckItem `json:"bootConfigs,omitempty"`
+	HostReservations []CheckItem `json:"hostReservations,omitempty"`
+	JobRunners       []CheckItem `json:"jobRunners,omitempty"`
+	Jobs             []CheckItem `json:"jobs,omitempty"`
+	MicroDNS         []CheckItem `json:"microDNS,omitempty"`
 }
 
 // CheckItem is a single check result.
@@ -107,6 +110,9 @@ func (p *MicroKubeProvider) runConsistencyChecks(ctx context.Context) Consistenc
 	report.Checks.Registries = p.checkRegistryCRDs(ctx)
 	report.Checks.ISCSICdroms = p.checkISCSICdromCRDs(ctx)
 	report.Checks.BootConfigs = p.checkBootConfigCRDs(ctx)
+	report.Checks.HostReservations = p.checkHostReservationCRDs(ctx)
+	report.Checks.JobRunners = p.checkJobRunnerCRDs(ctx)
+	report.Checks.Jobs = p.checkJobCRDs(ctx)
 	report.Checks.MicroDNS = p.checkMicroDNSServices(ctx)
 
 	for _, items := range [][]CheckItem{
@@ -122,6 +128,9 @@ func (p *MicroKubeProvider) runConsistencyChecks(ctx context.Context) Consistenc
 		report.Checks.Registries,
 		report.Checks.ISCSICdroms,
 		report.Checks.BootConfigs,
+		report.Checks.HostReservations,
+		report.Checks.JobRunners,
+		report.Checks.Jobs,
 		report.Checks.MicroDNS,
 	} {
 		for _, item := range items {

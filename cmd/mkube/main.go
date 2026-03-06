@@ -517,6 +517,7 @@ func runSharedServices(
 		p.LoadBootConfigsFromStore(ctx)
 	}
 	go p.RunDHCPWatcher(ctx)
+	go p.RunJobScheduler(ctx)
 	p.StartInfraHealthWatchers(ctx)
 	p.StartISOScanner(ctx, 30*time.Second)
 
