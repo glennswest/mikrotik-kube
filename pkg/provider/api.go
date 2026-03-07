@@ -68,6 +68,7 @@ func (p *MicroKubeProvider) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/v1/networks/{name}", p.handlePatchNetwork)
 	mux.HandleFunc("DELETE /api/v1/networks/{name}", p.handleDeleteNetwork)
 	mux.HandleFunc("GET /api/v1/networks/{name}/config", p.handleGetNetworkConfig)
+	mux.HandleFunc("POST /api/v1/networks/{name}/smoketest", p.handleNetworkSmokeTest)
 
 	// Registries (cluster-scoped)
 	mux.HandleFunc("GET /api/v1/registries", p.handleListRegistries)
@@ -893,6 +894,35 @@ func (p *MicroKubeProvider) handleHealthz(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 	_, _ = fmt.Fprintf(w, "ok\nnode: %s\nversion: %s\ncommit: %s\nuptime: %s\n",
 		p.nodeName, p.deps.Version, p.deps.Commit, time.Since(p.startTime).Truncate(time.Second))
+}
+
+// handleNetworkSmokeTest triggers an on-demand smoke test for a specific network
+// and returns the result synchronously (with 30s timeout).
+func (p *MicroKubeProvider) handleNetworkSmokeTest(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	net, ok := p.networks[name]
+	if !ok {
+		http.Error(w, fmt.Sprintf("network %q not found", name), http.StatusNotFound)
+		return
+	}
+	if net.Spec.ExternalDNS {
+		http.Error(w, fmt.Sprintf("network %q uses external DNS, cannot smoke test", name), http.StatusBadRequest)
+		return
+	}
+	if net.Spec.DNS.Zone == "" || net.Spec.DNS.Server == "" {
+		http.Error(w, fmt.Sprintf("network %q has no DNS configured", name), http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	result := p.runSmokeTestSync(ctx, net)
+	status := http.StatusOK
+	if !result.Pass {
+		status = http.StatusServiceUnavailable
+	}
+	podWriteJSON(w, status, result)
 }
 
 // handleLifecycleStats returns lifecycle phase timing stats and recovery stats.

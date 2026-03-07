@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -154,10 +156,18 @@ func (p *MicroKubeProvider) handleInfraDeath(ctx context.Context, ic infraContai
 	}
 }
 
+// dnsHealthFailures tracks consecutive health check failures per network.
+// Protected by infraMu.
+var dnsHealthFailures = make(map[string]int)
+
+// dnsHealthFailureThreshold is the number of consecutive failures (each ~10s
+// reconcile tick) before triggering forced pod recreation instead of restart.
+const dnsHealthFailureThreshold = 3
+
 // checkInfraHealth is the polling fallback called from the reconcile loop.
 // It checks microdns REST API and port 53 for each managed network. If both
-// are dead but the container is reported as "running" (zombie state), the pod
-// is restarted and the database re-seeded.
+// are dead, it triggers immediate repair (restart or recreate) instead of
+// waiting for the next consistency check cycle.
 func (p *MicroKubeProvider) checkInfraHealth(ctx context.Context) {
 	dnsClient := p.deps.NetworkMgr.DNSClient()
 	if dnsClient == nil {
@@ -174,8 +184,11 @@ func (p *MicroKubeProvider) checkInfraHealth(ctx context.Context) {
 			endpoint = "http://" + netObj.Spec.DNS.Server + ":8080"
 		}
 
-		// REST API healthy → microdns is alive, nothing to do
+		// REST API healthy → microdns is alive, reset failure counter
 		if err := dnsClient.HealthCheck(ctx, endpoint); err == nil {
+			infraMu.Lock()
+			delete(dnsHealthFailures, netObj.Name)
+			infraMu.Unlock()
 			continue
 		}
 
@@ -188,12 +201,54 @@ func (p *MicroKubeProvider) checkInfraHealth(ctx context.Context) {
 			continue
 		}
 
-		// Both REST API and port 53 are dead — repairDNSLiveness will handle
-		// the restart on the next consistency check cycle. Log it here for
-		// visibility in reconcile logs.
-		p.deps.Logger.Warnw("microdns fully unresponsive (REST API + port 53 dead)",
+		// Both REST API and port 53 are dead — track consecutive failures
+		// and trigger immediate repair.
+		infraMu.Lock()
+		dnsHealthFailures[netObj.Name]++
+		failures := dnsHealthFailures[netObj.Name]
+		infraMu.Unlock()
+
+		p.deps.Logger.Warnw("microdns fully unresponsive",
 			"network", netObj.Name, "endpoint", endpoint,
-			"note", "repairDNSLiveness will restart on next consistency check")
+			"consecutiveFailures", failures, "threshold", dnsHealthFailureThreshold)
+
+		if failures >= dnsHealthFailureThreshold {
+			// Forced pod recreation — restart wasn't enough
+			p.deps.Logger.Errorw("DNS container dead beyond threshold, forcing pod recreation",
+				"network", netObj.Name, "failures", failures)
+
+			podKey := netObj.Name + "/dns"
+			pod, exists := p.pods[podKey]
+			if exists {
+				p.recordEvent(pod, "DNSCriticalFailure",
+					fmt.Sprintf("DNS fully dead for %d consecutive checks, forcing recreation", failures),
+					"Warning")
+				if err := p.DeletePod(ctx, pod); err != nil {
+					p.deps.Logger.Errorw("failed to delete dead DNS pod for recreation",
+						"pod", podKey, "error", err)
+					continue
+				}
+				if p.deps.Store != nil {
+					storeKey := netObj.Name + ".dns"
+					var storePod corev1.Pod
+					if _, err := p.deps.Store.Pods.GetJSON(ctx, storeKey, &storePod); err == nil {
+						if err := p.CreatePod(ctx, &storePod); err != nil {
+							p.deps.Logger.Errorw("failed to recreate DNS pod",
+								"pod", podKey, "error", err)
+						}
+					}
+				}
+			}
+
+			infraMu.Lock()
+			delete(dnsHealthFailures, netObj.Name)
+			infraMu.Unlock()
+		} else {
+			// Attempt immediate repair via repairDNSLiveness logic
+			p.deps.Logger.Warnw("attempting immediate DNS repair",
+				"network", netObj.Name, "failures", failures)
+			p.repairDNSLiveness(ctx)
+		}
 	}
 }
 

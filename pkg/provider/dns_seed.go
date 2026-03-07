@@ -63,6 +63,9 @@ func (p *MicroKubeProvider) seedDNSConfig(ctx context.Context, net *Network) {
 	p.seedDNSForwarders(ctx, dnsClient, endpoint, net)
 
 	log.Infow("DNS config seeded successfully", "endpoint", endpoint)
+
+	// Run smoke test after seed to verify end-to-end functionality
+	go p.runDNSSmokeTest(context.Background(), net)
 }
 
 // seedDHCPPool creates a DHCP pool for a source network on the target microdns instance.

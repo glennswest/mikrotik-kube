@@ -45,6 +45,7 @@ type ConsistencyChecks struct {
 	JobRunners       []CheckItem `json:"jobRunners,omitempty"`
 	Jobs             []CheckItem `json:"jobs,omitempty"`
 	MicroDNS         []CheckItem `json:"microDNS,omitempty"`
+	SmokeTests       []CheckItem `json:"smokeTests,omitempty"`
 }
 
 // CheckItem is a single check result.
@@ -114,6 +115,7 @@ func (p *MicroKubeProvider) runConsistencyChecks(ctx context.Context) Consistenc
 	report.Checks.JobRunners = p.checkJobRunnerCRDs(ctx)
 	report.Checks.Jobs = p.checkJobCRDs(ctx)
 	report.Checks.MicroDNS = p.checkMicroDNSServices(ctx)
+	report.Checks.SmokeTests = p.checkSmokeTests()
 
 	for _, items := range [][]CheckItem{
 		report.Checks.Containers,
@@ -132,6 +134,7 @@ func (p *MicroKubeProvider) runConsistencyChecks(ctx context.Context) Consistenc
 		report.Checks.JobRunners,
 		report.Checks.Jobs,
 		report.Checks.MicroDNS,
+		report.Checks.SmokeTests,
 	} {
 		for _, item := range items {
 			switch item.Status {
@@ -1668,6 +1671,64 @@ func (p *MicroKubeProvider) checkMicroDNSServices(ctx context.Context) []CheckIt
 				Name:    fmt.Sprintf("microdns-forwarders/%s", net.Name),
 				Status:  "pass",
 				Message: fmt.Sprintf("%d forwarder(s) configured", len(forwarders)),
+			})
+		}
+	}
+
+	return items
+}
+
+// checkSmokeTests reads the latest smoke test results for all networks
+// and reports them as consistency check items.
+func (p *MicroKubeProvider) checkSmokeTests() []CheckItem {
+	var items []CheckItem
+
+	results := GetSmokeTestResults()
+	for _, r := range results {
+		status := "pass"
+		if !r.Pass {
+			status = "fail"
+		}
+
+		// Stale results (>10 min) are a warning — smoke test may not have run recently
+		age := time.Since(r.Timestamp)
+		if age > 10*time.Minute {
+			if r.Pass {
+				status = "warn"
+			}
+			items = append(items, CheckItem{
+				Name:    fmt.Sprintf("smoketest/%s", r.Network),
+				Status:  status,
+				Message: r.Message,
+				Details: fmt.Sprintf("age=%s (stale, >10m)", age.Truncate(time.Second)),
+			})
+		} else {
+			items = append(items, CheckItem{
+				Name:    fmt.Sprintf("smoketest/%s", r.Network),
+				Status:  status,
+				Message: r.Message,
+				Details: fmt.Sprintf("age=%s", age.Truncate(time.Second)),
+			})
+		}
+	}
+
+	// Flag networks with no smoke test result at all
+	for _, net := range p.networks {
+		if net.Spec.ExternalDNS || net.Spec.DNS.Zone == "" || net.Spec.DNS.Server == "" {
+			continue
+		}
+		found := false
+		for _, r := range results {
+			if r.Network == net.Name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			items = append(items, CheckItem{
+				Name:    fmt.Sprintf("smoketest/%s", net.Name),
+				Status:  "warn",
+				Message: "no smoke test result (not yet run)",
 			})
 		}
 	}
