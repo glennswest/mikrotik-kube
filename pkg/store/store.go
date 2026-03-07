@@ -37,7 +37,6 @@ type Store struct {
 	JobRunners             *Bucket
 	Jobs                   *Bucket
 	JobLogs                *Bucket
-	BootConfigFiles        *Bucket
 }
 
 // SetSyncHook sets a callback invoked after every successful local Put or Delete.
@@ -79,8 +78,6 @@ func (s *Store) BucketByName(name string) *Bucket {
 		return s.Jobs
 	case "JOBLOGS":
 		return s.JobLogs
-	case "BOOTCONFIGFILES":
-		return s.BootConfigFiles
 	default:
 		return nil
 	}
@@ -226,10 +223,6 @@ func (s *Store) initAllBuckets(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	s.BootConfigFiles, err = s.initBucketWithMaxSize(ctx, "BOOTCONFIGFILES", s.replicas, 0, 64<<20)
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -254,24 +247,6 @@ func (s *Store) initBucket(ctx context.Context, name string, replicas int, ttl t
 	kvCfg := jetstream.KeyValueConfig{
 		Bucket:   name,
 		Replicas: replicas,
-	}
-	if ttl > 0 {
-		kvCfg.TTL = ttl
-	}
-
-	kv, err := s.js.CreateOrUpdateKeyValue(ctx, kvCfg)
-	if err != nil {
-		return nil, fmt.Errorf("creating KV bucket %s: %w", name, err)
-	}
-
-	return &Bucket{kv: kv, log: s.log.Named(strings.ToLower(name)), store: s, name: name}, nil
-}
-
-func (s *Store) initBucketWithMaxSize(ctx context.Context, name string, replicas int, ttl time.Duration, maxValueSize int32) (*Bucket, error) {
-	kvCfg := jetstream.KeyValueConfig{
-		Bucket:       name,
-		Replicas:     replicas,
-		MaxValueSize: maxValueSize,
 	}
 	if ttl > 0 {
 		kvCfg.TTL = ttl

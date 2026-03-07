@@ -689,67 +689,6 @@ func (p *MicroKubeProvider) removeBootConfigRef(ctx context.Context, bmhName, re
 	p.persistBootConfig(ctx, bc)
 }
 
-// ─── File Serving ────────────────────────────────────────────────────────────
-
-// handleGetBootConfigFile serves a binary file associated with a BootConfig.
-// GET /api/v1/bootconfigs/{name}/files/{filename}
-func (p *MicroKubeProvider) handleGetBootConfigFile(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	filename := r.PathValue("filename")
-
-	if p.deps.Store == nil || p.deps.Store.BootConfigFiles == nil {
-		http.Error(w, "file storage not available", http.StatusServiceUnavailable)
-		return
-	}
-
-	key := name + "." + filename
-	data, _, err := p.deps.Store.BootConfigFiles.Get(r.Context(), key)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("file %q not found in BootConfig %q", filename, name), http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
-}
-
-// handlePutBootConfigFile uploads a binary file to a BootConfig.
-// PUT /api/v1/bootconfigs/{name}/files/{filename}
-func (p *MicroKubeProvider) handlePutBootConfigFile(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	filename := r.PathValue("filename")
-
-	if p.deps.Store == nil || p.deps.Store.BootConfigFiles == nil {
-		http.Error(w, "file storage not available", http.StatusServiceUnavailable)
-		return
-	}
-
-	// Read the body (limit to 256MB)
-	data, err := io.ReadAll(io.LimitReader(r.Body, 256<<20))
-	if err != nil {
-		http.Error(w, fmt.Sprintf("reading request body: %v", err), http.StatusBadRequest)
-		return
-	}
-
-	if len(data) == 0 {
-		http.Error(w, "empty request body", http.StatusBadRequest)
-		return
-	}
-
-	key := name + "." + filename
-	if _, err := p.deps.Store.BootConfigFiles.Put(r.Context(), key, data); err != nil {
-		http.Error(w, fmt.Sprintf("storing file: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	p.deps.Logger.Infow("bootconfig file uploaded", "bootconfig", name, "filename", filename, "bytes", len(data))
-
-	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"status":"ok","bootconfig":%q,"filename":%q,"bytes":%d}`, name, filename, len(data))
-}
-
 func (p *MicroKubeProvider) persistBootConfig(ctx context.Context, bc *BootConfig) {
 	if p.deps.Store != nil && p.deps.Store.BootConfigs != nil {
 		if _, err := p.deps.Store.BootConfigs.PutJSON(ctx, bc.Name, bc); err != nil {
