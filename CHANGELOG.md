@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-03-06
+- **fix:** Self-healing for stuck pods — reconciler tracks consecutive CreateFailed counts per pod. After 2 failures, force-releases stale IPAM + veth state before retrying. Prevents DNS (or any pod) from being stuck down for minutes due to orphaned network state.
 - **fix:** IPAM static allocation idempotency — `AllocateStatic` now returns nil (no-op) when the same key already holds the requested IP, instead of erroring with "already allocated". Root cause of g10 DNS pod stuck in infinite CreateFailed loop: orphaned veth kept IPAM allocation alive across restarts, blocking pod recreation with its own IP.
 - **fix:** Job CRDs lost on restart — LoadHostReservationsFromStore, LoadJobRunnersFromStore, LoadJobsFromStore were missing from the immediate NATS boot path in main.go. Only the deferred SetStore path had them, but NATS usually connects immediately so the deferred path never runs. Data persisted to NATS correctly but was never loaded back into memory on restart.
 - **fix:** Idempotent veth/bridge-port creation in RouterOS client — `CreateVeth` now checks for existing veth before creating (no-op if matching, update-in-place if different address/gateway). `AddBridgePort` checks for existing port assignment (no-op if correct bridge, remove+re-add if wrong bridge). Prevents pod stuck in CreateFailed loop when RouterOS keeps orphaned veths after container deletion.

@@ -106,6 +106,7 @@ type MicroKubeProvider struct {
 	notifyPodStatus func(*corev1.Pod)            // callback for pod status updates
 	pushNotify      chan registry.PushEvent       // internal channel for API push notifications
 	redeploying        map[string]bool              // pod keys currently being redeployed (skip in reconciler)
+	createFailures     map[string]int               // pod key -> consecutive CreatePod failures
 	networkFailures    map[string]int               // pod key -> consecutive network health failures
 	consistencyRunning atomic.Bool                  // guards CheckConsistencyAsync against goroutine leaks
 	clusterMgr         *cluster.Manager             // nil if clustering is disabled
@@ -173,6 +174,7 @@ func NewMicroKubeProvider(deps Deps) (*MicroKubeProvider, error) {
 		dhcpIndex:       buildDHCPIndex(deps.Config.Networks),
 		pushNotify:      make(chan registry.PushEvent, 16),
 		redeploying:     make(map[string]bool),
+		createFailures:  make(map[string]int),
 		networkFailures: make(map[string]int),
 	}
 
@@ -1686,10 +1688,23 @@ func (p *MicroKubeProvider) reconcile(ctx context.Context) error {
 		}
 
 		if !allExist {
-			log.Infow("creating missing pod", "pod", key)
+			// If this pod has failed creation before, force-release stale
+			// IPAM + veth state that may be blocking it.
+			if p.createFailures[key] >= 2 {
+				log.Warnw("SELF-HEAL: pod stuck in CreateFailed, releasing stale network state",
+					"pod", key, "failures", p.createFailures[key])
+				for i := range pod.Spec.Containers {
+					vn := vethName(pod, i)
+					_ = p.deps.NetworkMgr.ReleaseInterface(ctx, vn)
+				}
+			}
+			log.Infow("creating missing pod", "pod", key, "priorFailures", p.createFailures[key])
 			if err := p.CreatePod(ctx, pod); err != nil {
-				log.Errorw("failed to create pod", "pod", key, "error", err)
+				p.createFailures[key]++
+				log.Errorw("failed to create pod", "pod", key, "error", err, "consecutiveFailures", p.createFailures[key])
 				p.recordEvent(pod, "CreateFailed", fmt.Sprintf("Failed to create pod: %v", err), "Warning")
+			} else {
+				delete(p.createFailures, key)
 			}
 		} else {
 			// Track already-existing pods
