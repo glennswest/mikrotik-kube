@@ -2902,6 +2902,9 @@ func extractHealthCheck(c corev1.Container) *lifecycle.HealthCheck {
 }
 
 // extractProbes converts K8s probe specs into lifecycle ProbeSet.
+// If the container declares TCP ports but has no explicit probes, default
+// liveness+readiness TCP probes are auto-generated so that dead processes
+// inside "running" containers are detected by the watchdog.
 func extractProbes(c corev1.Container) *lifecycle.ProbeSet {
 	ps := &lifecycle.ProbeSet{
 		Startup:   probeToConfig(c.StartupProbe),
@@ -2909,9 +2912,41 @@ func extractProbes(c corev1.Container) *lifecycle.ProbeSet {
 		Readiness: probeToConfig(c.ReadinessProbe),
 	}
 	if ps.Startup == nil && ps.Liveness == nil && ps.Readiness == nil {
+		// Auto-generate probes from declared TCP ports
+		if port := firstTCPPort(c); port > 0 {
+			ps.Liveness = &lifecycle.ProbeConfig{
+				Type:                "tcp",
+				Port:                port,
+				InitialDelaySeconds: 10,
+				PeriodSeconds:       30,
+				TimeoutSeconds:      2,
+				FailureThreshold:    3,
+				SuccessThreshold:    1,
+			}
+			ps.Readiness = &lifecycle.ProbeConfig{
+				Type:             "tcp",
+				Port:             port,
+				PeriodSeconds:    10,
+				TimeoutSeconds:   2,
+				FailureThreshold: 1,
+				SuccessThreshold: 1,
+			}
+			return ps
+		}
 		return nil
 	}
 	return ps
+}
+
+// firstTCPPort returns the first TCP containerPort declared in the container spec,
+// or 0 if none exists. Ports with empty protocol default to TCP per K8s convention.
+func firstTCPPort(c corev1.Container) int {
+	for _, p := range c.Ports {
+		if p.Protocol == "" || p.Protocol == corev1.ProtocolTCP {
+			return int(p.ContainerPort)
+		}
+	}
+	return 0
 }
 
 // probeToConfig converts a single K8s probe to our ProbeConfig.

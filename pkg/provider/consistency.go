@@ -46,6 +46,7 @@ type ConsistencyChecks struct {
 	Jobs             []CheckItem `json:"jobs,omitempty"`
 	MicroDNS         []CheckItem `json:"microDNS,omitempty"`
 	SmokeTests       []CheckItem `json:"smokeTests,omitempty"`
+	PodLiveness      []CheckItem `json:"podLiveness,omitempty"`
 }
 
 // CheckItem is a single check result.
@@ -116,6 +117,7 @@ func (p *MicroKubeProvider) runConsistencyChecks(ctx context.Context) Consistenc
 	report.Checks.Jobs = p.checkJobCRDs(ctx)
 	report.Checks.MicroDNS = p.checkMicroDNSServices(ctx)
 	report.Checks.SmokeTests = p.checkSmokeTests()
+	report.Checks.PodLiveness = p.checkPodLiveness(ctx)
 
 	for _, items := range [][]CheckItem{
 		report.Checks.Containers,
@@ -135,6 +137,7 @@ func (p *MicroKubeProvider) runConsistencyChecks(ctx context.Context) Consistenc
 		report.Checks.Jobs,
 		report.Checks.MicroDNS,
 		report.Checks.SmokeTests,
+		report.Checks.PodLiveness,
 	} {
 		for _, item := range items {
 			switch item.Status {
@@ -1734,4 +1737,85 @@ func (p *MicroKubeProvider) checkSmokeTests() []CheckItem {
 	}
 
 	return items
+}
+
+// checkPodLiveness probes declared TCP ports on all tracked running pods.
+// This catches the case where RouterOS reports a container as "running"
+// but the process inside is dead or unresponsive.
+func (p *MicroKubeProvider) checkPodLiveness(ctx context.Context) []CheckItem {
+	var items []CheckItem
+
+	for _, pod := range p.pods {
+		for i, c := range pod.Spec.Containers {
+			// Only check containers that declare TCP ports
+			tcpPorts := collectTCPPorts(c)
+			if len(tcpPorts) == 0 {
+				continue
+			}
+
+			// Get pod IP from veth
+			vn := vethName(pod, i)
+			podIP, _, ok := p.deps.NetworkMgr.GetPortInfo(vn)
+			if !ok || podIP == "" {
+				items = append(items, CheckItem{
+					Name:    fmt.Sprintf("liveness/%s/%s", pod.Name, c.Name),
+					Status:  "warn",
+					Message: "no IP allocated, cannot probe",
+				})
+				continue
+			}
+
+			// Verify container is running in RouterOS first
+			rosName := sanitizeName(pod, c.Name)
+			ct, err := p.deps.Runtime.GetContainer(ctx, rosName)
+			if err != nil || ct == nil || !ct.IsRunning() {
+				// Not running — other checks already report this
+				continue
+			}
+
+			// Probe each declared TCP port
+			allReachable := true
+			var portResults []string
+			for _, port := range tcpPorts {
+				addr := fmt.Sprintf("%s:%d", podIP, port)
+				conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+				if err != nil {
+					allReachable = false
+					portResults = append(portResults, fmt.Sprintf("%d=FAIL", port))
+				} else {
+					conn.Close()
+					portResults = append(portResults, fmt.Sprintf("%d=OK", port))
+				}
+			}
+
+			if allReachable {
+				items = append(items, CheckItem{
+					Name:    fmt.Sprintf("liveness/%s/%s", pod.Name, c.Name),
+					Status:  "pass",
+					Message: "all ports reachable",
+					Details: fmt.Sprintf("ip=%s ports=%s", podIP, strings.Join(portResults, ",")),
+				})
+			} else {
+				items = append(items, CheckItem{
+					Name:    fmt.Sprintf("liveness/%s/%s", pod.Name, c.Name),
+					Status:  "fail",
+					Message: "port(s) unreachable on running container",
+					Details: fmt.Sprintf("ip=%s ports=%s", podIP, strings.Join(portResults, ",")),
+				})
+			}
+		}
+	}
+
+	return items
+}
+
+// collectTCPPorts returns all TCP container ports from a container spec.
+func collectTCPPorts(c corev1.Container) []int32 {
+	var ports []int32
+	for _, p := range c.Ports {
+		if p.Protocol == "" || p.Protocol == corev1.ProtocolTCP {
+			ports = append(ports, p.ContainerPort)
+		}
+	}
+	return ports
 }

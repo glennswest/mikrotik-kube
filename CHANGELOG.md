@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### 2026-03-07
+- **feat:** Auto-generated liveness probes from container ports — `extractProbes()` now auto-generates TCP liveness (30s period, threshold 3) and readiness (10s period) probes from declared container ports when no explicit probes exist. This means any pod with `containerPort` declarations (e.g. bmh-operator port 80) automatically gets process-death detection via the lifecycle watchdog. No more blind trust of RouterOS "running" status.
+- **feat:** Pod liveness port probing in consistency checker — new `podLiveness` section in consistency report. Probes all declared TCP ports on running containers. Catches zombie containers where RouterOS says "running" but process is dead.
+- **feat:** Generalized pod health monitoring — `checkInfraHealth` now probes ALL pods with declared TCP ports (not just DNS). Tracks consecutive port failures per container. After 3 failures (30s), automatically restarts the container with `ContainerUnresponsive` event.
 - **feat:** MicroDNS smoke test — automated end-to-end validation after every `seedDNSConfig`. Checks DHCP pool/reservation presence via REST API, creates canary DNS A record, verifies it resolves on port 53 with answer validation, then cleans up. Results stored in `sync.Map`, exposed in consistency report as `smokeTests` section.
 - **feat:** On-demand smoke test API — `POST /api/v1/networks/{name}/smoketest` triggers synchronous smoke test with 30s timeout, returns pass/fail result.
 - **feat:** Aggressive DNS container failure detection — `checkInfraHealth` now tracks consecutive failures per network. After 3 consecutive 10s-tick failures (30s), forces pod recreation instead of waiting for consistency check cycle. Immediate `repairDNSLiveness` on first failure. Critical events recorded for forced recreation.

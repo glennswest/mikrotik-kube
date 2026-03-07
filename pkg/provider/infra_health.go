@@ -157,8 +157,10 @@ func (p *MicroKubeProvider) handleInfraDeath(ctx context.Context, ic infraContai
 }
 
 // dnsHealthFailures tracks consecutive health check failures per network.
-// Protected by infraMu.
+// podHealthFailures tracks consecutive port-probe failures per pod container.
+// Both protected by infraMu.
 var dnsHealthFailures = make(map[string]int)
+var podHealthFailures = make(map[string]int)
 
 // dnsHealthFailureThreshold is the number of consecutive failures (each ~10s
 // reconcile tick) before triggering forced pod recreation instead of restart.
@@ -248,6 +250,105 @@ func (p *MicroKubeProvider) checkInfraHealth(ctx context.Context) {
 			p.deps.Logger.Warnw("attempting immediate DNS repair",
 				"network", netObj.Name, "failures", failures)
 			p.repairDNSLiveness(ctx)
+		}
+	}
+
+	// Check all tracked pods with declared TCP ports.
+	// This catches zombie containers where RouterOS says "running"
+	// but the process inside is dead or unresponsive.
+	p.checkPodPortHealth(ctx)
+}
+
+// podHealthFailureThreshold is the number of consecutive failures before
+// triggering a container restart for non-DNS pods with unreachable ports.
+const podHealthFailureThreshold = 3
+
+// checkPodPortHealth probes declared TCP ports on all tracked running pods.
+// On consecutive failures, restarts the container.
+func (p *MicroKubeProvider) checkPodPortHealth(ctx context.Context) {
+	for _, pod := range p.pods {
+		for i, c := range pod.Spec.Containers {
+			tcpPorts := collectTCPPorts(c)
+			if len(tcpPorts) == 0 {
+				continue
+			}
+
+			// Get pod IP
+			vn := vethName(pod, i)
+			podIP, _, ok := p.deps.NetworkMgr.GetPortInfo(vn)
+			if !ok || podIP == "" {
+				continue
+			}
+
+			// Verify container is "running" in RouterOS
+			rosName := sanitizeName(pod, c.Name)
+			ct, err := p.deps.Runtime.GetContainer(ctx, rosName)
+			if err != nil || ct == nil || !ct.IsRunning() {
+				continue // stopped containers handled by reconcile auto-recovery
+			}
+
+			// Probe each declared TCP port
+			anyReachable := false
+			for _, port := range tcpPorts {
+				addr := fmt.Sprintf("%s:%d", podIP, port)
+				conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+				if err == nil {
+					conn.Close()
+					anyReachable = true
+					break
+				}
+			}
+
+			healthKey := fmt.Sprintf("%s/%s", pod.Name, c.Name)
+			if anyReachable {
+				// Healthy — reset failure counter
+				infraMu.Lock()
+				delete(podHealthFailures, healthKey)
+				infraMu.Unlock()
+				continue
+			}
+
+			// All ports unreachable — track consecutive failures
+			infraMu.Lock()
+			podHealthFailures[healthKey]++
+			failures := podHealthFailures[healthKey]
+			infraMu.Unlock()
+
+			p.deps.Logger.Warnw("pod ports unreachable on running container",
+				"pod", pod.Name, "container", c.Name,
+				"ip", podIP, "consecutiveFailures", failures,
+				"threshold", podHealthFailureThreshold)
+
+			if failures >= podHealthFailureThreshold {
+				p.deps.Logger.Errorw("pod container dead beyond threshold, restarting",
+					"pod", pod.Name, "container", c.Name, "failures", failures)
+
+				p.recordEvent(pod, "ContainerUnresponsive",
+					fmt.Sprintf("Container %s has %d consecutive port failures, restarting", c.Name, failures),
+					"Warning")
+
+				// Restart the container
+				if err := p.deps.Runtime.StopContainer(ctx, ct.ID); err != nil {
+					p.deps.Logger.Errorw("failed to stop unresponsive container",
+						"container", rosName, "error", err)
+				} else {
+					time.Sleep(3 * time.Second)
+					if err := p.deps.Runtime.StartContainer(ctx, ct.ID); err != nil {
+						p.deps.Logger.Errorw("failed to restart unresponsive container",
+							"container", rosName, "error", err)
+					} else {
+						p.deps.Logger.Infow("restarted unresponsive container",
+							"container", rosName, "pod", pod.Name)
+						p.recordEvent(pod, "Restarted",
+							fmt.Sprintf("Container %s restarted after port unreachable", c.Name),
+							"Normal")
+					}
+				}
+
+				infraMu.Lock()
+				delete(podHealthFailures, healthKey)
+				infraMu.Unlock()
+			}
 		}
 	}
 }
