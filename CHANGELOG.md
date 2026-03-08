@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 2026-03-08
+- **fix:** microdns database path `./data/microdns.redb` → `/data/microdns.redb` (absolute). Relative path wrote to ephemeral container rootfs instead of PVC mount at `/data/`. Root cause of DNS records lost on pod restart.
+- **fix:** Reconcile detects missing DHCP reservation DNS A records and triggers re-seed. Previously only checked for empty DHCP pools — if pools survived in redb but A records were lost (wrong DB path), re-seed was never triggered.
+- **fix:** Auto-recreate managed DNS pods missing from reconcile. `reconcileManagedDNSPods()` checks all managed networks and recreates DNS pods deleted manually or lost during restart.
+- **fix(critical):** `reconcileManagedDNSPods` used wrong key format — looked up `"g10.dns"` (dot) but pod map uses `"g10/dns"` (slash). Lookup ALWAYS missed, causing every managed DNS pod to be destroyed and recreated on every 10s reconcile cycle. **This was the root cause of 2+ days of cascading DNS failures.** Continuous destroy/recreate left broken rootfs directories (no binary extracted), making all managed DNS containers fail with `execvpe /microdns: No such file or directory`.
+
 ### 2026-03-07
 - **fix:** DHCP reservations missing gateway/DNS/domain — reserved IPs outside pool range got no default route. Root cause: `NetworkDHCPReservation` and `dns.DHCPReservation` had no gateway/dns_servers/domain fields. `upsertNetworkReservation` now populates from Network CRD defaults. Impact: server8 boot-looped 7.5h because coreos-installer couldn't reach mkube ignition URL (no gateway → no route to 192.168.200.2).
 - **feat:** PVC survivability — EnsureDirectory/FileExists/ListDirectory added to ContainerRuntime interface. PVC directories auto-created on disk when resolving or creating PVCs. Consistency checker verifies PVC directories exist, auto-creates missing ones (self-healing), warns on empty directories for active pods. Prevents silent data loss when PVC mount source doesn't exist on RouterOS filesystem.
