@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### 2026-03-07
+- **fix:** DHCP reservations missing gateway/DNS/domain — reserved IPs outside pool range got no default route. Root cause: `NetworkDHCPReservation` and `dns.DHCPReservation` had no gateway/dns_servers/domain fields. `upsertNetworkReservation` now populates from Network CRD defaults. Impact: server8 boot-looped 7.5h because coreos-installer couldn't reach mkube ignition URL (no gateway → no route to 192.168.200.2).
 - **feat:** PVC survivability — EnsureDirectory/FileExists/ListDirectory added to ContainerRuntime interface. PVC directories auto-created on disk when resolving or creating PVCs. Consistency checker verifies PVC directories exist, auto-creates missing ones (self-healing), warns on empty directories for active pods. Prevents silent data loss when PVC mount source doesn't exist on RouterOS filesystem.
 - **feat:** Auto-generated liveness probes from container ports — `extractProbes()` now auto-generates TCP liveness (30s period, threshold 3) and readiness (10s period) probes from declared container ports when no explicit probes exist. This means any pod with `containerPort` declarations (e.g. bmh-operator port 80) automatically gets process-death detection via the lifecycle watchdog. No more blind trust of RouterOS "running" status.
 - **feat:** Pod liveness port probing in consistency checker — new `podLiveness` section in consistency report. Probes all declared TCP ports on running containers. Catches zombie containers where RouterOS says "running" but process is dead.
