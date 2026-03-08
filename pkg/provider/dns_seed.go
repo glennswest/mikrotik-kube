@@ -286,6 +286,13 @@ func (p *MicroKubeProvider) reconcileDNSConfig(ctx context.Context) {
 			}
 		}
 
+		// Check if reservation DNS A records are missing — re-seed if so.
+		// Pools may exist (survived in redb) but A records may be lost if
+		// the database path was wrong and records were in ephemeral storage.
+		if !needsSeed {
+			needsSeed = p.reservationDNSRecordsMissing(ctx, dnsClient, endpoint, net)
+		}
+
 		if needsSeed {
 			// Use background context — seedDNSConfig retries for 30s
 			// and shouldn't be tied to the reconcile tick deadline
@@ -320,4 +327,58 @@ func (p *MicroKubeProvider) reconcileDNSConfig(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// reservationDNSRecordsMissing checks if any DHCP reservations with hostnames
+// are missing corresponding DNS A records. Returns true if re-seed is needed.
+func (p *MicroKubeProvider) reservationDNSRecordsMissing(ctx context.Context, client *dns.Client, endpoint string, net *Network) bool {
+	// Collect all reservations with hostnames (local + relayed)
+	var expectedHostnames []string
+	for _, r := range net.Spec.DHCP.Reservations {
+		if r.Hostname != "" && r.IP != "" {
+			expectedHostnames = append(expectedHostnames, r.Hostname)
+		}
+	}
+	for _, peer := range p.networks {
+		if peer.Name == net.Name || !peer.Spec.DHCP.Enabled || peer.Spec.DHCP.ServerNetwork != net.Name {
+			continue
+		}
+		for _, r := range peer.Spec.DHCP.Reservations {
+			if r.Hostname != "" && r.IP != "" {
+				expectedHostnames = append(expectedHostnames, r.Hostname)
+			}
+		}
+	}
+
+	if len(expectedHostnames) == 0 {
+		return false
+	}
+
+	// Get the zone ID
+	zoneID, err := client.EnsureZone(ctx, endpoint, net.Spec.DNS.Zone)
+	if err != nil || zoneID == "" {
+		return false
+	}
+
+	// List existing records in the zone
+	records, err := client.ListRecords(ctx, endpoint, zoneID)
+	if err != nil {
+		return false
+	}
+
+	existing := make(map[string]bool, len(records))
+	for _, r := range records {
+		existing[r.Name] = true
+	}
+
+	// If any reservation hostname is missing from DNS, needs re-seed
+	for _, h := range expectedHostnames {
+		if !existing[h] {
+			p.deps.Logger.Infow("reservation DNS A record missing, triggering re-seed",
+				"network", net.Name, "hostname", h, "endpoint", endpoint)
+			return true
+		}
+	}
+
+	return false
 }
