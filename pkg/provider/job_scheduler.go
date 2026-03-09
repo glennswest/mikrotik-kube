@@ -52,6 +52,9 @@ func (p *MicroKubeProvider) schedulerTick(ctx context.Context) {
 
 	// 5. Handle idle runner power-off
 	p.checkIdleRunners(ctx, log)
+
+	// 6. Power on hosts during scheduled work hours
+	p.ensureScheduledHostsOnline(ctx, log)
 }
 
 // schedulePendingJobs assigns pending jobs to available hosts.
@@ -244,9 +247,16 @@ func (p *MicroKubeProvider) checkHeartbeatTimeouts(ctx context.Context, log inte
 }
 
 // checkIdleRunners powers off idle hosts after the idle timeout expires.
+// Hosts in pools with an active schedule are not powered off during scheduled hours.
 func (p *MicroKubeProvider) checkIdleRunners(ctx context.Context, log interface{ Infow(string, ...interface{}) }) {
+	now := time.Now()
 	for _, runner := range p.jobRunners {
 		if runner.Spec.IdleTimeout <= 0 || runner.Spec.ReclaimPolicy == "Retain" {
+			continue
+		}
+
+		// Skip power-off during active schedule hours
+		if runner.Spec.Schedule != nil && runner.Spec.Schedule.IsActive(now) {
 			continue
 		}
 
@@ -298,6 +308,42 @@ func (p *MicroKubeProvider) checkIdleRunners(ctx context.Context, log interface{
 						"bmh", bmh.Name,
 						"pool", pool,
 						"idleTimeout", runner.Spec.IdleTimeout,
+					)
+				}
+			}
+		}
+	}
+}
+
+// ensureScheduledHostsOnline powers on reserved hosts during active schedule hours.
+func (p *MicroKubeProvider) ensureScheduledHostsOnline(ctx context.Context, log interface{ Infow(string, ...interface{}) }) {
+	now := time.Now()
+	for _, runner := range p.jobRunners {
+		if runner.Spec.Schedule == nil || !runner.Spec.Schedule.IsActive(now) {
+			continue
+		}
+
+		pool := runner.Spec.Pool
+
+		for _, hr := range p.hostReservations {
+			if hr.Spec.Pool != pool || hr.Status.ActiveJob != "" {
+				continue
+			}
+			for _, bmh := range p.bareMetalHosts {
+				if bmh.Name != hr.Spec.BMHRef {
+					continue
+				}
+				if bmh.Spec.Online == nil || !*bmh.Spec.Online {
+					online := true
+					bmh.Spec.Online = &online
+					if p.deps.Store != nil && p.deps.Store.BareMetalHosts != nil {
+						bmhKey := bmh.Namespace + "." + bmh.Name
+						_, _ = p.deps.Store.BareMetalHosts.PutJSON(ctx, bmhKey, bmh)
+					}
+					log.Infow("powering on host for scheduled work hours",
+						"bmh", bmh.Name,
+						"pool", pool,
+						"schedule", runner.Spec.Schedule.FormatSummary(),
 					)
 				}
 			}

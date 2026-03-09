@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,6 +26,108 @@ type JobRunner struct {
 	Status            JobRunnerStatus `json:"status,omitempty"`
 }
 
+// WorkSchedule defines when hosts in a pool should be kept alive.
+type WorkSchedule struct {
+	Days     []string `json:"days"`               // "Mon","Tue","Wed","Thu","Fri","Sat","Sun"
+	Start    string   `json:"start"`              // "09:00" (24h format)
+	End      string   `json:"end"`                // "17:00"
+	Timezone string   `json:"timezone,omitempty"` // IANA timezone (default "Local")
+}
+
+// IsActive returns true if the given time falls within the schedule window.
+func (s *WorkSchedule) IsActive(now time.Time) bool {
+	if s == nil || len(s.Days) == 0 || s.Start == "" || s.End == "" {
+		return false
+	}
+
+	loc := time.Local
+	if s.Timezone != "" {
+		var err error
+		loc, err = time.LoadLocation(s.Timezone)
+		if err != nil {
+			return false
+		}
+	}
+
+	t := now.In(loc)
+	dayName := t.Weekday().String()[:3] // "Mon", "Tue", etc.
+
+	dayMatch := false
+	for _, d := range s.Days {
+		if strings.EqualFold(d, dayName) {
+			dayMatch = true
+			break
+		}
+	}
+	if !dayMatch {
+		return false
+	}
+
+	startParts := strings.SplitN(s.Start, ":", 2)
+	endParts := strings.SplitN(s.End, ":", 2)
+	if len(startParts) != 2 || len(endParts) != 2 {
+		return false
+	}
+
+	startH, startM := 0, 0
+	fmt.Sscanf(startParts[0], "%d", &startH)
+	fmt.Sscanf(startParts[1], "%d", &startM)
+	endH, endM := 0, 0
+	fmt.Sscanf(endParts[0], "%d", &endH)
+	fmt.Sscanf(endParts[1], "%d", &endM)
+
+	startMin := startH*60 + startM
+	endMin := endH*60 + endM
+	nowMin := t.Hour()*60 + t.Minute()
+
+	return nowMin >= startMin && nowMin < endMin
+}
+
+// FormatSummary returns a human-readable summary like "Mon-Fri 09:00-17:00".
+func (s *WorkSchedule) FormatSummary() string {
+	if s == nil || len(s.Days) == 0 {
+		return "-"
+	}
+
+	// Try to compress consecutive days into a range
+	dayOrder := []string{"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+	dayIdx := map[string]int{"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
+
+	indices := make([]int, 0, len(s.Days))
+	for _, d := range s.Days {
+		if idx, ok := dayIdx[d]; ok {
+			indices = append(indices, idx)
+		}
+	}
+	sort.Ints(indices)
+
+	// Check if consecutive
+	consecutive := len(indices) > 1
+	for i := 1; i < len(indices); i++ {
+		if indices[i] != indices[i-1]+1 {
+			consecutive = false
+			break
+		}
+	}
+
+	var daysStr string
+	if consecutive && len(indices) > 2 {
+		daysStr = dayOrder[indices[0]] + "-" + dayOrder[indices[len(indices)-1]]
+	} else {
+		names := make([]string, len(indices))
+		for i, idx := range indices {
+			names[i] = dayOrder[idx]
+		}
+		daysStr = strings.Join(names, ",")
+	}
+
+	result := daysStr + " " + s.Start + "-" + s.End
+	if s.Timezone != "" && s.Timezone != "Local" {
+		result += " " + s.Timezone
+	}
+	return result
+}
+
 // JobRunnerSpec defines the desired state of a JobRunner.
 type JobRunnerSpec struct {
 	Pool          string            `json:"pool"`                    // pool name
@@ -35,6 +138,7 @@ type JobRunnerSpec struct {
 	AllowOverflow bool              `json:"allowOverflow,omitempty"` // use unreserved BMHs as overflow
 	MaxConcurrent int               `json:"maxConcurrent,omitempty"` // max concurrent jobs (0=unlimited)
 	Labels        map[string]string `json:"labels,omitempty"`        // constraint labels
+	Schedule      *WorkSchedule     `json:"schedule,omitempty"`      // keep hosts alive during these hours
 }
 
 // JobRunnerStatus reports the observed state of a JobRunner.
@@ -62,6 +166,12 @@ func (j *JobRunner) DeepCopy() *JobRunner {
 		for k, v := range j.Spec.Labels {
 			out.Spec.Labels[k] = v
 		}
+	}
+	if j.Spec.Schedule != nil {
+		s := *j.Spec.Schedule
+		s.Days = make([]string, len(j.Spec.Schedule.Days))
+		copy(s.Days, j.Spec.Schedule.Days)
+		out.Spec.Schedule = &s
 	}
 	return &out
 }
@@ -415,6 +525,7 @@ func jobRunnerListToTable(items []JobRunner) *metav1.Table {
 			{Name: "Completed", Type: "integer"},
 			{Name: "Failed", Type: "integer"},
 			{Name: "Idle-Timeout", Type: "string"},
+			{Name: "Schedule", Type: "string"},
 			{Name: "Age", Type: "string"},
 		},
 	}
@@ -432,6 +543,11 @@ func jobRunnerListToTable(items []JobRunner) *metav1.Table {
 		idleTimeout := "-"
 		if jr.Spec.IdleTimeout > 0 {
 			idleTimeout = fmt.Sprintf("%ds", jr.Spec.IdleTimeout)
+		}
+
+		schedule := "-"
+		if jr.Spec.Schedule != nil {
+			schedule = jr.Spec.Schedule.FormatSummary()
 		}
 
 		raw, _ := json.Marshal(map[string]interface{}{
@@ -453,6 +569,7 @@ func jobRunnerListToTable(items []JobRunner) *metav1.Table {
 				jr.Status.TotalCompleted,
 				jr.Status.TotalFailed,
 				idleTimeout,
+				schedule,
 				age,
 			},
 			Object: kruntime.RawExtension{Raw: raw},
