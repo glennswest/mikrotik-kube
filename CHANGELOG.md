@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-03-09
+- **feat:** Registry `/v2/<repo>/tags/list` endpoint — implements OCI Distribution Spec tag listing. Walks manifest directory to enumerate tags. Filters out digest refs (sha256-*), returns only human-readable tags. Previously returned 404 for all tags/list requests, making `crane ls` and similar tools fail.
+
 ### 2026-03-08
 - **fix:** microdns database path `./data/microdns.redb` → `/data/microdns.redb` (absolute). Relative path wrote to ephemeral container rootfs instead of PVC mount at `/data/`. Root cause of DNS records lost on pod restart.
 - **fix:** Reconcile detects missing DHCP reservation DNS A records and triggers re-seed. Previously only checked for empty DHCP pools — if pools survived in redb but A records were lost (wrong DB path), re-seed was never triggered.

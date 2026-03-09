@@ -189,6 +189,36 @@ func (s *BlobStore) ListRepositories() []string {
 	return repos
 }
 
+// ListTags returns all tag names for a given repository.
+// Tags are derived from manifest filenames: <tag>.json → <tag>
+func (s *BlobStore) ListTags(repo string) []string {
+	mu := s.getRepoLock(repo)
+	mu.RLock()
+	defer mu.RUnlock()
+
+	dir := filepath.Join(s.root, "manifests", repo)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	var tags []string
+	for _, e := range entries {
+		if e.IsDir() || strings.HasSuffix(e.Name(), ".type") {
+			continue
+		}
+		if strings.HasSuffix(e.Name(), ".json") {
+			tag := strings.TrimSuffix(e.Name(), ".json")
+			// Skip digest refs (sha256-xxx) — only return human tags
+			if !strings.HasPrefix(tag, "sha256-") {
+				tags = append(tags, tag)
+			}
+		}
+	}
+	sort.Strings(tags)
+	return tags
+}
+
 // ─── Chunked Upload ─────────────────────────────────────────────────────────
 
 // InitiateUpload starts a new chunked blob upload session and returns its UUID.

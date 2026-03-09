@@ -173,6 +173,15 @@ func (r *Registry) handleV2(w http.ResponseWriter, req *http.Request) {
 
 	trimmed := strings.TrimPrefix(path, "/v2/")
 
+	// Handle tags list: /v2/<name>/tags/list
+	if idx := strings.Index(trimmed, "/tags/list"); idx >= 0 {
+		repoName := trimmed[:idx]
+		if repoName != "" {
+			r.handleTags(w, req, repoName)
+			return
+		}
+	}
+
 	// Handle chunked blob uploads: /v2/<name>/blobs/uploads/ or /v2/<name>/blobs/uploads/<uuid>
 	if idx := strings.Index(trimmed, "/blobs/uploads"); idx >= 0 {
 		repoName := trimmed[:idx]
@@ -389,6 +398,26 @@ func (r *Registry) handleBlobUpload(w http.ResponseWriter, req *http.Request, re
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+// handleTags returns the list of tags for a repository per OCI Distribution Spec.
+// GET /v2/<name>/tags/list
+func (r *Registry) handleTags(w http.ResponseWriter, req *http.Request, repo string) {
+	if req.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	tags := r.store.ListTags(repo)
+	if tags == nil {
+		tags = []string{}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"name": repo,
+		"tags": tags,
+	})
 }
 
 // handleCatalog returns the list of locally stored repositories.
