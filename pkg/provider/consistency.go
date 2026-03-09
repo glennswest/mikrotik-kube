@@ -323,8 +323,7 @@ func (p *MicroKubeProvider) checkDNS(ctx context.Context) []CheckItem {
 			}
 		}
 
-		// DHCP reservation DNS records are managed by microdns (source of truth).
-		// Static config reservations are obsolete — not checked here.
+		// BMH DNS records (data + IPMI hostnames) are included via buildExpectedDNSRecords.
 
 		// Add infrastructure records (gateway + DNS server)
 		if netDef.Gateway != "" {
@@ -395,6 +394,17 @@ type expectedDNS struct {
 // from the boot manifest for a given network.
 func (p *MicroKubeProvider) buildExpectedDNSRecords(pods []*corev1.Pod, networkName string) map[string]expectedDNS {
 	expected := make(map[string]expectedDNS)
+
+	// Add BMH data network DNS records (server hostnames from DHCP reservations)
+	for _, bmh := range p.bareMetalHosts {
+		if bmh.Spec.Network == networkName && bmh.Spec.IP != "" && bmh.Spec.Hostname != "" {
+			expected[bmh.Spec.Hostname] = expectedDNS{ip: bmh.Spec.IP}
+		}
+		// Add BMH IPMI network DNS records
+		if bmh.Spec.BMC.Network == networkName && bmh.Spec.BMC.Address != "" && bmh.Spec.BMC.Hostname != "" {
+			expected[bmh.Spec.BMC.Hostname] = expectedDNS{ip: bmh.Spec.BMC.Address}
+		}
+	}
 
 	for _, pod := range pods {
 		podNetwork := pod.Annotations[annotationNetwork]

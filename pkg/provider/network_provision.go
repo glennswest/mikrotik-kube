@@ -181,7 +181,7 @@ func (p *MicroKubeProvider) natsURL() string {
 
 	// Look up NATS container IP from tracked pods
 	for _, pod := range p.pods {
-		if pod.Namespace == "infra" && pod.Name == "nats" {
+		if pod.Namespace == "gt" && pod.Name == "nats" {
 			if ip := pod.Status.PodIP; ip != "" {
 				return fmt.Sprintf("nats://%s:%d", ip, port)
 			}

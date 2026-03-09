@@ -251,7 +251,7 @@ func TestImportExport(t *testing.T) {
 	type SimplePod struct {
 		Name string `json:"name"`
 	}
-	_, _ = s.Pods.PutJSON(ctx, "infra.nats", &SimplePod{Name: "nats"})
+	_, _ = s.Pods.PutJSON(ctx, "gt.nats", &SimplePod{Name: "nats"})
 	_, _ = s.Pods.PutJSON(ctx, "dns.mdns-gw", &SimplePod{Name: "mdns-gw"})
 
 	// Export

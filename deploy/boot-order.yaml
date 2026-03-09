@@ -36,7 +36,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: nats
-  namespace: infra
+  namespace: gt
   annotations:
     vkube.io/network: gt
     vkube.io/boot-priority: "5"
@@ -44,6 +44,10 @@ metadata:
     vkube.io/static-ip: "192.168.200.10"
 spec:
   restartPolicy: Always
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: gt-nats-data
   containers:
     - name: nats
       image: 192.168.200.3:5000/nats:edge
