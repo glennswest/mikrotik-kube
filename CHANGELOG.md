@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 2026-03-13
+- **fix:** Stop deleting user-created DNS records in consistency checker. `cleanStaleDNSRecords` was nuking any A record whose hostname wasn't in mkube's expected set (pods, BMH, static records, infrastructure). User-created records via REST API or `mk apply` (e.g. bay1.g9.lo) were deleted within seconds. Now only cleans wrong-IP records for known hostnames — unknown hostnames are left untouched.
+
 ### 2026-03-09
 - **feat:** WorkSchedule for JobRunner — keep hosts alive during scheduled work hours. New `schedule` field on JobRunnerSpec with `days`, `start`, `end`, `timezone`. During active schedule: idle hosts are not powered off, offline reserved hosts are automatically powered on. Outside schedule: normal idle timeout and reclaim policy apply. Table output shows schedule summary column.
 
